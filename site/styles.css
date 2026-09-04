@@ -1,0 +1,39 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap");
+
+:root { --ink:#171811; --paper:#f4f1e8; --melon:#ff6f59; --acid:#d8f36a; --green:#174c3c; --line:rgba(23,24,17,.16); }
+* { box-sizing:border-box; }
+html { scroll-behavior:smooth; }
+body { margin:0; color:var(--ink); background:var(--paper); font-family:"DM Sans",sans-serif; }
+a { color:inherit; text-decoration:none; }
+.shell { width:min(1180px,calc(100% - 40px)); margin-inline:auto; }
+.noise { position:fixed; inset:0; pointer-events:none; opacity:.035; z-index:20; background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E"); }
+.nav { height:86px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); }
+.brand { display:flex; gap:11px; align-items:center; font-weight:600; letter-spacing:-.02em; }
+.brand-mark { display:grid; place-items:center; width:33px; height:33px; border-radius:50%; background:var(--ink); color:var(--paper); font:500 11px "DM Mono"; }
+nav { display:flex; align-items:center; gap:30px; font-size:14px; }
+.button { display:inline-flex; justify-content:center; align-items:center; gap:20px; border:1px solid var(--ink); background:var(--melon); padding:15px 20px; border-radius:4px; font-size:14px; font-weight:600; box-shadow:4px 4px 0 var(--ink); transition:.2s ease; }
+.button:hover { transform:translate(2px,2px); box-shadow:2px 2px 0 var(--ink); }
+.button-small { padding:10px 14px; gap:12px; box-shadow:none; background:transparent; }
+.hero { padding:96px 0 80px; }
+.eyebrow { display:flex; align-items:center; gap:10px; font:500 11px "DM Mono"; letter-spacing:.12em; text-transform:uppercase; }
+.eyebrow span { width:24px; height:2px; background:var(--melon); }
+h1 { max-width:950px; margin:25px 0 20px; font:400 clamp(64px,10vw,132px)/.84 "Instrument Serif",serif; letter-spacing:-.055em; }
+h1 em { color:var(--melon); font-weight:400; }
+.lede { max-width:670px; font-size:clamp(18px,2vw,24px); line-height:1.5; letter-spacing:-.025em; }
+.hero-actions { display:flex; align-items:center; gap:30px; margin:35px 0 80px; }
+.text-link { font-size:14px; font-weight:600; border-bottom:1px solid; padding-bottom:4px; }
+.product-frame { border:1px solid var(--ink); border-radius:12px; overflow:hidden; background:#fff; box-shadow:14px 14px 0 var(--ink); transform:rotate(-.3deg); }
+.frame-bar { height:48px; padding:0 15px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); font:10px "DM Mono"; text-transform:uppercase; letter-spacing:.1em; }
+.traffic { display:flex; gap:6px; }.traffic i { width:8px;height:8px;border-radius:50%;background:#ddd; }.traffic i:first-child{background:var(--melon)}.traffic i:nth-child(2){background:#f7cf55}.traffic i:last-child{background:#82c883}
+.avatar { width:25px;height:25px;border-radius:50%;display:grid;place-items:center;background:var(--acid);font:9px "DM Mono"; }
+.app-shell { min-height:500px; display:grid; grid-template-columns:180px 1fr; }
+aside { padding:28px 18px; border-right:1px solid var(--line); background:#faf9f5; display:flex;flex-direction:column;gap:7px; }
+.mini-brand { font-size:25px;margin-bottom:26px; } aside a { padding:10px 12px;border-radius:6px;font-size:13px;display:flex;justify-content:space-between; } aside a.active { background:var(--ink);color:#fff; } aside b { color:var(--acid); }.aside-spacer{flex:1}
+.library { padding:48px; overflow:hidden; }.library-head{display:flex;align-items:end;justify-content:space-between;margin-bottom:28px}.library small,.cards small{font:10px "DM Mono";letter-spacing:.1em}.library h2{font:400 42px "Instrument Serif";margin:5px 0}.library button{background:var(--acid);border:1px solid;padding:10px 14px;border-radius:4px;font-weight:600}.search{border:1px solid var(--line);border-radius:6px;padding:15px;color:#777;font-size:13px;margin-bottom:25px}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.cards article{border:1px solid var(--line);border-radius:7px;padding:12px}.thumb{height:130px;border-radius:4px;margin-bottom:15px;display:grid;place-items:center;background-image:radial-gradient(circle at 30% 30%,rgba(255,255,255,.6),transparent 24%),linear-gradient(135deg,transparent 48%,rgba(0,0,0,.15) 49% 51%,transparent 52%)}.thumb span{background:#fff;padding:5px 8px;font:9px "DM Mono"}.coral{background-color:#ff907f}.green{background-color:#a9d3a2}.lilac{background-color:#c4b4e7}.cards h3{font:400 22px/1.05 "Instrument Serif";margin:9px 0}.cards p{font-size:12px;line-height:1.5;color:#62635c}
+.marquee { overflow:hidden;border-block:1px solid var(--ink);background:var(--acid);padding:16px 0;white-space:nowrap }.marquee div{font:500 12px "DM Mono";letter-spacing:.1em;text-align:center}.marquee b{margin:0 28px;color:var(--melon)}
+.steps { padding:130px 0; }.section-intro{display:grid;grid-template-columns:1fr 1.5fr;align-items:start;margin-bottom:70px}.section-intro h2,.principles h2,.cta h2{margin:0;font:400 clamp(48px,7vw,84px)/.95 "Instrument Serif";letter-spacing:-.04em}.step-grid{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--ink)}.step-grid article{padding:35px;min-height:330px;border-right:1px solid var(--ink);position:relative}.step-grid article:last-child{border:0}.step-grid b{font:11px "DM Mono"}.step-icon{font-size:42px;margin:65px 0 35px;color:var(--melon)}.step-grid h3{font:400 30px "Instrument Serif";margin:0 0 10px}.step-grid p{font-size:14px;line-height:1.6;color:#575950}
+.principles{background:var(--green);color:#f8f5ea;padding:130px 0}.principle-grid{display:grid;grid-template-columns:1fr 1fr;gap:100px}.light span{background:var(--acid)}.principles h2{margin-top:24px;color:var(--acid)}.principle-list article{display:grid;grid-template-columns:50px 1fr;gap:20px;padding:28px 0;border-top:1px solid rgba(255,255,255,.25)}.principle-list span{font:11px "DM Mono";color:var(--acid)}.principle-list h3{font:400 28px "Instrument Serif";margin:0 0 7px}.principle-list p{margin:0;color:#cbd8d2;line-height:1.6;font-size:14px}
+.cta{padding:120px 0;display:flex;align-items:end;justify-content:space-between;gap:50px}.cta h2{max-width:750px;margin-top:22px}.button.dark{background:var(--ink);color:#fff;white-space:nowrap}
+footer{border-top:1px solid var(--line);padding:35px 0 55px;display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#606159}footer p{margin:0}footer p a{text-decoration:underline}
+@media(max-width:800px){nav>a:not(.button){display:none}.hero{padding-top:65px}h1{font-size:70px}.hero-actions{margin-bottom:55px}.product-frame{box-shadow:7px 7px 0 var(--ink)}.app-shell{grid-template-columns:1fr;min-height:auto}aside{display:none}.library{padding:25px}.cards{grid-template-columns:1fr}.cards article:nth-child(n+2){display:none}.section-intro,.principle-grid{grid-template-columns:1fr;gap:35px}.step-grid{grid-template-columns:1fr}.step-grid article{min-height:auto;border-right:0;border-bottom:1px solid;padding:28px}.step-icon{margin:30px 0 20px}.cta{align-items:start;flex-direction:column}.cta .button{white-space:normal}footer{align-items:flex-start;flex-direction:column;gap:20px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.button{transition:none}}

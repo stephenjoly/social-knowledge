@@ -1,0 +1,59 @@
+{
+  "name": "social-knowledge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
+    "test:e2e": "playwright test",
+    "smoke:live": "node scripts/smoke-live.mjs",
+    "library:migrate:dry-run": "node dist/migrate-library.js --dry-run",
+    "library:migrate:apply": "node dist/migrate-library.js --apply"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/formbody": "^9.0.0",
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/static": "^10.1.3",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@node-rs/argon2": "^2.2.0",
+    "@radix-ui/react-collapsible": "^1.1.20",
+    "@radix-ui/react-scroll-area": "^1.2.18",
+    "better-sqlite3": "^12.2.0",
+    "execa": "^9.6.0",
+    "fastify": "^5.5.0",
+    "lucide-react": "^1.41.0",
+    "openai": "^5.19.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "yaml": "^2.8.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.18.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^5.0.4",
+    "prettier": "^3.9.6",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.3.6",
+    "vitest": "^3.2.4"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "esbuild@0.28.2": true
+  }
+}

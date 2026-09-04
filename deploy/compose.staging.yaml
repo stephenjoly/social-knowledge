@@ -1,0 +1,43 @@
+services:
+  social-knowledge:
+    image: ${IMAGE_REF:?Set IMAGE_REF to an immutable GHCR SHA tag}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=256m
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8788}:8787"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATA_DIR: /data
+      VAULT_DIR: /vault
+      MEDIA_DIR: /media
+      API_TOKEN: ${API_TOKEN:?Set a staging-only API_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set a staging-only OPENAI_API_KEY}
+      APP_URL: ${APP_URL:?Set the staging URL}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      FETCH_COMMENTS: ${FETCH_COMMENTS:-false}
+      MAX_DURATION_SECONDS: ${MAX_DURATION_SECONDS:-300}
+      MAX_DOWNLOAD_BYTES: ${MAX_DOWNLOAD_BYTES:-104857600}
+      MAX_ATTEMPTS: ${MAX_ATTEMPTS:-2}
+    volumes:
+      - social-knowledge-staging-data:/data
+      - social-knowledge-staging-vault:/vault
+      - social-knowledge-staging-media:/media
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  social-knowledge-staging-data:
+  social-knowledge-staging-vault:
+  social-knowledge-staging-media:

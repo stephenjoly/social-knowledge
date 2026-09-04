@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Turn saved social video into a private, searchable knowledge archive." />
+    <meta name="theme-color" content="#f4f1e8" />
+    <title>Social Knowledge — Your private media memory</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="noise" aria-hidden="true"></div>
+    <header class="nav shell">
+      <a class="brand" href="#top" aria-label="Social Knowledge home">
+        <span class="brand-mark">SK</span>
+        <span>Social Knowledge</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#how-it-works">How it works</a>
+        <a href="#principles">Principles</a>
+        <a class="button button-small" data-repo-link href="#">View on GitHub <span>↗</span></a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero shell">
+        <div class="eyebrow"><span></span> Open-source, private by design</div>
+        <h1>Your saved videos,<br /><em>made useful.</em></h1>
+        <p class="lede">Social Knowledge turns Facebook and Instagram videos into a searchable personal archive—with transcripts, takeaways, source media, and an AI interface you control.</p>
+        <div class="hero-actions">
+          <a class="button" data-repo-link href="#">Explore the source <span>↗</span></a>
+          <a class="text-link" href="#how-it-works">See how it works <span>↓</span></a>
+        </div>
+
+        <div class="product-frame" aria-label="Illustration of the Social Knowledge library">
+          <div class="frame-bar">
+            <div class="traffic"><i></i><i></i><i></i></div>
+            <span>Private library</span>
+            <div class="avatar">SJ</div>
+          </div>
+          <div class="app-shell">
+            <aside>
+              <div class="mini-brand">◉</div>
+              <a class="active">Inbox <b>24</b></a>
+              <a>Library</a><a>Ask AI</a><a>Activity</a>
+              <div class="aside-spacer"></div>
+              <a>Settings</a>
+            </aside>
+            <div class="library">
+              <div class="library-head"><div><small>YOUR ARCHIVE</small><h2>Worth remembering</h2></div><button>＋ Save a link</button></div>
+              <div class="search">⌕&nbsp;&nbsp; Search places, ideas, recipes, and moments</div>
+              <div class="cards">
+                <article><div class="thumb coral"><span>TRAVEL</span></div><small>Lisbon · 2 min</small><h3>A neighborhood guide to Alfama</h3><p>Six places to save for a quiet afternoon.</p></article>
+                <article><div class="thumb green"><span>FOOD</span></div><small>Recipe · 45 sec</small><h3>The crisp-edged potato technique</h3><p>Why steam and a rough shake matter.</p></article>
+                <article><div class="thumb lilac"><span>IDEAS</span></div><small>Design · 1 min</small><h3>Make the useful thing feel inevitable</h3><p>Three notes on calm product design.</p></article>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="marquee" aria-label="Key capabilities"><div>TRANSCRIBE <b>✦</b> SUMMARIZE <b>✦</b> SEARCH <b>✦</b> ARCHIVE <b>✦</b> ASK <b>✦</b> OWN YOUR DATA <b>✦</b></div></section>
+
+      <section id="how-it-works" class="steps shell">
+        <div class="section-intro"><div class="eyebrow"><span></span> From share sheet to second brain</div><h2>Save once.<br />Find it forever.</h2></div>
+        <div class="step-grid">
+          <article><b>01</b><div class="step-icon">↗</div><h3>Share the link</h3><p>Send a Reel from your phone using a tiny Apple Shortcut or the authenticated API.</p></article>
+          <article><b>02</b><div class="step-icon">⌁</div><h3>Extract the signal</h3><p>Archive the source, transcribe it, identify the important ideas, and organize the result.</p></article>
+          <article><b>03</b><div class="step-icon">⌕</div><h3>Recall naturally</h3><p>Search the library or ask grounded questions through the dashboard, ChatGPT, or MCP.</p></article>
+        </div>
+      </section>
+
+      <section id="principles" class="principles">
+        <div class="shell principle-grid">
+          <div><div class="eyebrow light"><span></span> Built for personal knowledge</div><h2>The archive stays yours.</h2></div>
+          <div class="principle-list">
+            <article><span>01</span><div><h3>Private deployment</h3><p>The public project is documentation and source code. Your running library and its content remain on infrastructure you control.</p></div></article>
+            <article><span>02</span><div><h3>Portable knowledge</h3><p>SQLite, original media, structured metadata, and Markdown exports keep the archive inspectable and movable.</p></div></article>
+            <article><span>03</span><div><h3>Grounded AI</h3><p>Answers cite saved captures. Captions, comments, and transcripts are evidence—not instructions.</p></div></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="cta shell">
+        <div><div class="eyebrow"><span></span> Follow the build</div><h2>A quieter way to remember the internet.</h2></div>
+        <a class="button dark" data-repo-link href="#">View the GitHub repository <span>↗</span></a>
+      </section>
+    </main>
+
+    <footer class="shell"><a class="brand" href="#top"><span class="brand-mark">SK</span><span>Social Knowledge</span></a><p>Open source. Self-hosted. Private by design.</p><p>Built by <a href="https://stephenjoly.net">Stephen Joly</a>.</p></footer>
+    <script src="./site.js"></script>
+  </body>
+</html>

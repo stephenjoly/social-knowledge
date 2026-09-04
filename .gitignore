@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-ui/
+.env
+data/
+coverage/
+test-results/
+*.log
+__pycache__/
+*.py[cod]
