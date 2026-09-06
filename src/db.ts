@@ -1736,13 +1736,14 @@ export class JobStore {
     userId: string,
     includeTranscript: boolean,
     includeComments: boolean,
+    kind = "metadata",
   ) {
     const id = randomUUID(),
       createdAt = new Date().toISOString(),
       expiresAt = new Date(Date.now() + 86400000).toISOString();
     this.database
       .prepare(
-        "INSERT INTO knowledge_exports(id,user_id,status,include_transcript,include_comments,path,error_code,record_count,created_at,expires_at) VALUES(?,?,'pending',?,?,NULL,NULL,NULL,?,?)",
+        "INSERT INTO knowledge_exports(id,user_id,status,include_transcript,include_comments,path,error_code,record_count,created_at,expires_at,kind) VALUES(?,?,'pending',?,?,NULL,NULL,NULL,?,?,?)",
       )
       .run(
         id,
@@ -1751,18 +1752,20 @@ export class JobStore {
         includeComments ? 1 : 0,
         createdAt,
         expiresAt,
+        kind,
       );
-    return { id, status: "pending", createdAt, expiresAt };
+    return { id, status: "pending", kind, createdAt, expiresAt };
   }
   getKnowledgeExport(userId: string, id: string) {
     return this.database
       .prepare(
-        "SELECT id,status,include_transcript AS includeTranscript,include_comments AS includeComments,path,error_code AS errorCode,record_count AS recordCount,created_at AS createdAt,expires_at AS expiresAt FROM knowledge_exports WHERE id=? AND user_id=?",
+        "SELECT id,status,kind,include_transcript AS includeTranscript,include_comments AS includeComments,path,error_code AS errorCode,record_count AS recordCount,created_at AS createdAt,expires_at AS expiresAt FROM knowledge_exports WHERE id=? AND user_id=?",
       )
       .get(id, userId) as
       | {
           id: string;
           status: string;
+          kind: string;
           includeTranscript: number;
           includeComments: number;
           path: string | null;
@@ -1772,6 +1775,14 @@ export class JobStore {
           expiresAt: string;
         }
       | undefined;
+  }
+  listKnowledgeExports(userId: string, kind?: string) {
+    return this.database
+      .prepare(
+        `SELECT id,status,kind,error_code AS errorCode,record_count AS recordCount,created_at AS createdAt,expires_at AS expiresAt
+       FROM knowledge_exports WHERE user_id=?${kind ? " AND kind=?" : ""} ORDER BY created_at DESC LIMIT 10`,
+      )
+      .all(...(kind ? [userId, kind] : [userId]));
   }
   completeKnowledgeExport(
     userId: string,
@@ -1840,9 +1851,18 @@ export class JobStore {
     CREATE INDEX IF NOT EXISTS idx_conversations_user_updated ON conversations(user_id,updated_at DESC);
     CREATE TABLE IF NOT EXISTS conversation_messages(id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,role TEXT NOT NULL,content TEXT NOT NULL,sources_json TEXT NOT NULL DEFAULT '[]',sufficient INTEGER,created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_conversation_messages ON conversation_messages(conversation_id,created_at);
-    CREATE TABLE IF NOT EXISTS knowledge_exports(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,status TEXT NOT NULL,include_transcript INTEGER NOT NULL,include_comments INTEGER NOT NULL,path TEXT,error_code TEXT,record_count INTEGER,created_at TEXT NOT NULL,expires_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS knowledge_exports(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,status TEXT NOT NULL,include_transcript INTEGER NOT NULL,include_comments INTEGER NOT NULL,path TEXT,error_code TEXT,record_count INTEGER,created_at TEXT NOT NULL,expires_at TEXT NOT NULL,kind TEXT NOT NULL DEFAULT 'metadata');
     CREATE INDEX IF NOT EXISTS idx_knowledge_exports_user ON knowledge_exports(user_id,created_at DESC);
   `);
+    const exportColumns = (
+      this.database
+        .prepare("PRAGMA table_info(knowledge_exports)")
+        .all() as Array<{ name: string }>
+    ).map((column) => column.name);
+    if (!exportColumns.includes("kind"))
+      this.database.exec(
+        "ALTER TABLE knowledge_exports ADD COLUMN kind TEXT NOT NULL DEFAULT 'metadata'",
+      );
     this.database.exec(
       "CREATE VIRTUAL TABLE IF NOT EXISTS captures_fts_v2 USING fts5(capture_id UNINDEXED,title,takeaways,creator,synopsis,description,topics,entities,transcript)",
     );

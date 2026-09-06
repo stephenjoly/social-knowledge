@@ -87,6 +87,15 @@ type Job = {
   updatedAt: string;
   reachedStages?: string[];
 };
+type LibraryExport = {
+  id: string;
+  status: "pending" | "complete" | "failed";
+  kind: "full";
+  errorCode: string | null;
+  recordCount: number | null;
+  createdAt: string;
+  expiresAt: string;
+};
 type JobEvent = {
   id: string;
   status: string;
@@ -684,25 +693,46 @@ function Settings() {
   const [preferenceMessage, setPreferenceMessage] = useState("");
   const [connections, setConnections] = useState<OAuthConnection[]>([]);
   const [mcpUrl, setMcpUrl] = useState("");
+  const [libraryExports, setLibraryExports] = useState<LibraryExport[]>([]);
+  const [backupMessage, setBackupMessage] = useState("");
   async function load() {
-    const [keyResult, preferenceResult, connectionResult] = await Promise.all([
-      api<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
-      api<{
-        preferences: { defaultLanguage: string; translateForeign: boolean };
-      }>("/api/v1/preferences"),
-      api<{ connections: OAuthConnection[]; mcpUrl: string }>(
-        "/api/v1/oauth/connections",
-      ),
-    ]);
+    const [keyResult, preferenceResult, connectionResult, exportResult] =
+      await Promise.all([
+        api<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
+        api<{
+          preferences: { defaultLanguage: string; translateForeign: boolean };
+        }>("/api/v1/preferences"),
+        api<{ connections: OAuthConnection[]; mcpUrl: string }>(
+          "/api/v1/oauth/connections",
+        ),
+        api<{ exports: LibraryExport[] }>("/api/v1/library-exports"),
+      ]);
     setKeys(keyResult.apiKeys);
     setDefaultLanguage(preferenceResult.preferences.defaultLanguage);
     setTranslateForeign(preferenceResult.preferences.translateForeign);
     setConnections(connectionResult.connections);
     setMcpUrl(connectionResult.mcpUrl);
+    setLibraryExports(exportResult.exports);
   }
   useEffect(() => {
     void load();
   }, []);
+  useEffect(() => {
+    if (!libraryExports.some((item) => item.status === "pending")) {
+      if (backupMessage === "Preparing your backup…") {
+        setBackupMessage(
+          libraryExports[0]?.status === "complete"
+            ? "Your backup is ready to download."
+            : libraryExports[0]?.status === "failed"
+              ? "The backup could not be completed. You can try again."
+              : "",
+        );
+      }
+      return;
+    }
+    const timer = window.setInterval(() => void load(), 2500);
+    return () => window.clearInterval(timer);
+  }, [libraryExports]);
   async function create(event: FormEvent) {
     event.preventDefault();
     const result = await api<{ token: string; apiKey: ApiKey }>(
@@ -772,6 +802,66 @@ function Settings() {
           ))}
           {!connections.length && <p>No OAuth applications connected yet.</p>}
         </div>
+      </section>
+      <section className="settings-card">
+        <h2>Export library</h2>
+        <p className="settings-help">
+          Create a portable backup containing all of your capture metadata,
+          transcripts, comments, Markdown notes, images, audio, and videos.
+          Account credentials and server configuration are excluded.
+        </p>
+        <button
+          disabled={libraryExports.some((item) => item.status === "pending")}
+          onClick={async () => {
+            setBackupMessage("Preparing your backup…");
+            try {
+              await api("/api/v1/library-exports", { method: "POST" });
+              await load();
+            } catch (error) {
+              setBackupMessage(
+                error instanceof Error
+                  ? error.message
+                  : "Backup could not start.",
+              );
+            }
+          }}
+        >
+          {libraryExports.some((item) => item.status === "pending")
+            ? "Preparing backup…"
+            : "Create full backup"}
+        </button>
+        {backupMessage && <p className="action-feedback">{backupMessage}</p>}
+        <div className="key-list">
+          {libraryExports.map((item) => (
+            <article key={item.id}>
+              <div>
+                <strong>
+                  {item.status === "complete"
+                    ? `Backup ready · ${item.recordCount ?? 0} captures`
+                    : item.status === "pending"
+                      ? "Preparing backup"
+                      : "Backup failed"}
+                </strong>
+                <small>
+                  Created {new Date(item.createdAt).toLocaleString()} · expires{" "}
+                  {new Date(item.expiresAt).toLocaleString()}
+                </small>
+              </div>
+              {item.status === "complete" && (
+                <a
+                  className="backup-download"
+                  href={`/api/v1/library-exports/${item.id}/download`}
+                >
+                  Download
+                </a>
+              )}
+            </article>
+          ))}
+        </div>
+        <p className="settings-help">
+          Backups contain private content and are available for 24 hours. Store
+          downloaded archives somewhere secure.
+        </p>
       </section>
       <section className="settings-card">
         <h2>Language</h2>

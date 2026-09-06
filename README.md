@@ -92,6 +92,8 @@ Agent endpoints are documented by the OpenAPI 3.1 contract at `/openapi.json`:
 - `GET /api/v1/knowledge/topics` for taxonomy and facet discovery.
 - `POST /api/v1/knowledge/exports` plus the status and download routes for 24-hour gzip JSONL snapshots.
 
+Signed-in users can also create a complete portable backup under **Settings → Export library**. The resulting 24-hour `.tar.gz` contains account-owned structured metadata, transcripts, selected comments, generated Markdown notes, and every archived media asset. It excludes passwords, sessions, API keys, OAuth credentials, social-platform cookies, and server configuration. Full-library backups use session-authenticated `/api/v1/library-exports` routes and are intentionally unavailable to bearer-key clients.
+
 Search ranks the complete matching account archive before applying its stable result cursor. Agent responses contain source links and asset metadata but never archive filesystem paths or media-download URLs. The legacy deployment `API_TOKEN` remains capture-only. Interrupted exports are marked `export_interrupted` during startup so clients can retry instead of polling forever; export records are streamed into gzip rather than assembled in memory.
 
 ### ChatGPT and Codex via MCP
@@ -154,7 +156,7 @@ Do not replace the sandbox vault volume with a host/NAS bind mount until its pat
 - SQLite and transient work files: `DATA_DIR`
 - Obsidian Markdown notes: `VAULT_DIR/Inbox/Social/YYYY/MM`
 - Original video, audio, and thumbnail: `MEDIA_DIR/YYYY/MM/<job-id>`
-- Temporary knowledge exports: `DATA_DIR/exports/<user-id>`; snapshots expire after 24 hours.
+- Temporary knowledge and full-library exports: `DATA_DIR/exports/<user-id>`; snapshots expire after 24 hours.
 
 The original media is deliberately kept outside the vault so Obsidian synchronization does not ingest large files. Each note retains the archive paths and original source URL.
 

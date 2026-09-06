@@ -647,6 +647,68 @@ export function buildApp(config: AppConfig, store: JobStore, events: EventHub) {
       const user = auth.user(request)!;
       return { apiKeys: store.listApiKeys(user.id) };
     });
+    protectedApi.get("/api/v1/library-exports", async (request) => ({
+      exports: store.listKnowledgeExports(auth.user(request)!.id, "full"),
+    }));
+    protectedApi.post(
+      "/api/v1/library-exports",
+      { config: { rateLimit: { max: 2, timeWindow: "1 hour" } } },
+      async (request, reply) => {
+        const userId = auth.user(request)!.id;
+        const active = store
+          .listKnowledgeExports(userId, "full")
+          .find((item: any) => item.status === "pending");
+        if (active)
+          return reply
+            .code(409)
+            .send({ error: "backup_in_progress", export: active });
+        const created = store.createKnowledgeExport(userId, true, true, "full");
+        void knowledgeExporter
+          .buildFull(userId, created.id)
+          .catch((error) =>
+            app.log.error(
+              { err: error, exportId: created.id, userId },
+              "full library backup failed",
+            ),
+          );
+        return reply.code(202).send({ export: created });
+      },
+    );
+    protectedApi.get("/api/v1/library-exports/:id", async (request, reply) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const item = store.getKnowledgeExport(auth.user(request)!.id, id);
+      if (!item || item.kind !== "full")
+        return reply.code(404).send({ error: "not_found" });
+      return { export: item };
+    });
+    protectedApi.get(
+      "/api/v1/library-exports/:id/download",
+      async (request, reply) => {
+        const { id } = z
+          .object({ id: z.string().uuid() })
+          .parse(request.params);
+        const item = store.getKnowledgeExport(auth.user(request)!.id, id);
+        if (!item || item.kind !== "full")
+          return reply.code(404).send({ error: "not_found" });
+        if (item.status !== "complete" || !item.path)
+          return reply.code(409).send({ error: "backup_not_ready" });
+        if (item.expiresAt <= new Date().toISOString())
+          return reply.code(410).send({ error: "backup_expired" });
+        const file = await stat(item.path).catch(() => null);
+        if (!file) return reply.code(404).send({ error: "backup_missing" });
+        const date = item.createdAt.slice(0, 10);
+        reply
+          .header("Content-Type", "application/gzip")
+          .header(
+            "Content-Disposition",
+            `attachment; filename=\"social-knowledge-backup-${date}.tar.gz\"`,
+          )
+          .header("Content-Length", file.size)
+          .header("Cache-Control", "private, no-store")
+          .header("X-Content-Type-Options", "nosniff");
+        return reply.send(createReadStream(item.path));
+      },
+    );
     protectedApi.get("/api/v1/preferences", async (request) => {
       const user = auth.user(request)!;
       return { preferences: store.preferences(user.id) };

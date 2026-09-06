@@ -1055,6 +1055,18 @@ form button:disabled {
 .key-list small {
   color: #82928e;
 }
+.backup-download {
+  padding: 9px 13px;
+  border: 1px solid #47766a;
+  border-radius: 9px;
+  background: #58c9a6;
+  color: #071310;
+  font-weight: 800;
+  text-decoration: none;
+}
+.backup-download:hover {
+  background: #75dbbb;
+}
 .api-examples {
   margin-top: 22px;
 }

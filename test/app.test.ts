@@ -1,12 +1,38 @@
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { gunzipSync } from "node:zlib";
+import tar from "tar-stream";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { JobStore } from "../src/db.js";
 import { EventHub } from "../src/events.js";
 import { AuthService } from "../src/auth.js";
 import { testConfig } from "./helpers.js";
+
+async function readTarGz(buffer: Buffer) {
+  const files = new Map<string, Buffer>();
+  const extract = tar.extract();
+  const done = new Promise<void>((resolve, reject) => {
+    extract.on("entry", (header, stream, next) => {
+      const chunks: Buffer[] = [];
+      stream.on("data", (chunk: unknown) => {
+        chunks.push(Buffer.from(chunk as Uint8Array));
+      });
+      stream.on("end", () => {
+        files.set(header.name, Buffer.concat(chunks));
+        next();
+      });
+      stream.on("error", reject);
+      stream.resume();
+    });
+    extract.on("finish", resolve);
+    extract.on("error", reject);
+  });
+  extract.end(gunzipSync(buffer));
+  await done;
+  return files;
+}
 
 describe("API", () => {
   const cleanups: Array<() => Promise<void>> = [];
@@ -160,6 +186,8 @@ describe("API", () => {
       payload: { url: "https://www.instagram.com/reel/key-test/" },
     });
     expect(keyedSubmission.statusCode).toBe(202);
+    const archivedVideo = path.join(root, "archived-video.mp4");
+    await writeFile(archivedVideo, Buffer.from("test-video-bytes"));
     const captured = store.createCapture({
       job: keyedSubmission.json().job,
       sourceType: "video",
@@ -198,7 +226,15 @@ describe("API", () => {
       publishedAt: null,
       durationSeconds: 20,
       notePath: "Social Knowledge/Captures/key-test.md",
-      assets: [],
+      assets: [
+        {
+          kind: "video",
+          path: archivedVideo,
+          mimeType: "video/mp4",
+          sizeBytes: 16,
+          position: 0,
+        },
+      ],
     })!;
     store.assignClassification(captured.id, captured.analysis.classification);
     const facets = await app.inject({
@@ -307,6 +343,43 @@ describe("API", () => {
       headers: bearer,
     });
     expect(exportStatus.json().export.status).toBe("complete");
+    const backupResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/library-exports",
+      headers: { cookie: cookie! },
+    });
+    expect(backupResponse.statusCode).toBe(202);
+    const backupId = backupResponse.json().export.id;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const backupDownload = await app.inject({
+      method: "GET",
+      url: `/api/v1/library-exports/${backupId}/download`,
+      headers: { cookie: cookie! },
+    });
+    expect(backupDownload.statusCode).toBe(200);
+    expect(backupDownload.headers["content-disposition"]).toContain(
+      "social-knowledge-backup-",
+    );
+    const backupFiles = await readTarGz(backupDownload.rawPayload);
+    expect(backupFiles.has("manifest.json")).toBe(true);
+    expect(backupFiles.has(`captures/${captured.id}/metadata.json`)).toBe(true);
+    const backupText = [...backupFiles.values()]
+      .map((value) => value.toString("utf8"))
+      .join("\n");
+    expect(backupText).toContain("Example Cafe");
+    expect(backupText).toContain("Useful");
+    expect(backupText).not.toContain(createdKey.json().token);
+    expect(
+      backupFiles.get(`captures/${captured.id}/assets/000-video.mp4`),
+    ).toEqual(Buffer.from("test-video-bytes"));
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/api/v1/library-exports/${backupId}/download`,
+        })
+      ).statusCode,
+    ).toBe(401);
     expect(
       (
         await app.inject({
