@@ -131,7 +131,7 @@ Prefer an internal route reachable over WireGuard. Do not expose this endpoint p
 
 ## Dokploy
 
-`compose.dokploy.yaml` is a sandbox deployment definition. It uses named volumes for application state, generated notes, and archived media so the initial test cannot alter the real Obsidian vault. Configure `API_TOKEN` and `OPENAI_API_KEY` as Dokploy secrets/environment variables, and keep `FETCH_COMMENTS=false` for initial acceptance tests.
+Dokploy builds the root `Dockerfile` directly from the GitHub repository. GitHub Actions validates the source but does not publish deployment images. Production and staging are separate Dokploy Applications; pull-request previews are created only for collaborator-authorized PRs and use disposable container-local data plus preview-only credentials.
 
 For a remote deployment, set `BIND_ADDRESS`, `APP_URL`, and `TRUSTED_PROXIES` explicitly. Keep the application bound to loopback or a private interface, terminate TLS at a trusted reverse proxy, and list only that proxy's address or CIDR in `TRUSTED_PROXIES`. Public static documentation does not require exposing the application itself.
 

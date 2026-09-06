@@ -30,7 +30,7 @@ Staging never mounts production volumes or production social-cookie files. It us
 
 ## Preview links
 
-GitHub Actions supplies checks and build artifacts for every pull request. A stable Dokploy staging URL follows `main`. Per-pull-request application URLs can be added later through Dokploy preview deployments after their lifecycle, DNS, authentication, cleanup, and secret isolation have been verified; they are not required for the safe initial migration.
+GitHub Actions validates every pull request and push. Dokploy clones the repository and builds the root Dockerfile locally; GitHub does not publish runtime container images. A stable Dokploy staging URL follows `main`, while collaborator-authorized pull requests receive disposable preview deployments with preview-only credentials and container-local data. Preview deployments never mount production or staging volumes.
 
 ## First production cutover checklist
 
