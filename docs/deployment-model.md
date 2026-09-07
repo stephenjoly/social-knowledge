@@ -6,21 +6,21 @@ Social Knowledge uses one public source repository and isolated runtime environm
 
 | Environment | Source | Data | Purpose |
 |---|---|---|---|
-| Pull request | The proposed commit | None or disposable fixtures | CI, build checks, and downloadable artifacts |
-| Staging | The `main` commit's immutable `sha-*` container image | Dedicated disposable volumes and staging-only credentials | Browser, API, OAuth, MCP, migration, and ingestion acceptance |
-| Production | The exact image digest accepted in staging and named by a version tag | Existing persistent production volumes | Personal archive and Apple Shortcut endpoint |
+| Pull request | A `codex/*` branch targeting `staging` | Container-local disposable data and preview-only credentials | CI, review, and isolated Dokploy preview acceptance |
+| Staging | The `staging` branch built by Dokploy | Dedicated disposable volumes and staging-only credentials | Combined browser, API, OAuth, MCP, migration, and ingestion acceptance |
+| Production | The `main` state promoted by an approved `staging` to `main` PR | Existing persistent production volumes | Personal archive and Apple Shortcut endpoint |
 | GitHub Pages | Static files under `site/` | No application data or credentials | Public project homepage |
 
 ## Promotion
 
-1. A pull request must pass type checking, unit/integration tests, and the production build.
-2. Merging to `main` publishes `ghcr.io/<owner>/social-knowledge:sha-<commit>` and moves the convenience `staging` tag.
-3. Dokploy staging deploys the immutable `sha-*` image into its own volumes and URL.
-4. Run staging acceptance, including database migration from a production-shaped fixture when the schema changes.
-5. Create a `v*` tag on the accepted commit. The container workflow adds that release tag to the same source revision.
-6. Resolve the release tag to its digest and update Dokploy production to that digest. Never rebuild for production.
-7. Before recreating production, take an online SQLite backup and retain the current image digest as the rollback target.
-8. Verify health, browser login, capture submission, Agent API, OAuth, and MCP. Roll back the image if acceptance fails; restore the database backup only when a schema change prevents application rollback.
+1. Create a `codex/*` branch from freshly fetched `origin/staging` and open a feature PR targeting `staging`.
+2. CI must pass type checking, unit/integration tests, documentation checks, and the production build. Dokploy creates a collaborator-authorized disposable preview from the staging Application.
+3. Validate affected flows in the preview using synthetic data, then merge approved work into `staging`.
+4. Dokploy automatically builds and deploys permanent staging from `staging` into isolated volumes and credentials.
+5. Test the combined staging release and record its full SHA. Include a production-shaped migration test when the schema changes. Retest if staging advances.
+6. When the owner authorizes production, run **Prepare Production Release** or open a `staging` to `main` PR using the release template. Pull requests into `main` from any other branch fail policy validation.
+7. Before merging, verify an online SQLite backup and retain the current production deployment as the rollback target. Merging the release PR authorizes Dokploy to build and deploy `main`.
+8. Verify the actual resulting `main` commit in production: health, browser login, capture submission, search/export, Agent API, OAuth, and MCP. CI or PR merge status alone is not deployment evidence.
 
 ## Why production does not move
 
@@ -30,7 +30,9 @@ Staging never mounts production volumes or production social-cookie files. It us
 
 ## Preview links
 
-GitHub Actions validates every pull request and push. Dokploy clones the repository and builds the root Dockerfile locally; GitHub does not publish runtime container images. A stable Dokploy staging URL follows `main`, while collaborator-authorized pull requests receive disposable preview deployments with preview-only credentials and container-local data. Preview deployments never mount production or staging volumes.
+GitHub Actions validates every pull request and pushes to `staging` and `main`. Dokploy clones the repository and builds the root Dockerfile locally; GitHub does not publish runtime container images. Permanent staging follows `staging`. Only feature PRs targeting `staging` receive collaborator-authorized disposable previews with preview-only credentials and container-local data. Release PRs reuse permanent staging and must not create another preview. Preview deployments never mount production or staging volumes.
+
+Dokploy must keep **Require collaborator permissions** enabled, use a small preview limit, and remove preview Applications when PRs close. A preview URL proves only that an environment was created; it is not a health or acceptance attestation.
 
 ## First production cutover checklist
 
