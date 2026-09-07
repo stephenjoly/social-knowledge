@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [staging, main]
   pull_request:
 
 permissions:
@@ -19,6 +19,4 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm run build
-      - run: npm test
+      - run: npm run check
