@@ -2041,7 +2041,7 @@ function App() {
             <div className="hero">
               <div>
                 <div className="eyebrow">Your private archive</div>
-                <h1>Ideas worth keeping.</h1>
+                <h1>Worth remembering.</h1>
                 <p>
                   Search the durable knowledge extracted from every saved social
                   post.
