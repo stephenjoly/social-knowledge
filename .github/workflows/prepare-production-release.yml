@@ -1,0 +1,40 @@
+name: Prepare Production Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: prepare-production-release
+  cancel-in-progress: false
+
+jobs:
+  open-release-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Open or find release pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TZ: America/Toronto
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          existing_url="$(gh pr list --repo "$GITHUB_REPOSITORY" --base main --head staging --state open --json url --jq '.[0].url // empty')"
+          if [ -n "$existing_url" ]; then
+            echo "An open staging release already exists: ${existing_url}"
+            exit 0
+          fi
+          if git diff --quiet origin/main...HEAD; then
+            echo "There are no staging changes to release."
+            exit 0
+          fi
+          gh pr create --repo "$GITHUB_REPOSITORY" --base main --head staging \
+            --title "Release staging to production — $(date +%Y-%m-%d)" \
+            --body-file .github/PULL_REQUEST_TEMPLATE/release.md
