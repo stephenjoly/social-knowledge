@@ -28,6 +28,10 @@ import OpenAI from "openai";
 import { AskService } from "./ask.js";
 import { registerOAuth } from "./oauth.js";
 import { registerMcp } from "./mcp.js";
+import {
+  PlatformConnectionService,
+  socialPlatforms,
+} from "./platform-connections.js";
 
 const submitSchema = z.object({
   url: z.string().min(1).max(4096),
@@ -40,7 +44,12 @@ const requestIdSchema = z
   .max(128)
   .regex(/^[A-Za-z0-9._~-]+$/);
 
-export function buildApp(config: AppConfig, store: JobStore, events: EventHub) {
+export function buildApp(
+  config: AppConfig,
+  store: JobStore,
+  events: EventHub,
+  platformConnectionService = new PlatformConnectionService(store, config),
+) {
   const app = Fastify({
     logger: { level: config.logLevel },
     bodyLimit: 64 * 1024,
@@ -713,6 +722,55 @@ export function buildApp(config: AppConfig, store: JobStore, events: EventHub) {
       const user = auth.user(request)!;
       return { preferences: store.preferences(user.id) };
     });
+    protectedApi.get("/api/v1/platform-connections", async (request) => ({
+      connections: platformConnectionService.list(auth.user(request)!.id),
+    }));
+    protectedApi.put(
+      "/api/v1/platform-connections/:platform",
+      {
+        bodyLimit: 1024 * 1024,
+        config: { rateLimit: { max: 10, timeWindow: "1 hour" } },
+      },
+      async (request, reply) => {
+        const parsed = z
+          .object({ platform: z.enum(socialPlatforms) })
+          .safeParse(request.params);
+        if (!parsed.success || typeof request.body !== "string")
+          return reply.code(400).send({ error: "invalid_cookie_file" });
+        try {
+          const connection = platformConnectionService.save(
+            auth.user(request)!.id,
+            parsed.data.platform,
+            request.body,
+          );
+          return { connection };
+        } catch (error) {
+          const code =
+            error instanceof Error ? error.message : "invalid_cookie_file";
+          return reply.code(400).send({
+            error: ["invalid_cookie_file", "no_platform_cookies"].includes(code)
+              ? code
+              : "invalid_cookie_file",
+          });
+        }
+      },
+    );
+    protectedApi.delete(
+      "/api/v1/platform-connections/:platform",
+      async (request, reply) => {
+        const parsed = z
+          .object({ platform: z.enum(socialPlatforms) })
+          .safeParse(request.params);
+        if (!parsed.success)
+          return reply.code(400).send({ error: "invalid_platform" });
+        return platformConnectionService.remove(
+          auth.user(request)!.id,
+          parsed.data.platform,
+        )
+          ? { ok: true }
+          : reply.code(404).send({ error: "not_found" });
+      },
+    );
     protectedApi.get("/api/v1/oauth/connections", async (request) => ({
       connections: store.listOAuthConnections(auth.user(request)!.id),
       mcpUrl: `${config.appUrl}/mcp`,

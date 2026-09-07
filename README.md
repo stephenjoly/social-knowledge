@@ -133,6 +133,8 @@ Prefer an internal route reachable over WireGuard. Do not expose this endpoint p
 
 Dokploy builds the root `Dockerfile` directly from the GitHub repository. GitHub Actions validates the source but does not publish deployment images. Production and staging are separate Dokploy Applications; pull-request previews are created only for collaborator-authorized PRs and use disposable container-local data plus preview-only credentials.
 
+Set a stable, randomly generated `PLATFORM_CREDENTIALS_KEY` of at least 32 characters in production. Signed-in users can upload platform-specific Netscape `cookies.txt` exports under **Settings → Facebook and Instagram**. Social Knowledge removes unrelated domains, encrypts the remaining cookies at rest, and never returns them through the API or includes them in backups. `API_TOKEN` is used as a compatibility fallback encryption key only when `PLATFORM_CREDENTIALS_KEY` is absent; set the dedicated key before storing UI-managed connections.
+
 For a remote deployment, set `BIND_ADDRESS`, `APP_URL`, and `TRUSTED_PROXIES` explicitly. Keep the application bound to loopback or a private interface, terminate TLS at a trusted reverse proxy, and list only that proxy's address or CIDR in `TRUSTED_PROXIES`. Public static documentation does not require exposing the application itself.
 
 `compose.dokploy-managed.yaml` is the dashboard-managed deployment definition. It uses the already-built local image and declares the original sandbox volumes as external, allowing Dokploy to control service lifecycle without replacing or deleting existing data. Runtime variables, including `OPENAI_API_KEY` and optional `NTFY_*` values, are editable in the Dokploy service UI.

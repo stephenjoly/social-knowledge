@@ -133,6 +133,15 @@ type OAuthConnection = {
   authorizedAt: string;
   lastUsedAt: string | null;
 };
+type PlatformConnection = {
+  platform: "facebook" | "instagram";
+  connected: boolean;
+  status: "connected" | "needs_attention" | "not_connected";
+  cookieCount: number;
+  lastValidatedAt: string | null;
+  lastUsedAt: string | null;
+  updatedAt: string | null;
+};
 
 function markdownForDisplay(value: string) {
   return value.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "");
@@ -692,27 +701,40 @@ function Settings() {
   const [translateForeign, setTranslateForeign] = useState(true);
   const [preferenceMessage, setPreferenceMessage] = useState("");
   const [connections, setConnections] = useState<OAuthConnection[]>([]);
+  const [platformConnections, setPlatformConnections] = useState<
+    PlatformConnection[]
+  >([]);
+  const [platformMessage, setPlatformMessage] = useState("");
   const [mcpUrl, setMcpUrl] = useState("");
   const [libraryExports, setLibraryExports] = useState<LibraryExport[]>([]);
   const [backupMessage, setBackupMessage] = useState("");
   async function load() {
-    const [keyResult, preferenceResult, connectionResult, exportResult] =
-      await Promise.all([
-        api<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
-        api<{
-          preferences: { defaultLanguage: string; translateForeign: boolean };
-        }>("/api/v1/preferences"),
-        api<{ connections: OAuthConnection[]; mcpUrl: string }>(
-          "/api/v1/oauth/connections",
-        ),
-        api<{ exports: LibraryExport[] }>("/api/v1/library-exports"),
-      ]);
+    const [
+      keyResult,
+      preferenceResult,
+      connectionResult,
+      exportResult,
+      platformResult,
+    ] = await Promise.all([
+      api<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
+      api<{
+        preferences: { defaultLanguage: string; translateForeign: boolean };
+      }>("/api/v1/preferences"),
+      api<{ connections: OAuthConnection[]; mcpUrl: string }>(
+        "/api/v1/oauth/connections",
+      ),
+      api<{ exports: LibraryExport[] }>("/api/v1/library-exports"),
+      api<{ connections: PlatformConnection[] }>(
+        "/api/v1/platform-connections",
+      ),
+    ]);
     setKeys(keyResult.apiKeys);
     setDefaultLanguage(preferenceResult.preferences.defaultLanguage);
     setTranslateForeign(preferenceResult.preferences.translateForeign);
     setConnections(connectionResult.connections);
     setMcpUrl(connectionResult.mcpUrl);
     setLibraryExports(exportResult.exports);
+    setPlatformConnections(platformResult.connections);
   }
   useEffect(() => {
     void load();
@@ -747,6 +769,33 @@ function Settings() {
     setMessage("Copy this key now. It will not be shown again.");
     await load();
   }
+  async function uploadPlatformCookies(
+    platform: PlatformConnection["platform"],
+    file: File,
+  ) {
+    setPlatformMessage(`Checking ${platform} cookies…`);
+    try {
+      await api(`/api/v1/platform-connections/${platform}`, {
+        method: "PUT",
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+        body: await file.text(),
+      });
+      setPlatformMessage(
+        `${platform === "instagram" ? "Instagram" : "Facebook"} connected. New captures will use this login when needed.`,
+      );
+      await load();
+    } catch (error) {
+      const code =
+        error instanceof Error
+          ? (error as Error & { body?: { error?: string } }).body?.error
+          : null;
+      setPlatformMessage(
+        code === "no_platform_cookies"
+          ? `That file did not contain ${platform} cookies. Export cookies while signed in and try again.`
+          : "The cookie file could not be saved. Use a Netscape-format cookies.txt export.",
+      );
+    }
+  }
   return (
     <div className="settings">
       <div className="page-title">
@@ -756,6 +805,96 @@ function Settings() {
           access.
         </p>
       </div>
+      <section className="settings-card">
+        <h2>Facebook and Instagram</h2>
+        <p className="settings-help">
+          Connect your logged-in browser session so private or login-protected
+          posts can be captured. Export a Netscape-format{" "}
+          <code>cookies.txt</code> while signed in, then upload it here.
+          Passwords are never requested or stored.
+        </p>
+        <div className="platform-connections">
+          {platformConnections.map((connection) => {
+            const label =
+              connection.platform === "instagram" ? "Instagram" : "Facebook";
+            return (
+              <article key={connection.platform}>
+                <div className="platform-connection-heading">
+                  <PlatformIcon
+                    url={`https://www.${connection.platform}.com`}
+                  />
+                  <div>
+                    <strong>{label}</strong>
+                    <span className={`connection-state ${connection.status}`}>
+                      {connection.status === "connected"
+                        ? "Connected"
+                        : connection.status === "needs_attention"
+                          ? "Reconnect needed"
+                          : "Not connected"}
+                    </span>
+                  </div>
+                </div>
+                <p>
+                  {connection.lastUsedAt
+                    ? `Last worked ${new Date(connection.lastUsedAt).toLocaleString()}`
+                    : connection.connected
+                      ? `${connection.cookieCount} platform cookies stored securely`
+                      : "Anonymous downloads will still be attempted."}
+                </p>
+                <div className="platform-connection-actions">
+                  <label className="button-like">
+                    {connection.connected
+                      ? "Replace cookies"
+                      : "Upload cookies"}
+                    <input
+                      type="file"
+                      accept=".txt,text/plain"
+                      onChange={async (event) => {
+                        const file = event.target.files?.[0];
+                        if (file)
+                          await uploadPlatformCookies(
+                            connection.platform,
+                            file,
+                          );
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {connection.connected && (
+                    <button
+                      className="secondary-button"
+                      onClick={async () => {
+                        await api(
+                          `/api/v1/platform-connections/${connection.platform}`,
+                          { method: "DELETE" },
+                        );
+                        setPlatformMessage(`${label} disconnected.`);
+                        await load();
+                      }}
+                    >
+                      Disconnect
+                    </button>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        {platformMessage && (
+          <p className="action-feedback" role="status">
+            {platformMessage}
+          </p>
+        )}
+        <details className="api-examples cookie-help">
+          <summary>How to export browser cookies</summary>
+          <p>
+            Use a trusted cookies.txt exporter in your desktop browser while
+            logged into the selected platform. Social Knowledge discards every
+            cookie that does not belong to that platform before encrypting the
+            connection.
+          </p>
+        </details>
+      </section>
       <section className="settings-card">
         <h2>AI Connections</h2>
         <p className="settings-help">

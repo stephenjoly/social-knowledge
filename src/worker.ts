@@ -76,6 +76,7 @@ export class JobWorker {
         const download = await this.services.downloader.download(
           job.id,
           job.normalizedUrl,
+          job.ownerUserId,
         );
         this.services.store.setDisplayTitle(job.id, download.metadata.title);
         const existingCapture = this.services.store.getCaptureBySource(

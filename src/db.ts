@@ -1822,6 +1822,74 @@ export class JobStore {
     this.database.prepare("DELETE FROM knowledge_exports WHERE id=?").run(id);
   }
 
+  platformConnection(userId: string, platform: string) {
+    return this.database
+      .prepare(
+        `SELECT platform,status,cookie_count AS cookieCount,last_validated_at AS lastValidatedAt,last_used_at AS lastUsedAt,updated_at AS updatedAt
+         FROM platform_connections WHERE user_id=? AND platform=?`,
+      )
+      .get(userId, platform) as
+      | {
+          platform: string;
+          status: string;
+          cookieCount: number;
+          lastValidatedAt: string | null;
+          lastUsedAt: string | null;
+          updatedAt: string;
+        }
+      | undefined;
+  }
+  platformConnectionSecret(userId: string, platform: string) {
+    return this.database
+      .prepare(
+        "SELECT encrypted_payload AS encryptedPayload FROM platform_connections WHERE user_id=? AND platform=?",
+      )
+      .get(userId, platform) as { encryptedPayload: string } | undefined;
+  }
+  savePlatformConnection(
+    userId: string,
+    platform: string,
+    encryptedPayload: string,
+    cookieCount: number,
+  ) {
+    const now = new Date().toISOString();
+    this.database
+      .prepare(
+        `INSERT INTO platform_connections(user_id,platform,encrypted_payload,status,cookie_count,last_validated_at,last_used_at,last_error_code,created_at,updated_at)
+         VALUES(?,?,?,'connected',?,?,NULL,NULL,?,?)
+         ON CONFLICT(user_id,platform) DO UPDATE SET encrypted_payload=excluded.encrypted_payload,status='connected',cookie_count=excluded.cookie_count,last_validated_at=excluded.last_validated_at,last_error_code=NULL,updated_at=excluded.updated_at`,
+      )
+      .run(userId, platform, encryptedPayload, cookieCount, now, now, now);
+  }
+  deletePlatformConnection(userId: string, platform: string) {
+    return (
+      this.database
+        .prepare(
+          "DELETE FROM platform_connections WHERE user_id=? AND platform=?",
+        )
+        .run(userId, platform).changes > 0
+    );
+  }
+  markPlatformConnectionSuccess(userId: string, platform: string) {
+    const now = new Date().toISOString();
+    this.database
+      .prepare(
+        "UPDATE platform_connections SET status='connected',last_used_at=?,last_error_code=NULL,updated_at=? WHERE user_id=? AND platform=?",
+      )
+      .run(now, now, userId, platform);
+  }
+  markPlatformConnectionAttention(
+    userId: string,
+    platform: string,
+    errorCode: string,
+  ) {
+    this.database
+      .prepare(
+        "UPDATE platform_connections SET status='needs_attention',last_error_code=?,updated_at=? WHERE user_id=? AND platform=?",
+      )
+      .run(errorCode, new Date().toISOString(), userId, platform);
+  }
+
   private migrate() {
     this.database.exec(`
     CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,owner_user_id TEXT NOT NULL REFERENCES users(id),source_url TEXT NOT NULL,normalized_url TEXT NOT NULL,source_hash TEXT NOT NULL,user_note TEXT,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,error TEXT,result_note_path TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,next_attempt_at TEXT NOT NULL,UNIQUE(owner_user_id,source_hash));
@@ -1853,6 +1921,7 @@ export class JobStore {
     CREATE INDEX IF NOT EXISTS idx_conversation_messages ON conversation_messages(conversation_id,created_at);
     CREATE TABLE IF NOT EXISTS knowledge_exports(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,status TEXT NOT NULL,include_transcript INTEGER NOT NULL,include_comments INTEGER NOT NULL,path TEXT,error_code TEXT,record_count INTEGER,created_at TEXT NOT NULL,expires_at TEXT NOT NULL,kind TEXT NOT NULL DEFAULT 'metadata');
     CREATE INDEX IF NOT EXISTS idx_knowledge_exports_user ON knowledge_exports(user_id,created_at DESC);
+    CREATE TABLE IF NOT EXISTS platform_connections(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,platform TEXT NOT NULL CHECK(platform IN ('facebook','instagram')),encrypted_payload TEXT NOT NULL,status TEXT NOT NULL,cookie_count INTEGER NOT NULL,last_validated_at TEXT,last_used_at TEXT,last_error_code TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(user_id,platform));
   `);
     const exportColumns = (
       this.database

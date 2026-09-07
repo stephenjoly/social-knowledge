@@ -31,6 +31,7 @@ const schema = z.object({
   COOKIES_FILE: z.string().optional(),
   FACEBOOK_COOKIES_FILE: z.string().optional(),
   INSTAGRAM_COOKIES_FILE: z.string().optional(),
+  PLATFORM_CREDENTIALS_KEY: z.string().min(32).optional(),
   FACEBOOK_IMPERSONATE: z.string().default("chrome-99"),
   BOOTSTRAP_ADMIN_USERNAME: z.string().default("demo"),
   BOOTSTRAP_ADMIN_PASSWORD_HASH: z.string().optional(),
@@ -77,6 +78,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     instagramCookiesFile: parsed.INSTAGRAM_COOKIES_FILE
       ? path.resolve(parsed.INSTAGRAM_COOKIES_FILE)
       : undefined,
+    platformCredentialsKey: parsed.PLATFORM_CREDENTIALS_KEY ?? parsed.API_TOKEN,
     facebookImpersonate: parsed.FACEBOOK_IMPERSONATE.trim() || undefined,
     bootstrapAdminUsername: parsed.BOOTSTRAP_ADMIN_USERNAME,
     bootstrapAdminPasswordHash: parsed.BOOTSTRAP_ADMIN_PASSWORD_HASH,

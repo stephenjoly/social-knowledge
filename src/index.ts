@@ -16,6 +16,7 @@ import { migrateLegacyCaptures } from "./legacy.js";
 import { Translator } from "./translator.js";
 import { TitleGenerator } from "./title-generator.js";
 import { LibraryPublisher } from "./library-publisher.js";
+import { PlatformConnectionService } from "./platform-connections.js";
 
 const config = loadConfig();
 await Promise.all([
@@ -34,13 +35,14 @@ if (store.userCount() === 0 && config.bootstrapAdminPasswordHash)
     config.bootstrapAdminPasswordHash,
   );
 const events = new EventHub();
-const app = buildApp(config, store, events);
+const platformConnections = new PlatformConnectionService(store, config);
+const app = buildApp(config, store, events, platformConnections);
 const openai = new OpenAI({ apiKey: config.openAiApiKey });
 const worker = new JobWorker(
   config,
   {
     store,
-    downloader: new MediaDownloader(config),
+    downloader: new MediaDownloader(config, platformConnections),
     processor: new MediaProcessor(),
     transcriber: new Transcriber(openai, config),
     translator: new Translator(openai, config),

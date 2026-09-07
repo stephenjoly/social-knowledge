@@ -6,6 +6,7 @@ import {
   readFile,
   readdir,
   rm,
+  writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -17,6 +18,10 @@ import type {
   SocialComment,
 } from "./types.js";
 import { CaptureFailure, classifyPlatformFailure } from "./failures.js";
+import type {
+  PlatformConnectionService,
+  SocialPlatform,
+} from "./platform-connections.js";
 
 interface YtDlpInfo {
   id?: unknown;
@@ -53,8 +58,7 @@ export function selectComments(value: unknown, limit = 10): SocialComment[] {
               ? row.author.trim()
               : null,
           text,
-          likeCount:
-            typeof row.like_count === "number" ? row.like_count : null,
+          likeCount: typeof row.like_count === "number" ? row.like_count : null,
           isPinned: row.is_pinned === true,
         },
       ];
@@ -68,9 +72,16 @@ export function selectComments(value: unknown, limit = 10): SocialComment[] {
 }
 
 export class MediaDownloader {
-  constructor(private readonly config: AppConfig) {}
+  constructor(
+    private readonly config: AppConfig,
+    private readonly connections?: PlatformConnectionService,
+  ) {}
 
-  async download(jobId: string, sourceUrl: string): Promise<DownloadResult> {
+  async download(
+    jobId: string,
+    sourceUrl: string,
+    ownerUserId?: string,
+  ): Promise<DownloadResult> {
     const workDir = path.join(this.config.workDir, jobId);
     await rm(workDir, { recursive: true, force: true });
     await mkdir(workDir, { recursive: true });
@@ -99,9 +110,14 @@ export class MediaDownloader {
     if (this.config.fetchComments) args.push("--write-comments");
 
     let temporaryCookiesDir: string | undefined;
+    const platform = this.platformFor(sourceUrl);
+    const uploadedCookies =
+      ownerUserId && platform
+        ? this.connections?.cookiesFor(ownerUserId, platform)
+        : null;
     try {
       const configuredCookiesFile = this.cookiesFileFor(sourceUrl);
-      if (configuredCookiesFile) {
+      if (uploadedCookies || configuredCookiesFile) {
         temporaryCookiesDir = await mkdtemp(
           path.join(tmpdir(), "social-knowledge-cookies-"),
         );
@@ -109,7 +125,12 @@ export class MediaDownloader {
           temporaryCookiesDir,
           "cookies.txt",
         );
-        await copyFile(configuredCookiesFile, writableCookiesFile);
+        if (uploadedCookies)
+          await writeFile(writableCookiesFile, uploadedCookies, {
+            encoding: "utf8",
+            mode: 0o600,
+          });
+        else await copyFile(configuredCookiesFile!, writableCookiesFile);
         await chmod(writableCookiesFile, 0o600);
         args.push("--cookies", writableCookiesFile);
       }
@@ -117,8 +138,19 @@ export class MediaDownloader {
 
       try {
         await execa("yt-dlp", args, { timeout: 15 * 60_000, reject: true });
+        if (uploadedCookies && ownerUserId && platform)
+          this.connections?.markSuccess(ownerUserId, platform);
       } catch (error) {
-        throw this.classifyDownloadError(error);
+        const failure = this.classifyDownloadError(error);
+        if (
+          uploadedCookies &&
+          ownerUserId &&
+          platform &&
+          failure instanceof CaptureFailure &&
+          failure.code === "authentication_required"
+        )
+          this.connections?.markAuthenticationRequired(ownerUserId, platform);
+        throw failure;
       }
     } finally {
       if (temporaryCookiesDir)
@@ -179,6 +211,13 @@ export class MediaDownloader {
     return this.isFacebookUrl(sourceUrl)
       ? this.config.facebookCookiesFile
       : undefined;
+  }
+
+  private platformFor(sourceUrl: string): SocialPlatform | null {
+    const hostname = new URL(sourceUrl).hostname.toLowerCase();
+    if (hostname === "instagram.com" || hostname.endsWith(".instagram.com"))
+      return "instagram";
+    return this.isFacebookUrl(sourceUrl) ? "facebook" : null;
   }
 
   private async probeDuration(videoPath: string): Promise<number | null> {

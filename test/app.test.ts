@@ -142,6 +142,31 @@ describe("API", () => {
     )[0];
     expect(cookie).toBeTruthy();
 
+    const cookieExport =
+      "# Netscape HTTP Cookie File\n.instagram.com\tTRUE\t/\tTRUE\t1999999999\tsessionid\tvery-private-session\n.facebook.com\tTRUE\t/\tTRUE\t1999999999\tc_user\tother-platform\n";
+    const platformUpload = await app.inject({
+      method: "PUT",
+      url: "/api/v1/platform-connections/instagram",
+      headers: { cookie: cookie!, "content-type": "text/plain" },
+      payload: cookieExport,
+    });
+    expect(platformUpload.statusCode).toBe(200);
+    expect(platformUpload.body).not.toContain("very-private-session");
+    const platformList = await app.inject({
+      method: "GET",
+      url: "/api/v1/platform-connections",
+      headers: { cookie: cookie! },
+    });
+    expect(platformList.statusCode).toBe(200);
+    expect(platformList.json().connections).toContainEqual(
+      expect.objectContaining({
+        platform: "instagram",
+        connected: true,
+        cookieCount: 1,
+      }),
+    );
+    expect(platformList.body).not.toContain("very-private-session");
+
     expect(
       (
         await app.inject({
