@@ -1895,6 +1895,17 @@ function App() {
     categories: [],
     topics: [],
   });
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingInbox, setLoadingInbox] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [inboxError, setInboxError] = useState<string | null>(null);
+  const inboxRequest = useRef(0);
+  const inboxFilters = useRef({
+    search: "",
+    platform: "",
+    category: "",
+    topic: "",
+  });
   const [detail, setDetail] = useState<string | null>(null);
   const [captureUrl, setCaptureUrl] = useState("");
   const [note, setNote] = useState("");
@@ -1910,31 +1921,87 @@ function App() {
       setAuthState(err.body?.setupRequired ? "setup" : "login");
     }
   }
-  async function load() {
+  async function loadInboxPage(append = false) {
+    const requestId = ++inboxRequest.current;
+    const cursor = append ? nextCursor : null;
+    if (append && !cursor) return;
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoadingInbox(true);
+      setLoadingMore(false);
+      setCaptures([]);
+      setNextCursor(null);
+      setInboxError(null);
+    }
     const query = new URLSearchParams({ limit: "48" });
-    if (deferredSearch) query.set("search", deferredSearch);
-    if (platform) query.set("platform", platform);
-    if (category) query.set("nodeId", category);
-    if (topic) query.set("topic", topic);
-    const [c, j, f] = await Promise.all([
-      api<{ captures: Capture[] }>(`/api/v1/captures?${query}`),
+    const filters = inboxFilters.current;
+    if (filters.search) query.set("search", filters.search);
+    if (filters.platform) query.set("platform", filters.platform);
+    if (filters.category) query.set("nodeId", filters.category);
+    if (filters.topic) query.set("topic", filters.topic);
+    if (cursor) query.set("cursor", cursor);
+    try {
+      const page = await api<{
+        captures: Capture[];
+        nextCursor: string | null;
+      }>(`/api/v1/captures?${query}`);
+      if (requestId !== inboxRequest.current) return;
+      setCaptures((current) => {
+        if (!append) return page.captures;
+        const existing = new Set(current.map((capture) => capture.id));
+        return [
+          ...current,
+          ...page.captures.filter((capture) => !existing.has(capture.id)),
+        ];
+      });
+      setNextCursor(page.nextCursor);
+      setInboxError(null);
+    } catch (error) {
+      if (requestId === inboxRequest.current)
+        setInboxError(
+          append
+            ? "Unable to load more captures. Try again."
+            : "Unable to load captures. Try again.",
+        );
+    } finally {
+      if (requestId === inboxRequest.current) {
+        if (append) setLoadingMore(false);
+        else setLoadingInbox(false);
+      }
+    }
+  }
+  async function loadSupportingData() {
+    const [j, f] = await Promise.all([
       api<{ jobs: Job[] }>("/api/v1/jobs?limit=100"),
       api<CaptureFacets>("/api/v1/capture-facets"),
     ]);
-    setCaptures(c.captures);
     setJobs(j.jobs);
     setFacets(f);
+  }
+  async function load() {
+    await Promise.all([loadInboxPage(), loadSupportingData()]);
   }
   useEffect(() => {
     void check();
   }, []);
   useEffect(() => {
     if (authState !== "ready") return;
-    void load();
+    inboxFilters.current = {
+      search: deferredSearch,
+      platform,
+      category,
+      topic,
+    };
+    void loadInboxPage();
+  }, [authState, deferredSearch, platform, category, topic]);
+  useEffect(() => {
+    if (authState !== "ready") return;
+    void loadSupportingData();
     const stream = new EventSource("/api/v1/events");
     stream.onmessage = () => void load();
     return () => stream.close();
-  }, [authState, deferredSearch, platform, category, topic]);
+  }, [authState]);
   const hasInboxFilters = Boolean(search || platform || category || topic);
   const counts = useMemo(
     () => ({
@@ -2159,7 +2226,31 @@ function App() {
                 <CaptureCard capture={c} onOpen={setDetail} key={c.id} />
               ))}
             </div>
-            {!captures.length && (
+            {inboxError && (
+              <div className="pagination-feedback" role="alert">
+                <span>{inboxError}</span>
+                <button
+                  type="button"
+                  onClick={() => void loadInboxPage(Boolean(nextCursor))}
+                  disabled={loadingInbox || loadingMore}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+            {nextCursor && !inboxError && (
+              <div className="pagination-controls">
+                <button
+                  type="button"
+                  className="load-more"
+                  onClick={() => void loadInboxPage(true)}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? "Loading more…" : "Load more"}
+                </button>
+              </div>
+            )}
+            {!loadingInbox && !captures.length && (
               <div className="empty">
                 <h2>
                   {hasInboxFilters

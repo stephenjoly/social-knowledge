@@ -20,6 +20,11 @@ import {
 
 type Row = Record<string, unknown>;
 
+export type CaptureCursor = {
+  createdAt: string;
+  id: string;
+};
+
 export class JobStore {
   readonly database: Database.Database;
   constructor(filename: string) {
@@ -288,7 +293,7 @@ export class JobStore {
   listCaptures(query: {
     userId?: string;
     limit: number;
-    cursor?: string;
+    cursor?: CaptureCursor;
     search?: string;
     platform?: string;
     sourceType?: string;
@@ -302,8 +307,14 @@ export class JobStore {
       params.push(query.userId);
     }
     if (query.cursor) {
-      where.push("c.created_at < ?");
-      params.push(query.cursor);
+      where.push(
+        "(c.created_at < ? OR (c.created_at = ? AND c.id < ?))",
+      );
+      params.push(
+        query.cursor.createdAt,
+        query.cursor.createdAt,
+        query.cursor.id,
+      );
     }
     if (query.platform) {
       where.push("c.platform = ?");
@@ -339,7 +350,7 @@ export class JobStore {
     params.push(query.limit + 1);
     const rows = this.database
       .prepare(
-        `SELECT c.* FROM captures c ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY c.created_at DESC LIMIT ?`,
+        `SELECT c.* FROM captures c ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY c.created_at DESC,c.id DESC LIMIT ?`,
       )
       .all(...params) as Row[];
     const hasMore = rows.length > query.limit;
@@ -348,7 +359,12 @@ export class JobStore {
       .map((r) => this.mapCapture(r, false));
     return {
       captures: sliced,
-      nextCursor: hasMore ? String(rows[query.limit - 1]?.created_at) : null,
+      nextCursor: hasMore
+        ? {
+            createdAt: String(rows[query.limit - 1]?.created_at),
+            id: String(rows[query.limit - 1]?.id),
+          }
+        : null,
     };
   }
   captureFilterFacets(userId: string) {
@@ -378,34 +394,34 @@ export class JobStore {
         kind,
         count: captureCount,
       }));
-    const topicCounts = new Map<string, { label: string; count: number }>();
-    const rows = this.database
-      .prepare("SELECT analysis_json FROM captures WHERE owner_user_id=?")
-      .all(userId) as Row[];
-    for (const row of rows) {
-      try {
-        const analysis = JSON.parse(
-          String(row.analysis_json),
-        ) as AnalysisResult;
-        for (const label of new Set(
-          analysis.topics.map((topic) => topic.trim()),
-        )) {
-          if (!label) continue;
-          const key = label.toLowerCase();
-          const existing = topicCounts.get(key);
-          topicCounts.set(key, {
-            label: existing?.label ?? label,
-            count: (existing?.count ?? 0) + 1,
-          });
-        }
-      } catch {
-        // A malformed legacy analysis should not prevent Inbox browsing.
-      }
-    }
+    const topicCounts = this.database
+      .prepare(
+        `SELECT MIN(trim(CAST(topic.value AS TEXT))) AS label,
+          COUNT(DISTINCT c.id) AS count
+         FROM captures c
+         JOIN json_each(
+           CASE
+             WHEN json_valid(c.analysis_json) THEN c.analysis_json
+             ELSE '{"topics":[]}'
+           END,
+           '$.topics'
+         ) AS topic ON topic.type='text'
+         WHERE c.owner_user_id=?
+           AND json_type(
+             CASE
+               WHEN json_valid(c.analysis_json) THEN c.analysis_json
+               ELSE '{"topics":[]}'
+             END,
+             '$.topics'
+           )='array'
+           AND trim(CAST(topic.value AS TEXT))<>''
+         GROUP BY lower(trim(CAST(topic.value AS TEXT)))`,
+      )
+      .all(userId) as Array<{ label: string; count: number }>;
     const categoryLabels = new Set(
       categories.map((category) => category.label.toLowerCase()),
     );
-    const topics = [...topicCounts.values()]
+    const topics = topicCounts
       .filter((topic) => !categoryLabels.has(topic.label.toLowerCase()))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
       .slice(0, 12);
@@ -540,9 +556,9 @@ export class JobStore {
         }
       | undefined;
   }
-  libraryBreadcrumb(nodeId: string) {
+  libraryBreadcrumb(nodeId: string, userId?: string) {
     const result: LibraryNode[] = [];
-    let current = this.libraryNodeRecord(nodeId);
+    let current = this.libraryNodeRecord(nodeId, userId);
     const seen = new Set<string>();
     while (current) {
       if (seen.has(current.id))
@@ -550,49 +566,54 @@ export class JobStore {
       seen.add(current.id);
       result.unshift(current);
       current = current.parentId
-        ? this.libraryNodeRecord(current.parentId)
+        ? this.libraryNodeRecord(current.parentId, userId)
         : null;
     }
     return result;
   }
   libraryTree(userId?: string) {
-    const ownerClause = userId
-      ? " AND EXISTS(SELECT 1 FROM captures c WHERE c.id=cl.capture_id AND c.owner_user_id=@userId)"
-      : "";
-    const statement = this.database
-      .prepare(`SELECT n.id,n.parent_id AS parentId,n.label,n.slug,n.kind,
-      (SELECT COUNT(*) FROM library_nodes x WHERE x.parent_id=n.id) childCount,
-      (SELECT COUNT(*) FROM capture_library cl WHERE cl.node_id=n.id${ownerClause}) captureCount FROM library_nodes n ORDER BY n.label COLLATE NOCASE`);
-    const nodes = (
-      (userId ? statement.all({ userId }) : statement.all()) as Row[]
-    ).map((row) => ({
+    const rows = this.database
+      .prepare(
+        `WITH RECURSIVE ancestry(descendant_id,ancestor_id) AS (
+           SELECT id,id FROM library_nodes
+           UNION ALL
+           SELECT ancestry.descendant_id,parent.id
+           FROM ancestry
+           JOIN library_nodes current ON current.id=ancestry.ancestor_id
+           JOIN library_nodes parent ON parent.id=current.parent_id
+         ),
+         child_counts AS (
+           SELECT parent_id AS node_id,COUNT(*) AS child_count
+           FROM library_nodes
+           WHERE parent_id IS NOT NULL
+           GROUP BY parent_id
+         ),
+         capture_counts AS (
+           SELECT ancestry.ancestor_id AS node_id,COUNT(*) AS capture_count
+           FROM ancestry
+           JOIN capture_library cl ON cl.node_id=ancestry.descendant_id
+           JOIN captures c ON c.id=cl.capture_id
+           ${userId ? "WHERE c.owner_user_id=?" : ""}
+           GROUP BY ancestry.ancestor_id
+         )
+         SELECT n.id,n.parent_id AS parentId,n.label,n.slug,n.kind,
+           COALESCE(child_counts.child_count,0) AS childCount,
+           COALESCE(capture_counts.capture_count,0) AS captureCount
+         FROM library_nodes n
+         LEFT JOIN child_counts ON child_counts.node_id=n.id
+         LEFT JOIN capture_counts ON capture_counts.node_id=n.id
+         ORDER BY n.label COLLATE NOCASE`,
+      )
+      .all(...(userId ? [userId] : [])) as Row[];
+    const nodes = rows.map((row) => ({
       ...row,
       childCount: Number(row.childCount),
       captureCount: Number(row.captureCount),
     })) as unknown as LibraryNode[];
-    const children = new Map<string, LibraryNode[]>();
-    for (const node of nodes)
-      if (node.parentId)
-        children.set(node.parentId, [
-          ...(children.get(node.parentId) ?? []),
-          node,
-        ]);
-    const totals = new Map<string, number>();
-    const total = (id: string): number => {
-      if (totals.has(id)) return totals.get(id)!;
-      const value =
-        (nodes.find((node) => node.id === id)?.captureCount ?? 0) +
-        (children.get(id) ?? []).reduce(
-          (sum, child) => sum + total(child.id),
-          0,
-        );
-      totals.set(id, value);
-      return value;
-    };
-    return nodes.map((node) => ({ ...node, captureCount: total(node.id) }));
+    return nodes;
   }
   libraryNode(id: string, userId?: string) {
-    const node = this.libraryNodeRecord(id);
+    const node = this.libraryNodeRecord(id, userId);
     if (!node) return null;
     const children = this.libraryTree(userId).filter(
       (candidate) => candidate.parentId === id,
@@ -606,7 +627,7 @@ export class JobStore {
     ).map((row) => this.mapCapture(row, false));
     return {
       ...node,
-      breadcrumb: this.libraryBreadcrumb(id),
+      breadcrumb: this.libraryBreadcrumb(id, userId),
       children,
       captures,
     };
@@ -619,6 +640,19 @@ export class JobStore {
         )
         .all(...(userId ? [userId] : [])) as Row[]
     ).map((row) => this.mapCapture(row, false));
+  }
+  unclassifiedCaptureCount(userId?: string) {
+    const row = this.database
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM captures c
+         WHERE ${userId ? "c.owner_user_id=? AND " : ""}
+           NOT EXISTS(
+             SELECT 1 FROM capture_library cl WHERE cl.capture_id=c.id
+           )`,
+      )
+      .get(...(userId ? [userId] : [])) as { count: number };
+    return Number(row.count);
   }
   renameLibraryNode(id: string, label: string) {
     const node = this.libraryNodeRecord(id);
@@ -704,14 +738,14 @@ export class JobStore {
       .run(id, parentId, label, slug, kind, now, now);
     return id;
   }
-  private libraryNodeRecord(id: string): LibraryNode | null {
+  private libraryNodeRecord(id: string, userId?: string): LibraryNode | null {
     const row = this.database
       .prepare(
         `SELECT id,parent_id AS parentId,label,slug,kind,
       (SELECT COUNT(*) FROM library_nodes x WHERE x.parent_id=library_nodes.id) childCount,
-      (SELECT COUNT(*) FROM capture_library cl WHERE cl.node_id=library_nodes.id) captureCount FROM library_nodes WHERE id=?`,
+      (SELECT COUNT(*) FROM capture_library cl JOIN captures c ON c.id=cl.capture_id WHERE cl.node_id=library_nodes.id${userId ? " AND c.owner_user_id=?" : ""}) captureCount FROM library_nodes WHERE id=?`,
       )
-      .get(id) as Row | undefined;
+      .get(...(userId ? [userId, id] : [id])) as Row | undefined;
     return row
       ? ({
           ...row,
@@ -1896,6 +1930,7 @@ export class JobStore {
     CREATE INDEX IF NOT EXISTS idx_jobs_queue ON jobs(status,next_attempt_at,created_at);
     CREATE TABLE IF NOT EXISTS captures(id TEXT PRIMARY KEY,owner_user_id TEXT NOT NULL REFERENCES users(id),job_id TEXT NOT NULL UNIQUE REFERENCES jobs(id),source_hash TEXT NOT NULL,source_url TEXT NOT NULL,platform TEXT NOT NULL,source_type TEXT NOT NULL,source_id TEXT NOT NULL,title TEXT NOT NULL,creator TEXT,creator_url TEXT,description TEXT,transcript TEXT NOT NULL,synopsis TEXT NOT NULL,why_useful TEXT,analysis_json TEXT NOT NULL,topics_text TEXT NOT NULL,entities_text TEXT NOT NULL,published_at TEXT,duration_seconds REAL,note_path TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(owner_user_id,source_hash));
     CREATE UNIQUE INDEX IF NOT EXISTS idx_captures_platform_source ON captures(owner_user_id,platform,source_id);
+    CREATE INDEX IF NOT EXISTS idx_captures_owner_created ON captures(owner_user_id,created_at DESC,id DESC);
     CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY,capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,kind TEXT NOT NULL,path TEXT NOT NULL,mime_type TEXT NOT NULL,size_bytes INTEGER NOT NULL,position INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS job_events(id TEXT PRIMARY KEY,job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,status TEXT NOT NULL,message TEXT,created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,role TEXT NOT NULL,created_at TEXT NOT NULL);
