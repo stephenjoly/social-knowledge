@@ -821,8 +821,8 @@ export function buildApp(
         ? { ok: true }
         : reply.code(404).send({ error: "not_found" });
     });
-    protectedApi.get("/api/v1/captures", async (request) => {
-      const q = z
+    protectedApi.get("/api/v1/captures", async (request, reply) => {
+      const parsed = z
         .object({
           limit: z.coerce.number().int().min(1).max(50).default(24),
           cursor: z.string().optional(),
@@ -832,17 +832,39 @@ export function buildApp(
           nodeId: z.string().uuid().optional(),
           topic: z.string().trim().max(100).optional(),
         })
-        .parse(request.query);
-      return store.listCaptures({
+        .safeParse(request.query);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          error: parsed.error.issues.some((issue) => issue.path[0] === "cursor")
+            ? "invalid_cursor"
+            : "invalid_request",
+        });
+      }
+      const q = parsed.data;
+      let cursor: ReturnType<typeof decodeCursor>;
+      try {
+        cursor = decodeCursor(q.cursor);
+      } catch {
+        return reply.code(400).send({ error: "invalid_cursor" });
+      }
+      const page = store.listCaptures({
         userId: auth.user(request)!.id,
         limit: q.limit,
-        ...(q.cursor ? { cursor: q.cursor } : {}),
+        ...(cursor
+          ? { cursor: { createdAt: cursor.createdAt, id: cursor.id } }
+          : {}),
         ...(q.search ? { search: q.search } : {}),
         ...(q.platform ? { platform: q.platform } : {}),
         ...(q.sourceType ? { sourceType: q.sourceType } : {}),
         ...(q.nodeId ? { nodeId: q.nodeId } : {}),
         ...(q.topic ? { topic: q.topic } : {}),
       });
+      return {
+        captures: page.captures,
+        nextCursor: page.nextCursor
+          ? encodeCursor(page.nextCursor)
+          : null,
+      };
     });
     protectedApi.get("/api/v1/capture-facets", async (request) =>
       store.captureFilterFacets(auth.user(request)!.id),
@@ -1023,8 +1045,9 @@ export function buildApp(
     });
     protectedApi.get("/api/v1/library/tree", async (request) => ({
       nodes: store.libraryTree(auth.user(request)!.id),
-      unclassifiedCount: store.unclassifiedCaptures(auth.user(request)!.id)
-        .length,
+      unclassifiedCount: store.unclassifiedCaptureCount(
+        auth.user(request)!.id,
+      ),
     }));
     protectedApi.get("/api/v1/library/nodes/:id", async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
