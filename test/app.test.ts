@@ -4,7 +4,7 @@ import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import tar from "tar-stream";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildApp } from "../src/app.js";
+import { buildApp, canReceiveLiveEvent } from "../src/app.js";
 import { JobStore } from "../src/db.js";
 import { EventHub } from "../src/events.js";
 import { AuthService } from "../src/auth.js";
@@ -488,5 +488,41 @@ describe("API", () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().ip).not.toBe("203.0.113.99");
+  });
+
+  it("streams account events only to their owning browser session", () => {
+    const store = new JobStore(":memory:");
+    const owner = store.createUser("event-owner", "unused-test-hash");
+    const other = store.createUser("event-other", "unused-test-hash");
+    const ownerJob = store.createOrGet({
+      ownerUserId: owner.id,
+      sourceUrl: "https://www.instagram.com/reel/event-owner",
+      normalizedUrl: "https://www.instagram.com/reel/event-owner",
+      sourceHash: "event-owner",
+    }).job;
+    const otherJob = store.createOrGet({
+      ownerUserId: other.id,
+      sourceUrl: "https://www.instagram.com/reel/event-other",
+      normalizedUrl: "https://www.instagram.com/reel/event-other",
+      sourceHash: "event-other",
+    }).job;
+    const ownerEvent = {
+      type: "job",
+      payload: { id: ownerJob.id, status: "failed" },
+    };
+    const otherEvent = {
+      type: "job",
+      payload: { id: otherJob.id, status: "failed" },
+    };
+
+    expect(canReceiveLiveEvent(store, owner.id, ownerEvent)).toBe(true);
+    expect(canReceiveLiveEvent(store, owner.id, otherEvent)).toBe(false);
+    expect(
+      canReceiveLiveEvent(store, owner.id, {
+        type: "library",
+        payload: { action: "node_renamed" },
+      }),
+    ).toBe(true);
+    store.close();
   });
 });

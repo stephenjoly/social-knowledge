@@ -44,6 +44,32 @@ const requestIdSchema = z
   .max(128)
   .regex(/^[A-Za-z0-9._~-]+$/);
 
+export function canReceiveLiveEvent(
+  store: JobStore,
+  userId: string,
+  event: unknown,
+) {
+  const envelope =
+    event && typeof event === "object"
+      ? (event as { payload?: unknown })
+      : {};
+  const item = (envelope.payload && typeof envelope.payload === "object"
+    ? envelope.payload
+    : envelope) as {
+    id?: string;
+    jobId?: string;
+    captureId?: string;
+  };
+  return Boolean(
+    (item.jobId && store.getOwned(userId, item.jobId)) ||
+      (item.captureId && store.getOwnedCapture(userId, item.captureId)) ||
+      (item.id &&
+        (store.getOwned(userId, item.id) ||
+          store.getOwnedCapture(userId, item.id))) ||
+      (!item.id && !item.jobId && !item.captureId),
+  );
+}
+
 export function buildApp(
   config: AppConfig,
   store: JobStore,
@@ -616,6 +642,17 @@ export function buildApp(
           return reply.code(403).send({ error: "invalid_origin" });
       }
     });
+    protectedApi.get("/api/v1/inbox-analytics", async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      const generatedAt = new Date().toISOString();
+      const cutoff = new Date(
+        Date.parse(generatedAt) - 24 * 60 * 60 * 1000,
+      ).toISOString();
+      return {
+        ...store.inboxAnalytics(auth.user(request)!.id, cutoff),
+        generatedAt,
+      };
+    });
     protectedApi.get("/api/v1/jobs", async (request) => {
       const user = auth.user(request)!;
       const q = z
@@ -1181,19 +1218,8 @@ export function buildApp(
         Connection: "keep-alive",
       });
       const listener = (event: unknown) => {
-        const item = event as {
-          id?: string;
-          jobId?: string;
-          captureId?: string;
-        };
-        const allowed =
-          (item.jobId && store.getOwned(userId, item.jobId)) ||
-          (item.captureId && store.getOwnedCapture(userId, item.captureId)) ||
-          (item.id &&
-            (store.getOwned(userId, item.id) ||
-              store.getOwnedCapture(userId, item.id))) ||
-          (!item.id && !item.jobId && !item.captureId);
-        if (allowed) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+        if (canReceiveLiveEvent(store, userId, event))
+          reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
       };
       events.on("event", listener);
       const timer = setInterval(
