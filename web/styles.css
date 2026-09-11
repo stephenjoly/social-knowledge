@@ -972,6 +972,46 @@ form button:disabled {
   text-decoration: underline;
   text-underline-offset: 0.18em;
 }
+.inline-capture-link {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  margin: 0 2px;
+  padding: 2px 6px;
+  border: 1px solid #3b665a;
+  border-radius: 999px;
+  background: #17332c;
+  color: #a8f0d7;
+  font: inherit;
+  font-size: 0.82em;
+  font-weight: 800;
+  line-height: 1.2;
+  vertical-align: 0.08em;
+}
+.inline-capture-link:hover,
+.inline-capture-link:focus-visible {
+  border-color: #79d9b9;
+  background: #21483d;
+}
+.inline-capture-link svg,
+.source-number svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+.platform-mark-fill {
+  fill: currentColor;
+  stroke: none;
+}
+.platform-facebook {
+  color: #a7c9ff;
+}
+.platform-instagram {
+  color: #f3b4d2;
+}
 .chat-message.assistant .message-content blockquote {
   padding-left: 0.9rem;
   border-left: 3px solid #365b50;
@@ -1031,7 +1071,7 @@ form button:disabled {
 }
 .answer-sources button {
   display: grid;
-  grid-template-columns: 28px 1fr;
+  grid-template-columns: 40px 1fr;
   gap: 10px;
   align-items: start;
   padding: 11px;
@@ -1049,9 +1089,12 @@ form button:disabled {
   color: #82928e;
 }
 .source-number {
-  display: grid;
-  place-items: center;
-  width: 25px;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  min-width: 25px;
+  padding: 0 4px;
   height: 25px;
   border-radius: 50%;
   background: #285344;

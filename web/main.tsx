@@ -200,6 +200,38 @@ type Conversation = {
   messages?: ChatMessage[];
 };
 
+function answerWithCaptureLinks(content: string, sources: AskSource[]) {
+  const sourcesByCitation = new Map(
+    sources.map((source) => [source.citation, source]),
+  );
+  return content.replace(/\[(\d+)]/g, (citation, value: string) => {
+    const source = sourcesByCitation.get(Number(value));
+    return source ? `[${value}](capture:${source.id})` : citation;
+  });
+}
+
+function PlatformMark({ platform }: { platform: string }) {
+  const normalized = platform.toLowerCase();
+  if (normalized === "instagram")
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="3" width="18" height="18" rx="5" />
+        <circle cx="12" cy="12" r="4" />
+        <circle cx="17.4" cy="6.7" r="1" className="platform-mark-fill" />
+      </svg>
+    );
+  if (normalized === "facebook")
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M14 21v-8h3l.5-3H14V8.2c0-.9.3-1.7 1.8-1.7H18V3.8c-.7-.1-1.5-.2-2.4-.2-2.5 0-4.3 1.6-4.3 4.4v2H8.5v3h2.8v8H14Z"
+          className="platform-mark-fill"
+        />
+      </svg>
+    );
+  return <span aria-hidden="true">↗</span>;
+}
+
 const stages = [
   "queued",
   "downloading",
@@ -1897,17 +1929,37 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       urlTransform={(url) =>
-                        /^(https?:|mailto:)/i.test(url) ? url : ""
+                        /^(capture:|https?:|mailto:)/i.test(url) ? url : ""
                       }
                       components={{
-                        a: ({ href, children }) => (
-                          <a href={href} target="_blank" rel="noreferrer">
-                            {children}
-                          </a>
-                        ),
+                        a: ({ href, children }) => {
+                          if (href?.startsWith("capture:")) {
+                            const source = message.sources.find(
+                              ({ id }) => id === href.slice(8),
+                            );
+                            if (source)
+                              return (
+                                <button
+                                  type="button"
+                                  className={`inline-capture-link platform-${source.platform.toLowerCase()}`}
+                                  aria-label={`Open ${source.platform} reel: ${source.title}`}
+                                  title={`Open ${source.title}`}
+                                  onClick={() => onOpen(source.id)}
+                                >
+                                  <PlatformMark platform={source.platform} />
+                                  <span>{children}</span>
+                                </button>
+                              );
+                          }
+                          return (
+                            <a href={href} target="_blank" rel="noreferrer">
+                              {children}
+                            </a>
+                          );
+                        },
                       }}
                     >
-                      {message.content}
+                      {answerWithCaptureLinks(message.content, message.sources)}
                     </ReactMarkdown>
                   ) : (
                     message.content
@@ -1942,8 +1994,17 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
                 <div className="answer-sources">
                   <strong>Sources</strong>
                   {message.sources.map((source) => (
-                    <button key={source.id} onClick={() => onOpen(source.id)}>
-                      <span className="source-number">{source.citation}</span>
+                    <button
+                      key={source.id}
+                      aria-label={`Open ${source.platform} reel: ${source.title}`}
+                      onClick={() => onOpen(source.id)}
+                    >
+                      <span
+                        className={`source-number platform-${source.platform.toLowerCase()}`}
+                      >
+                        <PlatformMark platform={source.platform} />
+                        <span>{source.citation}</span>
+                      </span>
                       <span>
                         <b>{source.title}</b>
                         <small>
