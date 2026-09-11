@@ -95,9 +95,17 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(
     page.locator(".chat-message.assistant .answer-sources button").first(),
   ).toBeVisible({ timeout: 60000 });
+  const inlineCaptureLink = page
+    .locator(".chat-message.assistant .inline-capture-link")
+    .first();
+  await expect(inlineCaptureLink).toBeVisible();
+  await expect(inlineCaptureLink.locator("svg")).toBeVisible();
   await expect(
     page.locator(".chat-message.assistant .message-content"),
   ).toContainText(/Lisbon|restaurant/i);
+  await inlineCaptureLink.click();
+  await expect(page.locator(".drawer")).toBeVisible();
+  await page.locator(".close").click();
   await page.reload();
   await page.getByRole("button", { name: "ask" }).click();
   await expect(
