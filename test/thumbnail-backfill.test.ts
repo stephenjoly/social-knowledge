@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  link,
   mkdtemp,
   mkdir,
   readFile,
@@ -97,7 +98,9 @@ async function fixture() {
   return { root, mediaDir, backupsDir, store, capture, video, captureDir };
 }
 
-const validProbe = JSON.stringify({ streams: [{ width: 1080, height: 1920 }] });
+const validProbe = JSON.stringify({
+  streams: [{ width: 1080, height: 1920, codec_name: "mjpeg" }],
+});
 
 function successfulRunner() {
   return vi.fn(async (command: string, args: string[]) => {
@@ -106,10 +109,23 @@ function successfulRunner() {
   });
 }
 
-async function crashManifest(item: Awaited<ReturnType<typeof fixture>>) {
+async function crashManifest(
+  item: Awaited<ReturnType<typeof fixture>>,
+  stage: "published" | "prepared" | "linked" = "published",
+  legacy = false,
+) {
   const thumbnailPath = path.join(item.captureDir, "thumbnail.jpg");
+  const assetId = randomUUID();
+  const temporaryPath = path.join(
+    item.captureDir,
+    `.thumbnail-${assetId}.tmp.jpg`,
+  );
   const bytes = "crash-jpeg";
-  await writeFile(thumbnailPath, bytes);
+  if (stage === "published") await writeFile(thumbnailPath, bytes);
+  else {
+    await writeFile(temporaryPath, bytes);
+    if (stage === "linked") await link(temporaryPath, thumbnailPath);
+  }
   await mkdir(item.backupsDir, { recursive: true });
   const manifestPath = path.join(item.backupsDir, "crashed.jsonl");
   await writeFile(
@@ -119,15 +135,16 @@ async function crashManifest(item: Awaited<ReturnType<typeof fixture>>) {
       at: new Date().toISOString(),
       captureId: item.capture.id,
       videoAssetId: item.video.id,
-      assetId: randomUUID(),
+      assetId,
       videoPath: item.video.path,
       thumbnailPath,
+      ...(legacy ? {} : { temporaryPath }),
       sizeBytes: Buffer.byteLength(bytes),
       sha256: createHash("sha256").update(bytes).digest("hex"),
       createdFile: true,
     })}\n`,
   );
-  return { manifestPath, thumbnailPath };
+  return { manifestPath, thumbnailPath, temporaryPath };
 }
 
 describe("ThumbnailBackfill", () => {
@@ -354,6 +371,61 @@ describe("ThumbnailBackfill", () => {
     });
   });
 
+  it.each(["png", "h264"])("rejects an orphan with codec %s", async (codec) => {
+    const item = await fixture();
+    const thumbnailPath = path.join(item.captureDir, "thumbnail.jpg");
+    await writeFile(thumbnailPath, "not-a-jpeg");
+    const runner = vi.fn(async (_command: string, args: string[]) => ({
+      stdout: JSON.stringify({
+        streams: [
+          {
+            width: 320,
+            height: 240,
+            codec_name: args.at(-1) === thumbnailPath ? codec : "h264",
+          },
+        ],
+      }),
+    }));
+    const service = new ThumbnailBackfill(
+      item.store,
+      item.mediaDir,
+      item.backupsDir,
+      runner,
+    );
+    await expect(service.dryRun()).resolves.toMatchObject({
+      failed: 1,
+      failures: [{ reason: "thumbnail_backfill_orphan_invalid" }],
+    });
+    await expect(service.apply()).rejects.toMatchObject({
+      reason: "thumbnail_backfill_orphan_invalid",
+    });
+    expect(await readFile(thumbnailPath, "utf8")).toBe("not-a-jpeg");
+    expect(item.store.getCapture(item.capture.id)?.assets).toHaveLength(1);
+  });
+
+  it("rejects non-JPEG generated output without inserting an asset", async () => {
+    const item = await fixture();
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      if (command === "ffmpeg") await writeFile(args.at(-1)!, "png-bytes");
+      return {
+        stdout: JSON.stringify({
+          streams: [{ width: 320, height: 240, codec_name: "png" }],
+        }),
+      };
+    });
+    const service = new ThumbnailBackfill(
+      item.store,
+      item.mediaDir,
+      item.backupsDir,
+      runner,
+    );
+    await expect(service.apply()).resolves.toMatchObject({
+      failed: 1,
+      failures: [{ reason: "thumbnail_backfill_not_jpeg" }],
+    });
+    expect(item.store.getCapture(item.capture.id)?.assets).toHaveLength(1);
+  });
+
   it("rejects paths that escape through a symlinked parent", async () => {
     const item = await fixture();
     const outsideDir = path.join(item.root, "outside-capture");
@@ -466,6 +538,106 @@ describe("ThumbnailBackfill", () => {
     await expect(readFile(crashed.thumbnailPath)).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it.each(["prepared", "linked"] as const)(
+    "recovers temporary files after a crash at %s",
+    async (stage) => {
+      const item = await fixture();
+      const crashed = await crashManifest(item, stage);
+      const service = new ThumbnailBackfill(
+        item.store,
+        item.mediaDir,
+        item.backupsDir,
+        successfulRunner(),
+      );
+      await expect(
+        service.rollback(crashed.manifestPath),
+      ).resolves.toMatchObject({ committed: 1, failed: 0 });
+      await expect(readFile(crashed.temporaryPath)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expect(readFile(crashed.thumbnailPath)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expect(
+        service.rollback(crashed.manifestPath),
+      ).resolves.toMatchObject({ skipped: 1, failed: 0 });
+    },
+  );
+
+  it("recovers a legacy manifest's deterministic temporary path", async () => {
+    const item = await fixture();
+    const crashed = await crashManifest(item, "prepared", true);
+    const service = new ThumbnailBackfill(
+      item.store,
+      item.mediaDir,
+      item.backupsDir,
+      successfulRunner(),
+    );
+    await expect(service.rollback(crashed.manifestPath)).resolves.toMatchObject(
+      { committed: 1, failed: 0 },
+    );
+    await expect(readFile(crashed.temporaryPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it.each(["checksum", "symlink", "path"])(
+    "preserves files when the temporary %s mismatches",
+    async (kind) => {
+      const item = await fixture();
+      const crashed = await crashManifest(item, "prepared");
+      if (kind === "checksum")
+        await writeFile(crashed.temporaryPath, "changed");
+      if (kind === "symlink") {
+        await rm(crashed.temporaryPath);
+        await symlink(item.video.path, crashed.temporaryPath);
+      }
+      if (kind === "path") {
+        const entry = JSON.parse(await readFile(crashed.manifestPath, "utf8"));
+        entry.temporaryPath = item.video.path;
+        await writeFile(crashed.manifestPath, `${JSON.stringify(entry)}\n`);
+      }
+      const service = new ThumbnailBackfill(
+        item.store,
+        item.mediaDir,
+        item.backupsDir,
+        successfulRunner(),
+      );
+      await expect(
+        service.rollback(crashed.manifestPath),
+      ).resolves.toMatchObject({ committed: 0, failed: 1 });
+      await expect(readFile(crashed.temporaryPath)).resolves.not.toHaveLength(
+        0,
+      );
+      expect(await readFile(item.video.path, "utf8")).toBe("video-bytes");
+    },
+  );
+
+  it("preserves a temporary file referenced by another asset", async () => {
+    const item = await fixture();
+    const crashed = await crashManifest(item, "prepared");
+    item.store.database
+      .prepare(
+        "INSERT INTO assets(id,capture_id,kind,path,mime_type,size_bytes,position) VALUES(?,?,'thumbnail',?,'image/jpeg',?,1)",
+      )
+      .run(
+        randomUUID(),
+        item.capture.id,
+        crashed.temporaryPath,
+        Buffer.byteLength("crash-jpeg"),
+      );
+    const service = new ThumbnailBackfill(
+      item.store,
+      item.mediaDir,
+      item.backupsDir,
+      successfulRunner(),
+    );
+    await expect(service.rollback(crashed.manifestPath)).resolves.toMatchObject(
+      { skipped: 1, failed: 0 },
+    );
+    expect(await readFile(crashed.temporaryPath, "utf8")).toBe("crash-jpeg");
   });
 
   it("preserves a generated file while another asset references its path", async () => {

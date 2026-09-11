@@ -51,14 +51,22 @@ then back up SQLite and apply the production repair as the container runtime use
   it with a shared frame-zero-plus-15-second selection filter and verify it with real FFmpeg.
 - 2026-09-11: Discovery accounts for missing/duplicate video topology, and rollback deletes a
   generated orphan only when no live asset references its checksum-matching path.
+- 2026-09-11: Prepared records also identify temporary JPEGs. Rollback validates the allocated
+  filename, checksum, size, containment, and asset reference count before removing either file.
+  Older manifests use the deterministic `.thumbnail-<assetId>.tmp.jpg` filename for recovery.
+- 2026-09-11: Both generated and adopted thumbnails must have a nonzero size and FFprobe codec
+  `mjpeg`; source videos retain codec-agnostic validation. CI installs the exact Ubuntu package
+  `7:6.1.1-3ubuntu5` and verifies the installed version (see
+  [Ubuntu package metadata](https://packages.ubuntu.com/noble/ffmpeg)).
 
 ## Verification
 
-On 2026-09-11, `npm run check` passed with 61 tests; three real-FFmpeg tests were skipped on the
-development host because it has no FFmpeg binary. The production image
+On 2026-09-11, `npm run check` passed with 71 tests; three real-FFmpeg tests were skipped on the
+development host because it has no FFmpeg binary. All 74 tests passed in a disposable test image
+using the production FFmpeg runtime, including the actual short-video backfill. The production image
 `social-knowledge:thumbnail-backfill-hardened` built successfully, and the compiled shared frame
 arguments produced exactly one JPEG for a synthetic two-second video and three JPEGs for a
-31-second video inside that image. CI installs FFmpeg 6 on Ubuntu 24.04 so those integration tests
+31-second video inside that image. CI pins FFmpeg on Ubuntu 24.04 so those integration tests
 run there. In staging, verify a fallback capture through the card, detail poster, asset route, and
 archive. In production, run the dry-run, apply, SQLite integrity/foreign-key/duplicate checks, and
 UI spot checks.

@@ -60,6 +60,7 @@ const preparedEntrySchema = z.object({
   assetId: z.string().min(1),
   videoPath: z.string().min(1),
   thumbnailPath: z.string().min(1),
+  temporaryPath: z.string().min(1).optional(),
   sizeBytes: z.number().int().positive(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
   createdFile: z.boolean(),
@@ -189,6 +190,7 @@ export class ThumbnailBackfill {
           assetId: context.assetId,
           videoPath: context.videoPath,
           thumbnailPath: context.thumbnailPath,
+          temporaryPath: context.temporaryPath,
           createdFile: false,
           sizeBytes: null,
           sha256: null,
@@ -250,6 +252,38 @@ export class ThumbnailBackfill {
         }
         await this.assertSafePath(entry.thumbnailPath, false);
 
+        // Older manifests did not record the temporary path. Recover only the
+        // deterministic filename allocated by this command, never an arbitrary path.
+        const temporaryPath = path.join(
+          path.dirname(entry.thumbnailPath),
+          `.thumbnail-${entry.assetId}.tmp.jpg`,
+        );
+        if (
+          !z.string().uuid().safeParse(entry.assetId).success ||
+          (entry.temporaryPath !== undefined &&
+            entry.temporaryPath !== temporaryPath)
+        )
+          throw new UnsafeThumbnailConflict(
+            "thumbnail_backfill_temporary_path_mismatch",
+          );
+        const temporary = entry.createdFile
+          ? await lstatIfExists(temporaryPath)
+          : null;
+        if (temporary) {
+          if (temporary.isSymbolicLink() || !temporary.isFile())
+            throw new UnsafeThumbnailConflict(
+              "thumbnail_backfill_temporary_path_unsafe",
+            );
+          await this.assertSafePath(temporaryPath, true);
+          if (
+            temporary.size !== entry.sizeBytes ||
+            (await checksum(temporaryPath)) !== entry.sha256
+          )
+            throw new UnsafeThumbnailConflict(
+              "thumbnail_backfill_temporary_checksum_mismatch",
+            );
+        }
+
         const removal = this.store.removeBackfilledThumbnail({
           captureId: entry.captureId,
           assetId: entry.assetId,
@@ -265,18 +299,29 @@ export class ThumbnailBackfill {
           await unlink(entry.thumbnailPath);
           removedFile = true;
         }
-        if (removal === "missing" && !removedFile) skipped += 1;
+        let removedTemporaryFile = false;
+        if (
+          temporary &&
+          this.store.assetPathReferenceCount(temporaryPath) === 0
+        ) {
+          await unlink(temporaryPath);
+          removedTemporaryFile = true;
+        }
+        if (removal === "missing" && !removedFile && !removedTemporaryFile)
+          skipped += 1;
         else committed += 1;
         await this.append(manifestPath, {
           ...entry,
           event:
-            removal === "missing" && !removedFile
+            removal === "missing" && !removedFile && !removedTemporaryFile
               ? "rollback_skipped"
               : "rolled_back",
           at: new Date().toISOString(),
           eventOriginal: entry.event,
           removedAsset: removal === "removed",
           removedFile,
+          temporaryPath,
+          removedTemporaryFile,
         });
       } catch (error) {
         failures.push({
@@ -292,6 +337,7 @@ export class ThumbnailBackfill {
           assetId: entry.assetId,
           videoPath: entry.videoPath,
           thumbnailPath: entry.thumbnailPath,
+          temporaryPath: entry.temporaryPath,
           createdFile: entry.createdFile,
           sizeBytes: entry.sizeBytes,
           sha256: entry.sha256,
@@ -328,7 +374,7 @@ export class ThumbnailBackfill {
             "ffmpeg",
             videoFrameArgs(context.videoPath, context.temporaryPath, 1),
           );
-          await this.validateVisualMedia(context.temporaryPath);
+          await this.validateVisualMedia(context.temporaryPath, true);
           preparedPath = context.temporaryPath;
         } catch (error) {
           await unlink(context.temporaryPath).catch(() => undefined);
@@ -346,6 +392,7 @@ export class ThumbnailBackfill {
         assetId: context.assetId,
         videoPath: context.videoPath,
         thumbnailPath: context.thumbnailPath,
+        temporaryPath: context.temporaryPath,
         sizeBytes: thumbnailStat.size,
         sha256: await checksum(preparedPath),
         createdFile: !existingThumbnail,
@@ -432,7 +479,7 @@ export class ThumbnailBackfill {
         throw new UnsafeThumbnailConflict("thumbnail_backfill_target_unsafe");
       await this.assertSafePath(context.thumbnailPath, false);
       try {
-        await this.validateVisualMedia(context.thumbnailPath);
+        await this.validateVisualMedia(context.thumbnailPath, true);
       } catch {
         throw new UnsafeThumbnailConflict("thumbnail_backfill_orphan_invalid");
       }
@@ -509,14 +556,16 @@ export class ThumbnailBackfill {
       );
   }
 
-  private async validateVisualMedia(filePath: string) {
+  private async validateVisualMedia(filePath: string, requireJpeg = false) {
+    if (requireJpeg && (await stat(filePath)).size <= 0)
+      throw new Error("thumbnail_backfill_empty_output");
     const result = await this.runCommand("ffprobe", [
       "-v",
       "error",
       "-select_streams",
       "v:0",
       "-show_entries",
-      "stream=width,height",
+      "stream=width,height,codec_name",
       "-of",
       "json",
       filePath,
@@ -528,6 +577,7 @@ export class ThumbnailBackfill {
             z.object({
               width: z.number().int().positive(),
               height: z.number().int().positive(),
+              codec_name: z.string().optional(),
             }),
           )
           .min(1),
@@ -535,6 +585,8 @@ export class ThumbnailBackfill {
       .safeParse(JSON.parse(result.stdout));
     if (!parsed.success)
       throw new Error("thumbnail_backfill_visual_validation_failed");
+    if (requireJpeg && parsed.data.streams[0]?.codec_name !== "mjpeg")
+      throw new Error("thumbnail_backfill_not_jpeg");
   }
 
   private async unlinkIfUnreferenced(entry: PreparedEntry) {
