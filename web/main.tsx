@@ -204,7 +204,21 @@ function answerWithCaptureLinks(content: string, sources: AskSource[]) {
   const sourcesByCitation = new Map(
     sources.map((source) => [source.citation, source]),
   );
-  return content.replace(/\[(\d+)]/g, (citation, value: string) => {
+  let normalized = content;
+  let replacedCaptureId = false;
+  for (const source of sources) {
+    const captureCitation = `[${source.id}]`;
+    if (normalized.includes(captureCitation)) {
+      normalized = normalized.replaceAll(
+        captureCitation,
+        `[${source.citation}]`,
+      );
+      replacedCaptureId = true;
+    }
+  }
+  if (replacedCaptureId)
+    normalized = normalized.replace(/\n{2,}Sources:\s*(?:\[\d+]\s*)+$/i, "");
+  return normalized.replace(/\[(\d+)]/g, (citation, value: string) => {
     const source = sourcesByCitation.get(Number(value));
     return source ? `[${value}](capture:${source.id})` : citation;
   });

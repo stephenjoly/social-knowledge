@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type OpenAI from "openai";
-import { AskService, extractAnswer } from "../src/ask.js";
+import {
+  AskService,
+  extractAnswer,
+  normalizeInlineCitations,
+} from "../src/ask.js";
 import { JobStore } from "../src/db.js";
 import { testConfig } from "./helpers.js";
 
@@ -133,5 +137,26 @@ describe("AskService", () => {
     expect(
       extractAnswer('{"answer":"Line one\\nLine two","citedCaptureIds":[]}'),
     ).toBe("Line one\nLine two");
+  });
+
+  it("normalizes capture IDs inline and removes the duplicate fallback footer", () => {
+    const id = "2bd8d8da-03a3-46f7-8874-0a61f2eff666";
+    expect(
+      normalizeInlineCitations(
+        `- Gyopo — Korean brewery [${id}].\n\nSources: [1]`,
+        [
+          {
+            id,
+            citation: 1,
+            title: "Toronto date-night restaurants",
+            creator: null,
+            platform: "facebook",
+            synopsis: "Restaurant recommendations",
+            sourceUrl: "https://facebook.com/reel/example",
+            breadcrumb: [],
+          },
+        ],
+      ),
+    ).toBe("- Gyopo — Korean brewery [1].");
   });
 });
