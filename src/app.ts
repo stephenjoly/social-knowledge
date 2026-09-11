@@ -203,6 +203,7 @@ export function buildApp(
           question,
           signal: controller.signal,
           onDelta: (text) => send("delta", { text }),
+          onStatus: (status) => send("status", { assistantId, status }),
         }),
       );
       request.log.info(
@@ -220,8 +221,11 @@ export function buildApp(
         ? "cancelled"
         : timedOut
           ? "timeout"
-          : error instanceof Error && error.message === "invalid_citation"
-            ? "invalid_citation"
+          : error instanceof Error &&
+              ["invalid_citation", "planner_error", "context_limit"].includes(
+                error.message,
+              )
+            ? error.message
             : "provider_error";
       store.failConversationAttempt(
         userId,
@@ -241,7 +245,11 @@ export function buildApp(
           ? "Answer stopped."
           : code === "timeout"
             ? "The answer timed out. You can retry it."
-            : "Ask AI could not finish that answer. You can retry it.",
+            : code === "context_limit"
+              ? "This conversation is too large to continue. Start a new conversation or try a shorter request."
+              : code === "planner_error"
+                ? "I couldn’t understand that follow-up safely. Please try rephrasing it."
+                : "Ask AI could not finish that answer. You can retry it.",
       });
     } finally {
       finished = true;

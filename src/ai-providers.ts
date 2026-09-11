@@ -111,24 +111,43 @@ export class AiProviderService {
                 options,
               );
 
-            const content =
+            const inputMessages =
               typeof request.input === "string"
-                ? request.input
+                ? [{ role: "user", content: request.input }]
                 : (request.input ?? [])
-                    .flatMap((message: any) =>
-                      (Array.isArray(message.content) ? message.content : [])
-                        .filter((item: any) => item.type === "input_text")
-                        .map((item: any) => item.text),
+                    .filter(
+                      (message: any) =>
+                        message?.type === "message" ||
+                        ["system", "developer", "user", "assistant"].includes(
+                          message?.role,
+                        ),
                     )
-                    .join("\n");
+                    .map((message: any) => ({
+                      role:
+                        message.role === "developer"
+                          ? "system"
+                          : (message.role ?? "user"),
+                      content:
+                        typeof message.content === "string"
+                          ? message.content
+                          : (message.content ?? [])
+                              .filter((item: any) => item.type === "input_text")
+                              .map((item: any) => item.text)
+                              .join("\n"),
+                    }))
+                    .filter((message: any) => message.content);
+            const messages = [
+              ...(request.instructions
+                ? [{ role: "system", content: request.instructions }]
+                : []),
+              ...inputMessages,
+            ];
             const format = request.text?.format;
             const completion = await route.client.chat.completions.create(
               {
                 model: route.model,
-                messages: [
-                  { role: "system", content: request.instructions ?? "" },
-                  { role: "user", content },
-                ],
+                messages,
+                ...(request.stream ? { stream: true } : {}),
                 ...(format?.type === "json_schema"
                   ? {
                       response_format: {
@@ -144,13 +163,33 @@ export class AiProviderService {
               },
               options,
             );
-            const output = completion.choices[0]?.message.content ?? "";
             if (request.stream) {
               return (async function* () {
-                yield { type: "response.output_text.delta", delta: output };
+                if (
+                  completion &&
+                  typeof (completion as any)[Symbol.asyncIterator] ===
+                    "function"
+                ) {
+                  for await (const chunk of completion as any) {
+                    const delta = chunk.choices?.[0]?.delta?.content;
+                    if (typeof delta === "string" && delta)
+                      yield {
+                        type: "response.output_text.delta",
+                        delta,
+                      };
+                  }
+                  return;
+                }
+                const output =
+                  (completion as any).choices?.[0]?.message?.content ?? "";
+                if (output)
+                  yield { type: "response.output_text.delta", delta: output };
               })();
             }
-            return { output_text: output };
+            return {
+              output_text:
+                (completion as any).choices?.[0]?.message?.content ?? "",
+            };
           } catch (error) {
             if (
               (error as { status?: number }).status === 401 ||

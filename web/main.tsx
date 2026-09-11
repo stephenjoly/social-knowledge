@@ -186,6 +186,7 @@ type ChatMessage = {
   sources: AskSource[];
   sufficient: boolean | null;
   status: "pending" | "complete" | "failed" | "cancelled";
+  statusText?: string | null;
   errorCode: string | null;
   retryOf: string | null;
   userMessageId: string | null;
@@ -1719,11 +1720,13 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
       throw new Error(
         problem.error === "conversation_busy"
           ? "This conversation is already answering in another tab."
-          : problem.error === "invalid_message"
-            ? "Enter a question between 1 and 2,000 characters."
-            : problem.error === "invalid_request_id"
-              ? "The request identifier was invalid. Please try again."
-              : "Ask AI could not start the answer.",
+          : problem.error === "ai_provider_required"
+            ? "Connect and verify an AI provider in Settings before using Ask AI."
+            : problem.error === "invalid_message"
+              ? "Enter a question between 1 and 2,000 characters."
+              : problem.error === "invalid_request_id"
+                ? "The request identifier was invalid. Please try again."
+                : "Ask AI could not start the answer.",
       );
     }
     const reader = response.body.getReader(),
@@ -1731,7 +1734,8 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
     let buffer = "",
       answer = "",
       sources: AskSource[] = [],
-      sufficient: boolean | null = null;
+      sufficient: boolean | null = null,
+      statusText: string | null = null;
     while (true) {
       const { done, value } = await reader.read();
       buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
@@ -1747,6 +1751,9 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
           sources = data.sources;
           sufficient = data.sufficient;
         }
+        if (event === "status") {
+          statusText = typeof data.status === "string" ? data.status : null;
+        }
         if (event === "error") throw new Error(data.message);
         setCurrent((existing) =>
           existing
@@ -1754,7 +1761,13 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
                 ...existing,
                 messages: (existing.messages ?? []).map((message) =>
                   message.id === temporaryId
-                    ? { ...message, content: answer, sources, sufficient }
+                    ? {
+                        ...message,
+                        content: answer,
+                        sources,
+                        sufficient,
+                        statusText,
+                      }
                     : message,
                 ),
               }
@@ -1813,6 +1826,7 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
       sources: [],
       sufficient: null,
       status: "complete",
+      statusText: null,
       errorCode: null,
       retryOf: null,
       userMessageId: null,
@@ -1825,6 +1839,7 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
       sources: [],
       sufficient: null,
       status: "pending",
+      statusText: null,
       errorCode: null,
       retryOf: null,
       userMessageId: userMessage.id,
@@ -1851,6 +1866,7 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
       sources: [],
       sufficient: null,
       status: "pending",
+      statusText: null,
       errorCode: null,
       retryOf: message.id,
     };
@@ -1979,7 +1995,9 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
                     message.content
                   )
                 ) : message.status === "pending" ? (
-                  <span className="typing">Searching your archive…</span>
+                  <span className="typing">
+                    {message.statusText || "Searching your archive…"}
+                  </span>
                 ) : (
                   <span>
                     {message.status === "cancelled"
