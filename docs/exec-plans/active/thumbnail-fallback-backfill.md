@@ -47,12 +47,21 @@ then back up SQLite and apply the production repair as the container runtime use
 - 2026-09-11: Backfill from archived videos rather than re-importing social sources.
 - 2026-09-11: Use no-clobber file publication and a prepared-before-commit journal so interrupted
   work is recoverable without restoring the full database.
+- 2026-09-11: Review found sparse `fps=1/15` extraction can emit no frame for short videos. Replace
+  it with a shared frame-zero-plus-15-second selection filter and verify it with real FFmpeg.
+- 2026-09-11: Discovery accounts for missing/duplicate video topology, and rollback deletes a
+  generated orphan only when no live asset references its checksum-matching path.
 
 ## Verification
 
-Run focused Vitest coverage, `npm run check`, and a production Docker build. In staging, verify a
-fallback capture through the card, detail poster, asset route, and archive. In production, run the
-dry-run, apply, SQLite integrity/foreign-key/duplicate checks, and UI spot checks.
+On 2026-09-11, `npm run check` passed with 61 tests; three real-FFmpeg tests were skipped on the
+development host because it has no FFmpeg binary. The production image
+`social-knowledge:thumbnail-backfill-hardened` built successfully, and the compiled shared frame
+arguments produced exactly one JPEG for a synthetic two-second video and three JPEGs for a
+31-second video inside that image. CI installs FFmpeg 6 on Ubuntu 24.04 so those integration tests
+run there. In staging, verify a fallback capture through the card, detail poster, asset route, and
+archive. In production, run the dry-run, apply, SQLite integrity/foreign-key/duplicate checks, and
+UI spot checks.
 
 ## Risks and recovery
 

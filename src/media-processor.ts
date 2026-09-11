@@ -2,6 +2,7 @@ import { mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
 import { execa } from "execa";
 import type { DownloadResult, ProcessedMedia } from "./types.js";
+import { videoFrameArgs } from "./video-frames.js";
 
 export function selectThumbnailPath(
   downloadedThumbnailPath: string | null,
@@ -39,19 +40,7 @@ export class MediaProcessor {
 
     await execa(
       "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-i",
-        download.videoPath,
-        "-vf",
-        "fps=1/15,scale='min(1280,iw)':-2",
-        "-frames:v",
-        "12",
-        path.join(framesDir, "%03d.jpg"),
-      ],
+      videoFrameArgs(download.videoPath, path.join(framesDir, "%03d.jpg"), 12),
       { timeout: 10 * 60_000 },
     );
 

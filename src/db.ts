@@ -30,6 +30,12 @@ export type ThumbnailBackfillCandidate = {
   video: AssetRecord;
 };
 
+export type ThumbnailBackfillIssue = {
+  captureId: string;
+  reason: "missing_video" | "multiple_videos";
+  videoCount: number;
+};
+
 export class JobStore {
   readonly database: Database.Database;
   constructor(filename: string) {
@@ -798,27 +804,63 @@ export class JobStore {
       ? this.getAsset(captureId, assetId)
       : null;
   }
-  thumbnailBackfillCandidates(): ThumbnailBackfillCandidate[] {
+  thumbnailBackfillAudit(): {
+    candidates: ThumbnailBackfillCandidate[];
+    issues: ThumbnailBackfillIssue[];
+  } {
     const rows = this.database
       .prepare(
-        `SELECT c.id AS capture_id,a.*
+        `SELECT c.id AS capture_id,a.id AS asset_id,a.capture_id AS asset_capture_id,
+                a.kind,a.path,a.mime_type,a.size_bytes,a.position
          FROM captures c
-         JOIN assets a ON a.capture_id=c.id AND a.kind='video'
+         LEFT JOIN assets a ON a.capture_id=c.id AND a.kind='video'
          WHERE NOT EXISTS (
            SELECT 1 FROM assets thumbnail
            WHERE thumbnail.capture_id=c.id AND thumbnail.kind='thumbnail'
          )
-         AND (
-           SELECT COUNT(*) FROM assets video
-           WHERE video.capture_id=c.id AND video.kind='video'
-         )=1
-         ORDER BY c.created_at,c.id`,
+         ORDER BY c.created_at,c.id,a.position,a.id`,
       )
       .all() as Row[];
-    return rows.map((row) => ({
-      captureId: String(row.capture_id),
-      video: this.mapAsset(row),
-    }));
+    const videosByCapture = new Map<string, AssetRecord[]>();
+    for (const row of rows) {
+      const captureId = String(row.capture_id);
+      const videos = videosByCapture.get(captureId) ?? [];
+      if (row.asset_id)
+        videos.push(
+          this.mapAsset({
+            id: row.asset_id,
+            capture_id: row.asset_capture_id,
+            kind: row.kind,
+            path: row.path,
+            mime_type: row.mime_type,
+            size_bytes: row.size_bytes,
+            position: row.position,
+          }),
+        );
+      videosByCapture.set(captureId, videos);
+    }
+    const candidates: ThumbnailBackfillCandidate[] = [];
+    const issues: ThumbnailBackfillIssue[] = [];
+    for (const [captureId, videos] of videosByCapture) {
+      if (videos.length === 1)
+        candidates.push({ captureId, video: videos[0]! });
+      else
+        issues.push({
+          captureId,
+          reason: videos.length === 0 ? "missing_video" : "multiple_videos",
+          videoCount: videos.length,
+        });
+    }
+    return { candidates, issues };
+  }
+  assetPathReferenceCount(assetPath: string) {
+    return Number(
+      (
+        this.database
+          .prepare("SELECT COUNT(*) AS count FROM assets WHERE path=?")
+          .get(assetPath) as { count: number }
+      ).count,
+    );
   }
   addBackfilledThumbnail(input: {
     captureId: string;

@@ -1,7 +1,10 @@
 import path from "node:path";
 import { loadConfig } from "./config.js";
 import { JobStore } from "./db.js";
-import { ThumbnailBackfill } from "./thumbnail-backfill.js";
+import {
+  ThumbnailBackfill,
+  ThumbnailBackfillAbort,
+} from "./thumbnail-backfill.js";
 
 const args = process.argv.slice(2);
 const mode = args[0];
@@ -23,14 +26,27 @@ if (
       config.mediaDir,
       path.join(config.dataDir, "backups"),
     );
-    const summary =
-      mode === "--dry-run"
-        ? await maintenance.dryRun()
-        : mode === "--apply"
-          ? await maintenance.apply()
-          : await maintenance.rollback(path.resolve(args[1]!));
-    console.log(JSON.stringify(summary));
-    if (summary.failed > 0) process.exitCode = 1;
+    try {
+      const summary =
+        mode === "--dry-run"
+          ? await maintenance.dryRun()
+          : mode === "--apply"
+            ? await maintenance.apply()
+            : await maintenance.rollback(path.resolve(args[1]!));
+      console.log(JSON.stringify(summary));
+      if (summary.failed > 0) process.exitCode = 1;
+    } catch (error) {
+      if (!(error instanceof ThumbnailBackfillAbort)) throw error;
+      console.error(
+        JSON.stringify({
+          status: "aborted",
+          reason: error.reason,
+          captureId: error.captureId,
+          manifestPath: error.manifestPath,
+        }),
+      );
+      process.exitCode = 1;
+    }
   } finally {
     store.close();
   }
