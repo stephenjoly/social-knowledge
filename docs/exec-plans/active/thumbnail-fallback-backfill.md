@@ -61,8 +61,9 @@ then back up SQLite and apply the production repair as the container runtime use
 
 ## Verification
 
-On 2026-09-11, `npm run check` passed with 71 tests; three real-FFmpeg tests were skipped on the
-development host because it has no FFmpeg binary. All 74 tests passed in a disposable test image
+On 2026-09-11, after merging current staging (`63cd883`) in `0b4c95e`, `npm run check` passed with
+74 tests; three real-FFmpeg tests were skipped on the development host because it has no FFmpeg
+binary. All 77 tests passed in a disposable test image
 using the production FFmpeg runtime, including the actual short-video backfill. The production image
 `social-knowledge:thumbnail-backfill-hardened` built successfully, and the compiled shared frame
 arguments produced exactly one JPEG for a synthetic two-second video and three JPEGs for a
@@ -70,6 +71,12 @@ arguments produced exactly one JPEG for a synthetic two-second video and three J
 run there. In staging, verify a fallback capture through the card, detail poster, asset route, and
 archive. In production, run the dry-run, apply, SQLite integrity/foreign-key/duplicate checks, and
 UI spot checks.
+
+The final local production image ID is
+`sha256:0c40a2752befb6b52b2d5bb06c6c4a78c68c2f5841426758b7dab7e401f28d4f`.
+Fixes are recorded in `48a3459`, preserving the earlier reviewed commits. Source publication,
+GitHub CI, preview/staging acceptance, production deployment, and production backfill remain pending.
+The user's explicit source-push approval gate still applies.
 
 ## Risks and recovery
 
