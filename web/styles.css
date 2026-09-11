@@ -106,6 +106,87 @@ nav button.active {
 .stat span {
   color: #80918c;
 }
+.inbox-analytics {
+  margin-bottom: 24px;
+}
+.analytics-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.analytics-card {
+  min-height: 108px;
+  padding: 17px 19px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 13px;
+  border: 1px solid #253235;
+  border-radius: 16px;
+  background: #10191b;
+}
+.analytics-card span {
+  color: #8ea19b;
+  font-size: 13px;
+  font-weight: 700;
+}
+.analytics-card strong {
+  color: #eaf2ef;
+  font-size: 36px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.analytics-skeleton strong {
+  width: 76px;
+  height: 36px;
+  border-radius: 8px;
+  background: #21302f;
+  animation: analytics-pulse 1.4s ease-in-out infinite;
+}
+@keyframes analytics-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.analytics-feedback {
+  margin-top: 10px;
+  padding: 10px 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #6b5245;
+  border-radius: 10px;
+  background: #211a18;
+  color: #f0c7a6;
+  font-size: 13px;
+}
+.analytics-feedback button {
+  flex: 0 0 auto;
+  border: 1px solid #9b7058;
+  border-radius: 8px;
+  background: #30221e;
+  color: #ffd9bd;
+  padding: 6px 11px;
+  font-weight: 800;
+}
+.analytics-feedback button:hover {
+  border-color: #e2a27d;
+}
+.analytics-feedback button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.capture-count-context {
+  margin: 0 0 14px;
+  color: #71847e;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1277,7 +1358,8 @@ form button:disabled {
 }
 @media (prefers-reduced-motion: reduce) {
   .complete-summary,
-  .complete-summary span {
+  .complete-summary span,
+  .analytics-skeleton strong {
     animation: none;
   }
 }
@@ -1650,6 +1732,15 @@ summary {
   .stat {
     display: none;
   }
+  .analytics-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .analytics-card:last-child {
+    grid-column: 1 / -1;
+  }
+  .analytics-card {
+    padding: 15px;
+  }
   .filter-toolbar {
     flex-direction: column;
   }
@@ -1765,6 +1856,12 @@ summary {
   }
 }
 @media (max-width: 430px) {
+  .analytics-cards {
+    grid-template-columns: 1fr;
+  }
+  .analytics-card:last-child {
+    grid-column: auto;
+  }
   .grid {
     grid-template-columns: 1fr;
   }

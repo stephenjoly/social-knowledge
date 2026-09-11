@@ -25,6 +25,12 @@ export type CaptureCursor = {
   id: string;
 };
 
+export type InboxAnalyticsCounts = {
+  totalCaptures: number;
+  capturesLast24Hours: number;
+  failedImports: number;
+};
+
 export class JobStore {
   readonly database: Database.Database;
   constructor(filename: string) {
@@ -101,6 +107,21 @@ export class JobStore {
         )
         .all(userId, limit) as Row[]
     ).map((row) => this.mapJob(row) as JobRecord);
+  }
+  inboxAnalytics(ownerUserId: string, cutoffIso: string): InboxAnalyticsCounts {
+    const row = this.database
+      .prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM captures WHERE owner_user_id=?) AS totalCaptures,
+           (SELECT COUNT(*) FROM captures WHERE owner_user_id=? AND created_at>=?) AS capturesLast24Hours,
+           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND status='failed') AS failedImports`,
+      )
+      .get(ownerUserId, ownerUserId, cutoffIso, ownerUserId) as Row;
+    return {
+      totalCaptures: Number(row.totalCaptures ?? 0),
+      capturesLast24Hours: Number(row.capturesLast24Hours ?? 0),
+      failedImports: Number(row.failedImports ?? 0),
+    };
   }
   claimNext() {
     return this.database.transaction(() => {
