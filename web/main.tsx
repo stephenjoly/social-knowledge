@@ -126,6 +126,12 @@ type CaptureFacets = {
   }>;
   topics: Array<{ label: string; count: number }>;
 };
+type InboxAnalytics = {
+  totalCaptures: number;
+  capturesLast24Hours: number;
+  failedImports: number;
+  generatedAt: string;
+};
 type OAuthConnection = {
   clientId: string;
   name: string;
@@ -1900,6 +1906,18 @@ function App() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [inboxError, setInboxError] = useState<string | null>(null);
   const inboxRequest = useRef(0);
+  const [inboxAnalytics, setInboxAnalytics] = useState<InboxAnalytics | null>(
+    null,
+  );
+  const [loadingAnalytics, setLoadingAnalytics] = useState(true);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  const [analyticsStale, setAnalyticsStale] = useState(false);
+  const analyticsRequest = useRef(0);
+  const analyticsLoaded = useRef(false);
+  const analyticsRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const liveRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inboxFilters = useRef({
     search: "",
     platform: "",
@@ -1971,6 +1989,32 @@ function App() {
       }
     }
   }
+  async function loadInboxAnalytics() {
+    const requestId = ++analyticsRequest.current;
+    setAnalyticsError(null);
+    setLoadingAnalytics(true);
+    try {
+      const result = await api<InboxAnalytics>("/api/v1/inbox-analytics");
+      if (requestId !== analyticsRequest.current) return;
+      setInboxAnalytics(result);
+      setAnalyticsError(null);
+      setAnalyticsStale(false);
+      analyticsLoaded.current = true;
+    } catch {
+      if (requestId !== analyticsRequest.current) return;
+      setAnalyticsError("Unable to refresh inbox summary. Try again.");
+      setAnalyticsStale(analyticsLoaded.current);
+    } finally {
+      if (requestId === analyticsRequest.current) setLoadingAnalytics(false);
+    }
+  }
+  function scheduleAnalyticsRefresh() {
+    if (analyticsRefreshTimer.current) return;
+    analyticsRefreshTimer.current = setTimeout(() => {
+      analyticsRefreshTimer.current = null;
+      void loadInboxAnalytics();
+    }, 250);
+  }
   async function loadSupportingData() {
     const [j, f] = await Promise.all([
       api<{ jobs: Job[] }>("/api/v1/jobs?limit=100"),
@@ -1981,6 +2025,13 @@ function App() {
   }
   async function load() {
     await Promise.all([loadInboxPage(), loadSupportingData()]);
+  }
+  function scheduleLiveRefresh() {
+    if (liveRefreshTimer.current) return;
+    liveRefreshTimer.current = setTimeout(() => {
+      liveRefreshTimer.current = null;
+      void load();
+    }, 250);
   }
   useEffect(() => {
     void check();
@@ -1998,9 +2049,49 @@ function App() {
   useEffect(() => {
     if (authState !== "ready") return;
     void loadSupportingData();
+    void loadInboxAnalytics();
     const stream = new EventSource("/api/v1/events");
-    stream.onmessage = () => void load();
-    return () => stream.close();
+    stream.onmessage = (message) => {
+      scheduleLiveRefresh();
+      try {
+        const event = JSON.parse(message.data) as {
+          type?: string;
+          payload?: { status?: string };
+        };
+        if (
+          event.type === "capture" ||
+          (event.type === "job" &&
+            ["complete", "failed", "queued"].includes(
+              event.payload?.status ?? "",
+            ))
+        ) {
+          scheduleAnalyticsRefresh();
+        }
+      } catch {
+        // Keep the existing live refresh behavior for malformed event data.
+      }
+    };
+    return () => {
+      stream.close();
+      if (analyticsRefreshTimer.current) {
+        clearTimeout(analyticsRefreshTimer.current);
+        analyticsRefreshTimer.current = null;
+      }
+      if (liveRefreshTimer.current) {
+        clearTimeout(liveRefreshTimer.current);
+        liveRefreshTimer.current = null;
+      }
+      analyticsRequest.current += 1;
+    };
+  }, [authState]);
+  useEffect(() => {
+    if (authState === "ready") return;
+    analyticsRequest.current += 1;
+    analyticsLoaded.current = false;
+    setInboxAnalytics(null);
+    setLoadingAnalytics(true);
+    setAnalyticsError(null);
+    setAnalyticsStale(false);
   }, [authState]);
   const hasInboxFilters = Boolean(search || platform || category || topic);
   const counts = useMemo(
@@ -2114,11 +2205,88 @@ function App() {
                   post.
                 </p>
               </div>
-              <div className="stat">
-                <strong>{captures.length}</strong>
-                <span>captures shown</span>
-              </div>
             </div>
+            <section
+              className="inbox-analytics"
+              aria-label="Inbox summary"
+              aria-busy={loadingAnalytics}
+            >
+              {loadingAnalytics && !inboxAnalytics ? (
+                <>
+                  <div className="analytics-cards" aria-hidden="true">
+                    {[
+                      "Total captures",
+                      "Saved in 24 hours",
+                      "Failed imports",
+                    ].map((label) => (
+                      <div
+                        className="analytics-card analytics-skeleton"
+                        key={label}
+                      >
+                        <span>{label}</span>
+                        <strong />
+                      </div>
+                    ))}
+                  </div>
+                  <span className="sr-only">Loading inbox summary…</span>
+                </>
+              ) : inboxAnalytics ? (
+                <>
+                  <div className="analytics-cards">
+                    {(
+                      [
+                        ["Total captures", inboxAnalytics.totalCaptures],
+                        [
+                          "Saved in 24 hours",
+                          inboxAnalytics.capturesLast24Hours,
+                        ],
+                        ["Failed imports", inboxAnalytics.failedImports],
+                      ] as const
+                    ).map(([label, value]) => {
+                      const formatted = value.toLocaleString();
+                      return (
+                        <div
+                          className="analytics-card"
+                          key={label}
+                          role="group"
+                          aria-label={`${label}: ${formatted}`}
+                        >
+                          <span>{label}</span>
+                          <strong>{formatted}</strong>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {analyticsError && (
+                    <div className="analytics-feedback" role="alert">
+                      <span>
+                        {analyticsStale
+                          ? "Summary temporarily stale."
+                          : analyticsError}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={loadingAnalytics}
+                        onClick={() => void loadInboxAnalytics()}
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="analytics-feedback" role="alert">
+                  <span>{analyticsError ?? "Inbox summary unavailable."}</span>
+                  <button
+                    type="button"
+                    disabled={loadingAnalytics}
+                    onClick={() => void loadInboxAnalytics()}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+            </section>
             <div className="inbox-filter-panel">
               <div className="filter-toolbar">
                 <label className="filter-search">
@@ -2221,6 +2389,11 @@ function App() {
                 </div>
               )}
             </div>
+            {!loadingInbox && !inboxError && (
+              <p className="capture-count-context" aria-live="polite">
+                {captures.length.toLocaleString()} captures loaded
+              </p>
+            )}
             <div className="grid">
               {captures.map((c) => (
                 <CaptureCard capture={c} onOpen={setDetail} key={c.id} />

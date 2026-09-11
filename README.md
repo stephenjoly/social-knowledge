@@ -82,7 +82,7 @@ Content-Type: application/json
 }
 ```
 
-The API returns `202` for a new job and `200` for an already-captured URL. The dashboard uses session-authenticated catalog and Activity APIs.
+The API returns `202` for a new job and `200` for an already-captured URL. The dashboard uses session-authenticated catalog, Activity, and account-wide Inbox analytics APIs; `GET /api/v1/inbox-analytics` returns total captures, captures created in the previous 24 hours, and currently failed imports without exposing job details.
 
 Agent endpoints are documented by the OpenAPI 3.1 contract at `/openapi.json`:
 
