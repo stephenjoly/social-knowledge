@@ -123,16 +123,38 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
     page.locator(".conversation-sidebar button.selected"),
   ).toBeVisible();
   await expect(page.locator(".ask-empty")).toBeVisible();
+  await page.getByLabel("Ask your archive").fill("__smoke_stream__");
+  await page.getByRole("button", { name: "Send" }).click();
+  const streamedAnswer = page
+    .locator(".chat-message.assistant .message-content")
+    .last();
+  await expect(page.locator(".chat-composer .stop-answer")).toBeVisible();
+  await expect(streamedAnswer).toContainText("The first part of the answer", {
+    timeout: 10000,
+  });
+  await expect(page.locator(".chat-composer .stop-answer")).toBeVisible();
+  await expect(streamedAnswer).toContainText(
+    "arrives before the answer is complete.",
+    { timeout: 10000 },
+  );
+  await expect(page.locator(".chat-composer .stop-answer")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "＋ New conversation" }).click();
+  await expect(
+    page.locator(".conversation-sidebar button.selected"),
+  ).toBeVisible();
+  await expect(page.locator(".ask-empty")).toBeVisible();
   await page.getByLabel("Ask your archive").fill("__smoke_slow__");
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByRole("button", { name: "Stop" }).click();
   await expect(page.locator(".chat-message.assistant.cancelled")).toBeVisible({
     timeout: 10000,
   });
-  await page
+  const cancelledRetry = page
     .locator(".chat-message.assistant.cancelled")
-    .getByRole("button", { name: "Retry" })
-    .click();
+    .getByRole("button", { name: "Retry" });
+  await expect(cancelledRetry).toBeEnabled({ timeout: 10000 });
+  await cancelledRetry.click();
   await expect(
     page.locator(".chat-message.assistant.complete").last(),
   ).toBeVisible({ timeout: 10000 });
@@ -147,10 +169,11 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(page.locator(".chat-message.assistant.failed")).toBeVisible({
     timeout: 10000,
   });
-  await page
+  const failedRetry = page
     .locator(".chat-message.assistant.failed")
-    .getByRole("button", { name: "Retry" })
-    .click();
+    .getByRole("button", { name: "Retry" });
+  await expect(failedRetry).toBeEnabled({ timeout: 10000 });
+  await failedRetry.click();
   await expect(
     page.locator(".chat-message.assistant.complete").last(),
   ).toBeVisible({ timeout: 10000 });

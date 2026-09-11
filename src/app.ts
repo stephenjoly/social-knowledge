@@ -76,6 +76,7 @@ export function buildApp(
   events: EventHub,
   platformConnectionService = new PlatformConnectionService(store, config),
   aiProviderService = new AiProviderService(store, config),
+  askService?: Pick<AskService, "answer">,
 ) {
   const app = Fastify({
     logger: { level: config.logLevel },
@@ -117,7 +118,8 @@ export function buildApp(
         : ["_No captures assigned directly to this category._"]),
       "",
     ].join("\n");
-  const ask = new AskService(aiProviderService.routedClient(), config, store);
+  const ask =
+    askService ?? new AskService(aiProviderService.routedClient(), config, store);
   const knowledgeExporter = new KnowledgeExporter(store, config);
   let exportCleanup: NodeJS.Timeout | null = null;
   app.addHook("onReady", async () => {
@@ -144,14 +146,18 @@ export function buildApp(
     conversationId: string,
     assistantId: string,
     question: string,
-    smokeMode?: "failure" | "slow" | "complete",
+    smokeMode?: "failure" | "slow" | "stream" | "complete",
   ) => {
     reply.hijack();
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
       Connection: "keep-alive",
     });
+    // Make the SSE response visible to the client immediately, even before
+    // the provider has produced its first text delta.
+    reply.raw.flushHeaders();
     const send = (event: string, data: unknown) => {
       if (!reply.raw.destroyed)
         reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -180,6 +186,50 @@ export function buildApp(
             { once: true },
           ),
         );
+      if (smokeMode === "stream") {
+        const chunks = [
+          "The first part of the answer",
+          " arrives before the answer is complete.",
+        ];
+        for (const [index, text] of chunks.entries()) {
+          await new Promise<void>((resolve, reject) => {
+            let timer: NodeJS.Timeout;
+            const abort = () => {
+              clearTimeout(timer);
+              controller.signal.removeEventListener("abort", abort);
+              reject(
+                Object.assign(new Error("aborted"), { name: "AbortError" }),
+              );
+            };
+            timer = setTimeout(
+              () => {
+                controller.signal.removeEventListener("abort", abort);
+                resolve();
+              },
+              index === 0 ? 50 : 750,
+            );
+            if (controller.signal.aborted) return abort();
+            controller.signal.addEventListener("abort", abort, {
+              once: true,
+            });
+          });
+          if (controller.signal.aborted)
+            throw Object.assign(new Error("aborted"), { name: "AbortError" });
+          send("delta", { text });
+        }
+        const answer = chunks.join("");
+        store.completeConversationAttempt(
+          userId,
+          conversationId,
+          assistantId,
+          answer,
+          [],
+          false,
+        );
+        send("sources", { sources: [], sufficient: false });
+        send("completed", { assistantId });
+        return;
+      }
       if (smokeMode === "complete") {
         const answer = "Deterministic retry completed.";
         send("delta", { text: answer });
@@ -1042,7 +1092,10 @@ export function buildApp(
               ? "failure"
               : user.role === "smoke" && input.data.message === "__smoke_slow__"
                 ? "slow"
-                : undefined;
+                : user.role === "smoke" &&
+                    input.data.message === "__smoke_stream__"
+                  ? "stream"
+                  : undefined;
           return streamAnswer(
             request,
             reply,
@@ -1103,7 +1156,11 @@ export function buildApp(
             });
           const smokeMode =
             user.role === "smoke" &&
-            ["__smoke_failure__", "__smoke_slow__"].includes(attempt.question)
+            [
+              "__smoke_failure__",
+              "__smoke_slow__",
+              "__smoke_stream__",
+            ].includes(attempt.question)
               ? "complete"
               : undefined;
           return streamAnswer(

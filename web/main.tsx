@@ -27,6 +27,15 @@ import {
   CollapsibleTrigger,
 } from "./components/ui/collapsible";
 import { ScrollArea } from "./components/ui/scroll-area";
+import {
+  applyStreamEvent,
+  finishStream,
+  initialStreamState,
+  mergeConversationSnapshot,
+  reconcileConversationAttempt,
+  SseDecoder,
+  type StreamState,
+} from "./chat-stream";
 import "./styles.css";
 
 type Asset = {
@@ -1678,26 +1687,94 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
   const [question, setQuestion] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState("");
+  const [reconciliationNotice, setReconciliationNotice] = useState("");
   const abortRef = useRef<AbortController | null>(null);
-  async function loadList() {
+  const selectedConversationIdRef = useRef<string | null>(null);
+  const activeAttemptRef = useRef<{
+    conversationId: string;
+    temporaryId: string;
+    optimisticUserId: string | null;
+  } | null>(null);
+  const partialAnswersRef = useRef(new Map<string, string>());
+  const serverAssistantIdsRef = useRef(new Map<string, string>());
+
+  type StreamOutcome = StreamState<AskSource>;
+
+  function updateAssistant(temporaryId: string, patch: Partial<ChatMessage>) {
+    setCurrent((existing) =>
+      existing
+        ? {
+            ...existing,
+            messages: (existing.messages ?? []).map((message) =>
+              message.id === temporaryId ? { ...message, ...patch } : message,
+            ),
+          }
+        : existing,
+    );
+  }
+  async function loadList(openFirst = true) {
     const result = await api<{ conversations: Conversation[] }>(
       "/api/v1/conversations",
     );
     setConversations(result.conversations);
-    if (!current && result.conversations[0])
+    if (
+      openFirst &&
+      !selectedConversationIdRef.current &&
+      result.conversations[0]
+    )
       await openConversation(result.conversations[0].id);
   }
-  async function openConversation(id: string) {
+  async function fetchConversation(id: string) {
     const result = await api<{ conversation: Conversation }>(
       `/api/v1/conversations/${id}`,
     );
-    setCurrent(result.conversation);
+    return result.conversation;
+  }
+  async function openConversation(id: string) {
+    selectedConversationIdRef.current = id;
+    const conversation = await fetchConversation(id);
+    if (selectedConversationIdRef.current !== id) return;
+    const active = activeAttemptRef.current;
+    const activeForConversation = active?.conversationId === id ? active : null;
+    const activeAssistantId = activeForConversation
+      ? (serverAssistantIdsRef.current.get(activeForConversation.temporaryId) ??
+        conversation.messages?.find(
+          (message) =>
+            message.role === "assistant" && message.status === "pending",
+        )?.id)
+      : undefined;
+    if (activeForConversation && activeAssistantId)
+      serverAssistantIdsRef.current.set(
+        activeForConversation.temporaryId,
+        activeAssistantId,
+      );
+    setCurrent((existing) =>
+      mergeConversationSnapshot(
+        existing?.id === id ? existing : null,
+        conversation,
+        activeForConversation
+          ? {
+              assistantId: activeAssistantId,
+              partialText: partialAnswersRef.current.get(
+                activeForConversation.temporaryId,
+              ),
+              optimisticMessageIds: [
+                activeForConversation.temporaryId,
+                ...(activeForConversation.optimisticUserId
+                  ? [activeForConversation.optimisticUserId]
+                  : []),
+              ],
+            }
+          : {},
+      ),
+    );
   }
   async function createConversation() {
     const result = await api<{ conversation: Conversation }>(
       "/api/v1/conversations",
       { method: "POST", body: JSON.stringify({}) },
     );
+    selectedConversationIdRef.current = result.conversation.id;
     setCurrent(result.conversation);
     const list = await api<{ conversations: Conversation[] }>(
       "/api/v1/conversations",
@@ -1707,74 +1784,150 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
   useEffect(() => {
     void loadList();
   }, []);
+
+  function applyConversationSnapshot(
+    snapshot: Conversation,
+    options: {
+      assistantId?: string;
+      partialText?: string;
+      optimisticMessageIds?: string[];
+    },
+  ) {
+    setCurrent((existing) =>
+      existing?.id === snapshot.id &&
+      selectedConversationIdRef.current === snapshot.id
+        ? mergeConversationSnapshot(existing, snapshot, options)
+        : existing,
+    );
+  }
+
+  async function reconcileAttempt(
+    conversationId: string,
+    outcome: StreamOutcome,
+    optimisticMessageIds: string[],
+  ) {
+    const assistantId = outcome.assistantId;
+    const isSelected = () =>
+      selectedConversationIdRef.current === conversationId;
+    const result = await reconcileConversationAttempt(
+      assistantId,
+      () => fetchConversation(conversationId),
+      {
+        sleep: (milliseconds) =>
+          new Promise((resolve) => window.setTimeout(resolve, milliseconds)),
+        onSnapshot: (snapshot) => {
+          const assistant = assistantId
+            ? snapshot.messages?.find((message) => message.id === assistantId)
+            : undefined;
+          if (assistant?.status === "complete" && isSelected()) setError("");
+          applyConversationSnapshot(snapshot, {
+            assistantId,
+            partialText: outcome.text,
+            optimisticMessageIds,
+          });
+        },
+        onStillPending: () => {
+          if (isSelected()) setReconciliationNotice("Still stopping…");
+        },
+      },
+    );
+    if (result === "timeout" && isSelected())
+      setError("The answer is still stopping. Refresh before retrying.");
+  }
+
   async function consumeStream(
     response: Response,
-    conversationId: string,
     temporaryId: string,
-  ) {
+  ): Promise<StreamOutcome> {
     if (!response.ok || !response.body) {
       const problem = (await response.json().catch(() => ({}))) as {
         error?: string;
+        assistantId?: string;
       };
-      throw new Error(
-        problem.error === "conversation_busy"
-          ? "This conversation is already answering in another tab."
-          : problem.error === "invalid_message"
-            ? "Enter a question between 1 and 2,000 characters."
-            : problem.error === "invalid_request_id"
-              ? "The request identifier was invalid. Please try again."
-              : "Ask AI could not start the answer.",
+      throw Object.assign(
+        new Error(
+          problem.error === "conversation_busy"
+            ? "This conversation is already answering in another tab."
+            : problem.error === "invalid_message"
+              ? "Enter a question between 1 and 2,000 characters."
+              : problem.error === "invalid_request_id"
+                ? "The request identifier was invalid. Please try again."
+                : "Ask AI could not start the answer.",
+        ),
+        problem.assistantId ? { assistantId: problem.assistantId } : {},
       );
     }
-    const reader = response.body.getReader(),
-      decoder = new TextDecoder();
-    let buffer = "",
-      answer = "",
-      sources: AskSource[] = [],
-      sufficient: boolean | null = null;
-    while (true) {
-      const { done, value } = await reader.read();
-      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
-      const events = buffer.split("\n\n");
-      buffer = events.pop() ?? "";
-      for (const block of events) {
-        const event = /^event: (.+)$/m.exec(block)?.[1];
-        const raw = /^data: (.+)$/m.exec(block)?.[1];
-        if (!raw) continue;
-        const data = JSON.parse(raw);
-        if (event === "delta") answer += data.text;
-        if (event === "sources") {
-          sources = data.sources;
-          sufficient = data.sufficient;
-        }
-        if (event === "error") throw new Error(data.message);
-        setCurrent((existing) =>
-          existing
-            ? {
-                ...existing,
-                messages: (existing.messages ?? []).map((message) =>
-                  message.id === temporaryId
-                    ? { ...message, content: answer, sources, sufficient }
-                    : message,
-                ),
-              }
-            : existing,
-        );
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const parser = new SseDecoder();
+    let state = initialStreamState<AskSource>();
+    let renderedId = temporaryId;
+
+    const setRenderedId = (serverAssistantId: string) => {
+      if (serverAssistantId === renderedId) return;
+      const previousId = renderedId;
+      renderedId = serverAssistantId;
+      serverAssistantIdsRef.current.set(temporaryId, serverAssistantId);
+      setCurrent((existing) =>
+        existing
+          ? {
+              ...existing,
+              messages: (existing.messages ?? []).map((message) =>
+                message.id === previousId
+                  ? { ...message, id: serverAssistantId }
+                  : message,
+              ),
+            }
+          : existing,
+      );
+    };
+    const applyState = (next: StreamOutcome) => {
+      state = next;
+      if (state.assistantId) setRenderedId(state.assistantId);
+      partialAnswersRef.current.set(temporaryId, state.text);
+      updateAssistant(renderedId, {
+        content: state.text,
+        sources: state.sources,
+        sufficient: state.sufficient,
+        ...(state.status === "pending" ? {} : { status: state.status }),
+        errorCode: state.errorCode,
+      });
+    };
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        const chunk = decoder.decode(value ?? new Uint8Array(), {
+          stream: !done,
+        });
+        for (const event of parser.push(chunk, done))
+          applyState(applyStreamEvent(state, event));
+        if (done) break;
       }
-      if (done) break;
+    } catch (error) {
+      await reader.cancel().catch(() => undefined);
+      throw error;
     }
-    await openConversation(conversationId);
+    applyState(finishStream(state));
+    return state;
   }
   async function runRequest(
     url: string,
     body: object,
     conversationId: string,
     temporaryId: string,
+    optimisticUserId: string | null,
   ) {
     const controller = new AbortController();
     abortRef.current = controller;
+    activeAttemptRef.current = {
+      conversationId,
+      temporaryId,
+      optimisticUserId,
+    };
     setStreaming(true);
     setError("");
+    setReconciliationNotice("");
+    let outcome: StreamOutcome | null = null;
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -1782,16 +1935,64 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
         body: JSON.stringify(body),
         signal: controller.signal,
       });
-      await consumeStream(response, conversationId, temporaryId);
+      outcome = await consumeStream(response, temporaryId);
+      if (
+        outcome.status === "failed" &&
+        outcome.errorMessage &&
+        selectedConversationIdRef.current === conversationId
+      )
+        setError(outcome.errorMessage);
     } catch (cause) {
-      if (!(cause instanceof DOMException && cause.name === "AbortError"))
+      const aborted =
+        (cause instanceof DOMException && cause.name === "AbortError") ||
+        (cause instanceof Error && cause.name === "AbortError");
+      if (!aborted) controller.abort();
+      const answer = partialAnswersRef.current.get(temporaryId) ?? "";
+      const responseAssistantId =
+        cause instanceof Error &&
+        "assistantId" in cause &&
+        typeof cause.assistantId === "string"
+          ? cause.assistantId
+          : undefined;
+      const assistantId =
+        serverAssistantIdsRef.current.get(temporaryId) ?? responseAssistantId;
+      outcome = {
+        ...initialStreamState<AskSource>(),
+        assistantId,
+        text: answer,
+        status: aborted ? "cancelled" : "failed",
+        errorCode: aborted ? "cancelled" : "provider_error",
+        errorMessage: aborted
+          ? "Answer stopped."
+          : cause instanceof Error
+            ? cause.message
+            : "Ask AI failed.",
+      };
+      updateAssistant(assistantId ?? temporaryId, {
+        content: answer,
+        status: outcome.status,
+        errorCode: outcome.errorCode,
+      });
+      if (!aborted && selectedConversationIdRef.current === conversationId)
         setError(cause instanceof Error ? cause.message : "Ask AI failed.");
     } finally {
       abortRef.current = null;
-      setStreaming(false);
-      await new Promise((resolve) => window.setTimeout(resolve, 150));
-      await openConversation(conversationId).catch(() => undefined);
-      await loadList().catch(() => undefined);
+      try {
+        if (outcome) {
+          await reconcileAttempt(conversationId, outcome, [
+            temporaryId,
+            ...(optimisticUserId ? [optimisticUserId] : []),
+          ]);
+        }
+        await loadList(false).catch(() => undefined);
+      } finally {
+        partialAnswersRef.current.delete(temporaryId);
+        serverAssistantIdsRef.current.delete(temporaryId);
+        if (activeAttemptRef.current?.temporaryId === temporaryId)
+          activeAttemptRef.current = null;
+        setReconciliationNotice("");
+        setStreaming(false);
+      }
     }
   }
   async function send(text = question) {
@@ -1804,6 +2005,7 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
         { method: "POST", body: JSON.stringify({}) },
       );
       conversation = result.conversation;
+      selectedConversationIdRef.current = conversation.id;
       setCurrent(conversation);
     }
     const userMessage: ChatMessage = {
@@ -1840,6 +2042,7 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
       { message: cleaned, requestId: crypto.randomUUID() },
       conversation.id,
       assistant.id,
+      userMessage.id,
     );
   }
   async function retry(message: ChatMessage) {
@@ -1863,6 +2066,7 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
       { requestId: crypto.randomUUID() },
       current.id,
       temporary.id,
+      null,
     );
   }
   const suggestions = [
@@ -1896,12 +2100,14 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
           {current && (
             <button
               className="delete-chat"
+              disabled={streaming}
               onClick={async () => {
                 if (!window.confirm("Delete this conversation?")) return;
                 await api(`/api/v1/conversations/${current.id}`, {
                   method: "DELETE",
                 });
                 setCurrent(null);
+                selectedConversationIdRef.current = null;
                 await loadList();
               }}
             >
@@ -2035,6 +2241,11 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
         {error && (
           <p className="chat-error" role="alert">
             {error}
+          </p>
+        )}
+        {reconciliationNotice && (
+          <p className="chat-error" role="status">
+            {reconciliationNotice}
           </p>
         )}
         <form
