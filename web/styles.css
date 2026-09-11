@@ -1148,6 +1148,13 @@ form button:disabled {
   border-radius: 14px;
   background: #0e1719;
 }
+.platform-connections > article.selected-provider {
+  border-color: #58c9a6;
+  box-shadow: 0 0 0 1px #58c9a633;
+}
+.ai-provider-settings form {
+  margin-top: 20px;
+}
 .platform-connection-heading,
 .platform-connection-actions {
   display: flex;

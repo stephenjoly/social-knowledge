@@ -29,6 +29,7 @@ export interface JobRecord {
   createdAt: string;
   updatedAt: string;
   nextAttemptAt: string;
+  aiProvider?: "openai" | "cerebras" | null;
 }
 
 export type SourceType = "video" | "image" | "carousel" | "mixed";

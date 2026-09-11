@@ -15,6 +15,11 @@ const optionalUrl = z.preprocess(
     typeof value === "string" && value.trim() === "" ? undefined : value,
   z.string().url().optional(),
 );
+const optionalSecret = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().min(32).optional(),
+);
 
 const schema = z.object({
   HOST: z.string().default("0.0.0.0"),
@@ -28,10 +33,13 @@ const schema = z.object({
   OPENAI_API_KEY: z.string().min(1),
   OPENAI_TRANSCRIPTION_MODEL: z.string().default("gpt-4o-mini-transcribe"),
   OPENAI_ANALYSIS_MODEL: z.string().default("gpt-5-mini"),
+  CEREBRAS_ANALYSIS_MODEL: z.string().default("qwen-3.8-27b"),
   COOKIES_FILE: z.string().optional(),
   FACEBOOK_COOKIES_FILE: z.string().optional(),
   INSTAGRAM_COOKIES_FILE: z.string().optional(),
   PLATFORM_CREDENTIALS_KEY: z.string().min(32).optional(),
+  AI_CREDENTIALS_KEY: optionalSecret,
+  AI_CREDENTIALS_PREVIOUS_KEYS: z.string().default(""),
   FACEBOOK_IMPERSONATE: z.string().default("chrome-99"),
   BOOTSTRAP_ADMIN_USERNAME: z.string().default("demo"),
   BOOTSTRAP_ADMIN_PASSWORD_HASH: z.string().optional(),
@@ -69,6 +77,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     openAiApiKey: parsed.OPENAI_API_KEY,
     transcriptionModel: parsed.OPENAI_TRANSCRIPTION_MODEL,
     analysisModel: parsed.OPENAI_ANALYSIS_MODEL,
+    cerebrasAnalysisModel: parsed.CEREBRAS_ANALYSIS_MODEL,
     facebookCookiesFile:
       parsed.FACEBOOK_COOKIES_FILE || parsed.COOKIES_FILE
         ? path.resolve(
@@ -79,6 +88,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       ? path.resolve(parsed.INSTAGRAM_COOKIES_FILE)
       : undefined,
     platformCredentialsKey: parsed.PLATFORM_CREDENTIALS_KEY ?? parsed.API_TOKEN,
+    aiCredentialsKey:
+      parsed.AI_CREDENTIALS_KEY ??
+      parsed.PLATFORM_CREDENTIALS_KEY ??
+      parsed.API_TOKEN,
+    aiCredentialsPreviousKeys: parsed.AI_CREDENTIALS_PREVIOUS_KEYS.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
     facebookImpersonate: parsed.FACEBOOK_IMPERSONATE.trim() || undefined,
     bootstrapAdminUsername: parsed.BOOTSTRAP_ADMIN_USERNAME,
     bootstrapAdminPasswordHash: parsed.BOOTSTRAP_ADMIN_PASSWORD_HASH,

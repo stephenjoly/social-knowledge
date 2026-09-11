@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import tar from "tar-stream";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp, canReceiveLiveEvent } from "../src/app.js";
 import { JobStore } from "../src/db.js";
 import { EventHub } from "../src/events.js";
@@ -37,6 +37,7 @@ async function readTarGz(buffer: Buffer) {
 describe("API", () => {
   const cleanups: Array<() => Promise<void>> = [];
   afterEach(async () => {
+    vi.unstubAllGlobals();
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
@@ -59,6 +60,21 @@ describe("API", () => {
       payload: { url: "https://fb.watch/example" },
     });
     expect(unauthorized.statusCode).toBe(401);
+
+    const missingProvider = await app.inject({
+      method: "POST",
+      url: "/api/v1/jobs",
+      headers: { authorization: `Bearer ${config.apiToken}` },
+      payload: { url: "https://fb.watch/example" },
+    });
+    expect(missingProvider.statusCode).toBe(428);
+    expect(missingProvider.json().error).toBe("ai_provider_required");
+    store.saveAiProviderConnection(
+      store.defaultUserId()!,
+      "openai",
+      "test",
+      "test…key",
+    );
 
     const accepted = await app.inject({
       method: "POST",
@@ -142,6 +158,25 @@ describe("API", () => {
     )[0];
     expect(cookie).toBeTruthy();
 
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [{ id: "qwen-3.8-27b" }] }), {
+            status: 200,
+          }),
+      ),
+    );
+    const aiConnection = await app.inject({
+      method: "PUT",
+      url: "/api/v1/ai-providers/cerebras",
+      headers: { cookie: cookie! },
+      payload: { apiKey: "csk-test-secret-1234" },
+    });
+    expect(aiConnection.statusCode).toBe(200);
+    expect(aiConnection.body).not.toContain("csk-test-secret-1234");
+    expect(aiConnection.json().configured).toBe(true);
+
     const cookieExport =
       "# Netscape HTTP Cookie File\n.instagram.com\tTRUE\t/\tTRUE\t1999999999\tsessionid\tvery-private-session\n.facebook.com\tTRUE\t/\tTRUE\t1999999999\tc_user\tother-platform\n";
     const platformUpload = await app.inject({
@@ -211,6 +246,7 @@ describe("API", () => {
       payload: { url: "https://www.instagram.com/reel/key-test/" },
     });
     expect(keyedSubmission.statusCode).toBe(202);
+    expect(keyedSubmission.json().job.aiProvider).toBe("cerebras");
     const archivedVideo = path.join(root, "archived-video.mp4");
     await writeFile(archivedVideo, Buffer.from("test-video-bytes"));
     const captured = store.createCapture({

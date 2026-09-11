@@ -20,7 +20,7 @@ The worker retries transient failures and recovers interrupted jobs after a rest
 - Node.js 22+
 - FFmpeg
 - `yt-dlp`
-- An OpenAI API key
+- An OpenAI API key for audio transcription; each user connects OpenAI or Cerebras for generation in Settings
 
 Docker includes all runtime dependencies.
 
@@ -29,12 +29,17 @@ Docker includes all runtime dependencies.
 The safest first run uses disposable project-local storage rather than your real Obsidian vault:
 
 1. Copy `.env.example` to `.env`.
-2. Put a long random value in `API_TOKEN` and add `OPENAI_API_KEY` locally. Never commit `.env`.
+2. Put a long random value in `API_TOKEN` and add `OPENAI_API_KEY` locally for audio transcription. Never commit `.env`.
 3. Set `DATA_DIR=/data`, `VAULT_DIR=/vault`, and `MEDIA_DIR=/media` for Docker.
 4. Create the local `data`, `vault`, and `media` directories.
 5. Run `docker compose up --build -d`.
 6. Open the application and create the first administrator with a strong password. The setup form also requires the `API_TOKEN`; this prevents another network client from claiming a fresh instance.
-7. Submit one public Reel, watch Activity, then open the completed card in Inbox.
+7. In **Settings → AI provider**, connect an OpenAI or Cerebras API key. The app tests the key before encrypting and storing it.
+8. Submit one public Reel, watch Activity, then open the completed card in Inbox.
+
+Capture and Ask requests are blocked until the signed-in account has a verified AI provider. Provider definitions and routing live in `src/ai-providers.ts`, so another OpenAI-compatible generation provider can be added without changing the capture pipeline. Cerebras generation uses `CEREBRAS_ANALYSIS_MODEL` (default `qwen-3.8-27b`). Audio transcription remains on the server-side OpenAI transcription configuration because Cerebras Inference does not expose the audio transcription endpoint used by this application.
+
+Provider credentials use versioned AES-256-GCM encryption. Set `AI_CREDENTIALS_KEY` to a stable random value of at least 32 characters. To rotate it, set the new value and temporarily list old values, comma-separated, in `AI_CREDENTIALS_PREVIOUS_KEYS` until users replace their stored credentials. Existing deployments fall back to `PLATFORM_CREDENTIALS_KEY`, then `API_TOKEN`.
 
 Comment extraction is best-effort. When `FETCH_COMMENTS=true`, the archive keeps up to ten available comments, prioritizing pinned and highly liked responses; a platform returning no comments does not prevent the capture from completing.
 
