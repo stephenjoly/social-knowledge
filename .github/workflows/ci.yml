@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -18,5 +18,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Install pinned FFmpeg
+        env:
+          FFMPEG_VERSION: "7:6.1.1-3ubuntu5"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --allow-downgrades "ffmpeg=${FFMPEG_VERSION}"
+          test "$(dpkg-query -W -f='${Version}' ffmpeg)" = "${FFMPEG_VERSION}"
+          ffmpeg -version
+          ffprobe -version
       - run: npm ci
       - run: npm run check

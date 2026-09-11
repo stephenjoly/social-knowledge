@@ -162,6 +162,21 @@ Do not replace the sandbox vault volume with a host/NAS bind mount until its pat
 
 The original media is deliberately kept outside the vault so Obsidian synchronization does not ingest large files. Each note retains the archive paths and original source URL.
 
+When a platform does not provide a downloadable thumbnail, ingestion archives the first JPEG frame
+already extracted for visual analysis. Existing captures with a video but no thumbnail can be
+audited and repaired without re-downloading or rerunning AI processing:
+
+```bash
+npm run thumbnails:backfill -- --dry-run
+npm run thumbnails:backfill -- --apply
+npm run thumbnails:backfill -- --rollback /data/backups/thumbnail-backfill-<timestamp>.jsonl
+```
+
+Apply mode validates each source video and generated JPEG, never overwrites an existing thumbnail,
+and writes an append-only recovery manifest under `DATA_DIR/backups`. Run it as the same unprivileged
+user that owns the archive. Rollback removes only exact manifest-owned asset records and generated
+files whose checksums still match.
+
 ## Security boundaries
 
 - Only HTTPS Facebook and Instagram hostnames are accepted.
