@@ -8,6 +8,7 @@ import { buildApp, canReceiveLiveEvent } from "../src/app.js";
 import { JobStore } from "../src/db.js";
 import { EventHub } from "../src/events.js";
 import { AuthService } from "../src/auth.js";
+import type { AskService } from "../src/ask.js";
 import { testConfig } from "./helpers.js";
 
 async function readTarGz(buffer: Buffer) {
@@ -560,5 +561,82 @@ describe("API", () => {
       }),
     ).toBe(true);
     store.close();
+  });
+
+  it("sets streaming headers and preserves answer delta ordering", async () => {
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), "social-knowledge-stream-"),
+    );
+    await mkdir(path.join(root, "data"));
+    const config = testConfig(root);
+    const store = new JobStore(config.databasePath);
+    const user = store.createUser("demo", "unused-test-hash");
+    store.saveAiProviderConnection(user.id, "openai", "test", "test…key");
+    const session = "stream-test-session";
+    store.createSession(
+      user.id,
+      AuthService.hashToken(session),
+      new Date(Date.now() + 60000).toISOString(),
+    );
+    const conversation = store.createConversation(user.id)!;
+    const askService: Pick<AskService, "answer"> = {
+      answer: async (input) => {
+        input.onDelta("first");
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        input.onDelta(" second");
+        return {
+          answer: "first second",
+          sources: [],
+          sufficient: false,
+          diagnostics: { terms: [], selected: [] },
+        };
+      },
+    };
+    const app = buildApp(
+      config,
+      store,
+      new EventHub(),
+      undefined,
+      undefined,
+      askService,
+    );
+    cleanups.push(async () => {
+      await app.close();
+      store.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/conversations/${conversation.id}/messages`,
+      headers: {
+        cookie: `social_knowledge_session=${session}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        message: "stream this answer",
+        requestId: "stream-test-request",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("text/event-stream");
+    expect(response.headers["x-accel-buffering"]).toBe("no");
+    const wire = response.body;
+    expect(wire).toContain("event: started");
+    expect(wire).toContain('data: {"text":"first"}');
+    expect(wire).toContain('data: {"text":" second"}');
+    expect(wire).toContain("event: sources");
+    expect(wire).toContain("event: completed");
+    expect(wire.indexOf("event: started")).toBeLessThan(
+      wire.indexOf('data: {"text":"first"}'),
+    );
+    expect(wire.indexOf('data: {"text":"first"}')).toBeLessThan(
+      wire.indexOf('data: {"text":" second"}'),
+    );
+    expect(wire.indexOf('data: {"text":" second"}')).toBeLessThan(
+      wire.indexOf("event: sources"),
+    );
+    expect(wire.indexOf("event: sources")).toBeLessThan(
+      wire.indexOf("event: completed"),
+    );
   });
 });
