@@ -100,9 +100,7 @@ describe("capture pagination and count queries", () => {
     ).map((row) => row.id);
 
     const pageIds: string[] = [];
-    let cursor = undefined as
-      | { createdAt: string; id: string }
-      | undefined;
+    let cursor = undefined as { createdAt: string; id: string } | undefined;
     for (;;) {
       const page = store.listCaptures({
         userId: owner.id,
@@ -156,8 +154,7 @@ describe("capture pagination and count queries", () => {
         .captures.map((capture) => capture.sourceType),
     ).toEqual(["image"]);
     expect(
-      store
-        .listCaptures({ userId: owner.id, limit: 10, topic: "coffee" })
+      store.listCaptures({ userId: owner.id, limit: 10, topic: "coffee" })
         .captures,
     ).toHaveLength(3);
   });
@@ -187,16 +184,19 @@ describe("capture pagination and count queries", () => {
     });
 
     const ownerTree = store.libraryTree(owner.id);
-    expect(ownerTree.find((node) => node.label === "Travel")?.captureCount).toBe(
-      2,
-    );
+    expect(
+      ownerTree.find((node) => node.label === "Travel")?.captureCount,
+    ).toBe(2);
     expect(
       ownerTree.find((node) => node.label === "Restaurants")?.captureCount,
     ).toBe(2);
     const restaurants = ownerTree.find((node) => node.label === "Restaurants")!;
     expect(store.libraryNode(restaurants.id, owner.id)?.captureCount).toBe(2);
     expect(store.libraryNode(restaurants.id, other.id)?.captureCount).toBe(1);
-    expect(store.libraryTree(other.id).find((node) => node.label === "Travel")?.captureCount).toBe(1);
+    expect(
+      store.libraryTree(other.id).find((node) => node.label === "Travel")
+        ?.captureCount,
+    ).toBe(1);
     expect(store.unclassifiedCaptureCount(owner.id)).toBe(1);
 
     const facets = store.captureFilterFacets(owner.id);
@@ -368,7 +368,10 @@ describe("capture pagination and count queries", () => {
       method: "POST",
       url: "/api/auth/setup",
       headers: { authorization: `Bearer ${config.apiToken}` },
-      payload: { username: "analytics-api-owner", password: "a-strong-test-password" },
+      payload: {
+        username: "analytics-api-owner",
+        password: "a-strong-test-password",
+      },
     });
     expect(setup.statusCode).toBe(201);
     const login = await app.inject({
@@ -385,6 +388,12 @@ describe("capture pagination and count queries", () => {
     )[0];
     expect(cookie).toBeTruthy();
     const owner = store.getUserByUsername("analytics-api-owner")!;
+    store.saveAiProviderConnection(
+      owner.id,
+      "openai",
+      "test-encrypted-payload",
+      "test…key",
+    );
     const other = store.createUser("analytics-api-other", "hash");
     addCapture(store, owner.id, "api-recent", {
       createdAt: new Date(Date.now() - 60_000).toISOString(),

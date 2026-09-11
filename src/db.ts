@@ -68,6 +68,7 @@ export class JobStore {
     sourceUrl: string;
     normalizedUrl: string;
     sourceHash: string;
+    aiProvider?: "openai" | "cerebras" | null;
     userNote?: string | undefined;
   }) {
     const existing = this.getByHash(input.ownerUserId, input.sourceHash);
@@ -76,7 +77,7 @@ export class JobStore {
     const id = randomUUID();
     this.database
       .prepare(
-        `INSERT INTO jobs(id,owner_user_id,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at) VALUES(?,?,?,?,?,?,'queued',0,NULL,NULL,?,?,?)`,
+        `INSERT INTO jobs(id,owner_user_id,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at,ai_provider) VALUES(?,?,?,?,?,?,'queued',0,NULL,NULL,?,?,?,?)`,
       )
       .run(
         id,
@@ -88,6 +89,7 @@ export class JobStore {
         now,
         now,
         now,
+        input.aiProvider ?? null,
       );
     this.addEvent(id, "queued", "Capture accepted");
     return { job: this.get(id) as JobRecord, created: true };
@@ -216,15 +218,15 @@ export class JobStore {
       `${failure.title}: ${failure.message}`.slice(0, 500),
     );
   }
-  retry(id: string) {
+  retry(id: string, aiProvider?: "openai" | "cerebras" | null) {
     const job = this.get(id);
     if (!job || job.status !== "failed") return false;
     const now = new Date().toISOString();
     this.database
       .prepare(
-        "UPDATE jobs SET status='queued',attempts=0,error=NULL,error_code=NULL,error_detail=NULL,next_attempt_at=?,updated_at=? WHERE id=?",
+        "UPDATE jobs SET status='queued',attempts=0,error=NULL,error_code=NULL,error_detail=NULL,next_attempt_at=?,updated_at=?,ai_provider=COALESCE(?,ai_provider) WHERE id=?",
       )
-      .run(now, now, id);
+      .run(now, now, aiProvider ?? null, id);
     this.addEvent(id, "queued", "Manual retry requested");
     return true;
   }
@@ -2089,6 +2091,60 @@ export class JobStore {
       .run(errorCode, new Date().toISOString(), userId, platform);
   }
 
+  aiProviderConnection(userId: string) {
+    return this.database
+      .prepare(
+        "SELECT provider,status,key_hint AS keyHint,verified_at AS verifiedAt,updated_at AS updatedAt FROM ai_provider_connections WHERE user_id=?",
+      )
+      .get(userId) as
+      | {
+          provider: string;
+          status: string;
+          keyHint: string;
+          verifiedAt: string;
+          updatedAt: string;
+        }
+      | undefined;
+  }
+  aiProviderConnectionSecret(userId: string) {
+    return this.database
+      .prepare(
+        "SELECT provider,status,encrypted_payload AS encryptedPayload FROM ai_provider_connections WHERE user_id=?",
+      )
+      .get(userId) as
+      | { provider: string; status: string; encryptedPayload: string }
+      | undefined;
+  }
+  saveAiProviderConnection(
+    userId: string,
+    provider: string,
+    encryptedPayload: string,
+    keyHint: string,
+  ) {
+    const now = new Date().toISOString();
+    this.database
+      .prepare(
+        `INSERT INTO ai_provider_connections(user_id,provider,encrypted_payload,status,key_hint,verified_at,created_at,updated_at)
+       VALUES(?,?,?,'verified',?,?,?,?)
+       ON CONFLICT(user_id) DO UPDATE SET provider=excluded.provider,encrypted_payload=excluded.encrypted_payload,status='verified',key_hint=excluded.key_hint,verified_at=excluded.verified_at,updated_at=excluded.updated_at`,
+      )
+      .run(userId, provider, encryptedPayload, keyHint, now, now, now);
+  }
+  deleteAiProviderConnection(userId: string) {
+    return (
+      this.database
+        .prepare("DELETE FROM ai_provider_connections WHERE user_id=?")
+        .run(userId).changes > 0
+    );
+  }
+  markAiProviderAttention(userId: string, provider: string) {
+    this.database
+      .prepare(
+        "UPDATE ai_provider_connections SET status='needs_attention',updated_at=? WHERE user_id=? AND provider=?",
+      )
+      .run(new Date().toISOString(), userId, provider);
+  }
+
   private migrate() {
     this.database.exec(`
     CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,owner_user_id TEXT NOT NULL REFERENCES users(id),source_url TEXT NOT NULL,normalized_url TEXT NOT NULL,source_hash TEXT NOT NULL,user_note TEXT,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,error TEXT,result_note_path TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,next_attempt_at TEXT NOT NULL,UNIQUE(owner_user_id,source_hash));
@@ -2122,6 +2178,7 @@ export class JobStore {
     CREATE TABLE IF NOT EXISTS knowledge_exports(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,status TEXT NOT NULL,include_transcript INTEGER NOT NULL,include_comments INTEGER NOT NULL,path TEXT,error_code TEXT,record_count INTEGER,created_at TEXT NOT NULL,expires_at TEXT NOT NULL,kind TEXT NOT NULL DEFAULT 'metadata');
     CREATE INDEX IF NOT EXISTS idx_knowledge_exports_user ON knowledge_exports(user_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS platform_connections(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,platform TEXT NOT NULL CHECK(platform IN ('facebook','instagram')),encrypted_payload TEXT NOT NULL,status TEXT NOT NULL,cookie_count INTEGER NOT NULL,last_validated_at TEXT,last_used_at TEXT,last_error_code TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(user_id,platform));
+    CREATE TABLE IF NOT EXISTS ai_provider_connections(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('openai','cerebras')),encrypted_payload TEXT NOT NULL,status TEXT NOT NULL,key_hint TEXT NOT NULL,verified_at TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
   `);
     const exportColumns = (
       this.database
@@ -2148,6 +2205,10 @@ export class JobStore {
       this.database.exec("ALTER TABLE jobs ADD COLUMN error_detail TEXT");
     if (!columns.includes("display_title"))
       this.database.exec("ALTER TABLE jobs ADD COLUMN display_title TEXT");
+    if (!columns.includes("ai_provider"))
+      this.database.exec(
+        "ALTER TABLE jobs ADD COLUMN ai_provider TEXT CHECK(ai_provider IN ('openai','cerebras'))",
+      );
     const userColumns = (
       this.database.prepare("PRAGMA table_info(users)").all() as Array<{
         name: string;
@@ -2270,11 +2331,11 @@ export class JobStore {
     try {
       this.database.transaction(() => {
         this.database.exec(
-          `CREATE TABLE jobs_owned(id TEXT PRIMARY KEY,owner_user_id TEXT NOT NULL REFERENCES users(id),source_url TEXT NOT NULL,normalized_url TEXT NOT NULL,source_hash TEXT NOT NULL,user_note TEXT,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,error TEXT,result_note_path TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,next_attempt_at TEXT NOT NULL,error_code TEXT,error_detail TEXT,display_title TEXT,UNIQUE(owner_user_id,source_hash));`,
+          `CREATE TABLE jobs_owned(id TEXT PRIMARY KEY,owner_user_id TEXT NOT NULL REFERENCES users(id),source_url TEXT NOT NULL,normalized_url TEXT NOT NULL,source_hash TEXT NOT NULL,user_note TEXT,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,error TEXT,result_note_path TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,next_attempt_at TEXT NOT NULL,error_code TEXT,error_detail TEXT,display_title TEXT,ai_provider TEXT CHECK(ai_provider IN ('openai','cerebras')),UNIQUE(owner_user_id,source_hash));`,
         );
         this.database
           .prepare(
-            `INSERT INTO jobs_owned SELECT id,?,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at,error_code,error_detail,display_title FROM jobs`,
+            `INSERT INTO jobs_owned SELECT id,?,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at,error_code,error_detail,display_title,ai_provider FROM jobs`,
           )
           .run(owner?.id ?? "");
         this.database.exec(
@@ -2315,6 +2376,7 @@ export class JobStore {
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
       nextAttemptAt: String(row.next_attempt_at),
+      aiProvider: (row.ai_provider as JobRecord["aiProvider"]) ?? null,
     };
   }
   private mapAsset(row: Row): AssetRecord {

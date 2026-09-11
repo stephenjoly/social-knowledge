@@ -17,6 +17,7 @@ import { Translator } from "./translator.js";
 import { TitleGenerator } from "./title-generator.js";
 import { LibraryPublisher } from "./library-publisher.js";
 import { PlatformConnectionService } from "./platform-connections.js";
+import { AiProviderService } from "./ai-providers.js";
 
 const config = loadConfig();
 await Promise.all([
@@ -36,8 +37,10 @@ if (store.userCount() === 0 && config.bootstrapAdminPasswordHash)
   );
 const events = new EventHub();
 const platformConnections = new PlatformConnectionService(store, config);
-const app = buildApp(config, store, events, platformConnections);
+const aiProviders = new AiProviderService(store, config);
+const app = buildApp(config, store, events, platformConnections, aiProviders);
 const openai = new OpenAI({ apiKey: config.openAiApiKey });
+const generationClient = aiProviders.routedClient();
 const worker = new JobWorker(
   config,
   {
@@ -45,14 +48,15 @@ const worker = new JobWorker(
     downloader: new MediaDownloader(config, platformConnections),
     processor: new MediaProcessor(),
     transcriber: new Transcriber(openai, config),
-    translator: new Translator(openai, config),
-    titleGenerator: new TitleGenerator(openai, config),
-    analyzer: new Analyzer(openai, config),
+    translator: new Translator(generationClient, config),
+    titleGenerator: new TitleGenerator(generationClient, config),
+    analyzer: new Analyzer(generationClient, config),
     archive: new MediaArchive(config),
     vaultWriter: new VaultWriter(config.vaultDir),
     events,
     notifier: new Notifier(config),
     libraryPublisher: new LibraryPublisher(store, config.vaultDir),
+    aiProviders,
   },
   app.log,
 );

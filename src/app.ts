@@ -24,7 +24,7 @@ import {
   matchesKnowledge,
 } from "./knowledge.js";
 import { openApiDocument } from "./openapi.js";
-import OpenAI from "openai";
+import { AiProviderService, aiProviderIds } from "./ai-providers.js";
 import { AskService } from "./ask.js";
 import { registerOAuth } from "./oauth.js";
 import { registerMcp } from "./mcp.js";
@@ -75,6 +75,7 @@ export function buildApp(
   store: JobStore,
   events: EventHub,
   platformConnectionService = new PlatformConnectionService(store, config),
+  aiProviderService = new AiProviderService(store, config),
 ) {
   const app = Fastify({
     logger: { level: config.logLevel },
@@ -116,11 +117,7 @@ export function buildApp(
         : ["_No captures assigned directly to this category._"]),
       "",
     ].join("\n");
-  const ask = new AskService(
-    new OpenAI({ apiKey: config.openAiApiKey }),
-    config,
-    store,
-  );
+  const ask = new AskService(aiProviderService.routedClient(), config, store);
   const knowledgeExporter = new KnowledgeExporter(store, config);
   let exportCleanup: NodeJS.Timeout | null = null;
   app.addHook("onReady", async () => {
@@ -198,14 +195,16 @@ export function buildApp(
         send("completed", { assistantId });
         return;
       }
-      const result = await ask.answer({
-        userId,
-        conversationId,
-        assistantId,
-        question,
-        signal: controller.signal,
-        onDelta: (text) => send("delta", { text }),
-      });
+      const result = await aiProviderService.runForUser(userId, () =>
+        ask.answer({
+          userId,
+          conversationId,
+          assistantId,
+          question,
+          signal: controller.signal,
+          onDelta: (text) => send("delta", { text }),
+        }),
+      );
       request.log.info(
         { conversationId, assistantId, retrieval: result.diagnostics },
         "Ask AI retrieval completed",
@@ -369,6 +368,12 @@ export function buildApp(
         principal?.userId ??
         (auth.legacyToken(request) ? store.defaultUserId() : null);
       if (!ownerUserId) return reply.code(401).send({ error: "unauthorized" });
+      if (!aiProviderService.configured(ownerUserId))
+        return reply.code(428).send({
+          error: "ai_provider_required",
+          message:
+            "Connect and verify an AI provider in Settings before capturing.",
+        });
       const input = submitSchema.safeParse(request.body);
       if (!input.success)
         return reply.code(400).send({ error: "invalid_request" });
@@ -380,11 +385,15 @@ export function buildApp(
           normalizedUrl: social.normalized,
           sourceHash: social.hash,
           userNote: input.data.note,
+          aiProvider: aiProviderService.activeProvider(ownerUserId),
         });
         const retried =
           !result.created &&
           result.job.status === "failed" &&
-          store.retry(result.job.id);
+          store.retry(
+            result.job.id,
+            aiProviderService.activeProvider(ownerUserId),
+          );
         const job = retried ? store.get(result.job.id) : result.job;
         events.publish("job", { id: result.job.id, status: job?.status });
         return reply
@@ -684,7 +693,9 @@ export function buildApp(
       const user = auth.user(request)!;
       if (!store.getOwned(user.id, id))
         return reply.code(404).send({ error: "not_found" });
-      if (!store.retry(id))
+      if (!aiProviderService.configured(user.id))
+        return reply.code(428).send({ error: "ai_provider_required" });
+      if (!store.retry(id, aiProviderService.activeProvider(user.id)))
         return reply.code(409).send({ error: "not_retryable" });
       events.publish("job", { id, status: "queued" });
       return { job: store.get(id) };
@@ -693,6 +704,47 @@ export function buildApp(
       const user = auth.user(request)!;
       return { apiKeys: store.listApiKeys(user.id) };
     });
+    protectedApi.get("/api/v1/ai-providers", async (request) => ({
+      providers: aiProviderService.list(auth.user(request)!.id),
+      configured: aiProviderService.configured(auth.user(request)!.id),
+    }));
+    protectedApi.put(
+      "/api/v1/ai-providers/:provider",
+      { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } },
+      async (request, reply) => {
+        const params = z
+          .object({ provider: z.enum(aiProviderIds) })
+          .safeParse(request.params);
+        const body = z
+          .object({ apiKey: z.string().trim().min(1).max(500) })
+          .safeParse(request.body);
+        if (!params.success || !body.success)
+          return reply.code(400).send({ error: "invalid_request" });
+        try {
+          const providers = await aiProviderService.verifyAndSave(
+            auth.user(request)!.id,
+            params.data.provider,
+            body.data.apiKey,
+          );
+          return { providers, configured: true };
+        } catch (error) {
+          const code =
+            error instanceof Error ? error.message : "provider_unavailable";
+          return reply
+            .code(
+              code === "invalid_api_key"
+                ? 401
+                : code === "model_unavailable"
+                  ? 409
+                  : 502,
+            )
+            .send({ error: code });
+        }
+      },
+    );
+    protectedApi.delete("/api/v1/ai-providers", async (request) => ({
+      removed: aiProviderService.remove(auth.user(request)!.id),
+    }));
     protectedApi.get("/api/v1/library-exports", async (request) => ({
       exports: store.listKnowledgeExports(auth.user(request)!.id, "full"),
     }));
@@ -941,6 +993,8 @@ export function buildApp(
       { config: { rateLimit: { max: 30, timeWindow: "1 hour" } } },
       async (request, reply) => {
         const user = auth.user(request)!;
+        if (!aiProviderService.configured(user.id))
+          return reply.code(428).send({ error: "ai_provider_required" });
         const { id } = z
           .object({ id: z.string().uuid() })
           .parse(request.params);
@@ -1017,6 +1071,8 @@ export function buildApp(
       { config: { rateLimit: { max: 30, timeWindow: "1 hour" } } },
       async (request, reply) => {
         const user = auth.user(request)!;
+        if (!aiProviderService.configured(user.id))
+          return reply.code(428).send({ error: "ai_provider_required" });
         const { id, messageId } = z
           .object({ id: z.string().uuid(), messageId: z.string().uuid() })
           .parse(request.params);

@@ -416,6 +416,17 @@ type ApiKey = {
   createdAt: string;
   lastUsedAt: string | null;
 };
+type AiProvider = {
+  id: "openai" | "cerebras";
+  name: string;
+  docsUrl: string;
+  connected: boolean;
+  active: boolean;
+  status: string;
+  keyHint: string | null;
+  verifiedAt: string | null;
+  supportsVision: boolean;
+};
 
 async function api<T>(path: string, options: RequestInit = {}) {
   const response = await fetch(path, {
@@ -714,6 +725,13 @@ function Settings() {
   const [mcpUrl, setMcpUrl] = useState("");
   const [libraryExports, setLibraryExports] = useState<LibraryExport[]>([]);
   const [backupMessage, setBackupMessage] = useState("");
+  const [aiProviders, setAiProviders] = useState<AiProvider[]>([]);
+  const [selectedAiProvider, setSelectedAiProvider] = useState<
+    "openai" | "cerebras"
+  >("cerebras");
+  const [providerApiKey, setProviderApiKey] = useState("");
+  const [providerMessage, setProviderMessage] = useState("");
+  const [verifyingProvider, setVerifyingProvider] = useState(false);
   async function load() {
     const [
       keyResult,
@@ -721,6 +739,7 @@ function Settings() {
       connectionResult,
       exportResult,
       platformResult,
+      aiResult,
     ] = await Promise.all([
       api<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
       api<{
@@ -733,6 +752,7 @@ function Settings() {
       api<{ connections: PlatformConnection[] }>(
         "/api/v1/platform-connections",
       ),
+      api<{ providers: AiProvider[] }>("/api/v1/ai-providers"),
     ]);
     setKeys(keyResult.apiKeys);
     setDefaultLanguage(preferenceResult.preferences.defaultLanguage);
@@ -741,6 +761,7 @@ function Settings() {
     setMcpUrl(connectionResult.mcpUrl);
     setLibraryExports(exportResult.exports);
     setPlatformConnections(platformResult.connections);
+    setAiProviders(aiResult.providers);
   }
   useEffect(() => {
     void load();
@@ -811,6 +832,111 @@ function Settings() {
           access.
         </p>
       </div>
+      <section className="settings-card ai-provider-settings">
+        <h2>AI provider</h2>
+        <p className="settings-help">
+          A verified provider key is required before you can capture or ask
+          questions. The key is encrypted at rest and is never shown again.
+        </p>
+        <div className="platform-connections">
+          {aiProviders.map((provider) => (
+            <article
+              className={provider.active ? "selected-provider" : ""}
+              key={provider.id}
+            >
+              <div className="platform-connection-heading">
+                <div>
+                  <strong>{provider.name}</strong>
+                  <span
+                    className={`connection-state ${provider.connected ? "connected" : ""}`}
+                  >
+                    {provider.connected
+                      ? "Verified · active"
+                      : provider.status === "needs_attention"
+                        ? "Reconnect needed"
+                        : "Not connected"}
+                  </span>
+                </div>
+              </div>
+              <p>
+                {provider.connected
+                  ? `${provider.keyHint} · verified ${new Date(provider.verifiedAt!).toLocaleString()}`
+                  : provider.id === "cerebras"
+                    ? "Fast text generation through Cerebras Inference. Transcript, description, and comments are analyzed; sampled video frames are not sent."
+                    : "OpenAI generation and structured outputs."}
+              </p>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setSelectedAiProvider(provider.id)}
+              >
+                {selectedAiProvider === provider.id ? "Selected" : "Select"}
+              </button>
+            </article>
+          ))}
+        </div>
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setVerifyingProvider(true);
+            setProviderMessage("Testing the key with the provider…");
+            try {
+              await api(`/api/v1/ai-providers/${selectedAiProvider}`, {
+                method: "PUT",
+                body: JSON.stringify({ apiKey: providerApiKey }),
+              });
+              setProviderApiKey("");
+              setProviderMessage(
+                "API key verified. Captures and Ask are ready.",
+              );
+              await load();
+            } catch (error) {
+              setProviderMessage(
+                (error as { body?: { error?: string } }).body?.error ===
+                  "invalid_api_key"
+                  ? "The provider rejected that API key. Check it and try again."
+                  : "The provider could not be reached. Try again shortly.",
+              );
+            } finally {
+              setVerifyingProvider(false);
+            }
+          }}
+        >
+          <label>
+            {selectedAiProvider === "cerebras" ? "Cerebras" : "OpenAI"} API key
+            <input
+              type="password"
+              value={providerApiKey}
+              onChange={(event) => setProviderApiKey(event.target.value)}
+              autoComplete="off"
+              required
+              placeholder="Paste API key"
+            />
+          </label>
+          <button disabled={verifyingProvider}>
+            {verifyingProvider ? "Verifying…" : "Verify and use"}
+          </button>
+        </form>
+        {providerMessage && (
+          <p className="action-feedback" role="status">
+            {providerMessage}
+          </p>
+        )}
+        {aiProviders.some((provider) => provider.connected) && (
+          <button
+            className="secondary-button"
+            onClick={async () => {
+              await api("/api/v1/ai-providers", { method: "DELETE" });
+              setProviderMessage(
+                "AI provider disconnected. New captures are blocked.",
+              );
+              await load();
+            }}
+          >
+            Disconnect AI provider
+          </button>
+        )}
+      </section>
       <section className="settings-card">
         <h2>Facebook and Instagram</h2>
         <p className="settings-help">
@@ -2147,8 +2273,17 @@ function App() {
       setTab("activity");
       await load();
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Submission failed");
-      setTab("activity");
+      const providerRequired =
+        (e as { body?: { error?: string } }).body?.error ===
+        "ai_provider_required";
+      setMessage(
+        providerRequired
+          ? "Connect and verify an AI provider before capturing."
+          : e instanceof Error
+            ? e.message
+            : "Submission failed",
+      );
+      setTab(providerRequired ? "settings" : "activity");
     } finally {
       setSubmitting(false);
     }

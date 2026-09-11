@@ -15,6 +15,7 @@ import { normalizeFailure } from "./failures.js";
 import type { Translator } from "./translator.js";
 import type { TitleGenerator } from "./title-generator.js";
 import type { LibraryPublisher } from "./library-publisher.js";
+import type { AiProviderService } from "./ai-providers.js";
 
 interface WorkerServices {
   store: JobStore;
@@ -29,6 +30,7 @@ interface WorkerServices {
   events: EventHub;
   notifier: Notifier;
   libraryPublisher: LibraryPublisher;
+  aiProviders: AiProviderService;
 }
 
 export class JobWorker {
@@ -66,6 +68,9 @@ export class JobWorker {
     try {
       const job = this.services.store.claimNext();
       if (!job) return;
+      this.services.aiProviders.enterUser(
+        `${job.ownerUserId}:${job.aiProvider ?? ""}`,
+      );
 
       const log = this.logger.child({
         jobId: job.id,
