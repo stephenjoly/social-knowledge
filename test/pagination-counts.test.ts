@@ -211,6 +211,76 @@ describe("capture pagination and count queries", () => {
     );
   });
 
+  it("computes owner-scoped inbox analytics at the inclusive cutoff", () => {
+    const store = new JobStore(":memory:");
+    stores.push(store);
+    const owner = store.createUser("analytics-owner", "hash");
+    const other = store.createUser("analytics-other", "hash");
+    const cutoff = "2026-09-09T12:00:00.000Z";
+
+    addCapture(store, owner.id, "analytics-before", {
+      createdAt: "2026-09-09T11:59:59.999Z",
+    });
+    addCapture(store, owner.id, "analytics-exact", {
+      createdAt: cutoff,
+    });
+    addCapture(store, owner.id, "analytics-after", {
+      createdAt: "2026-09-10T11:00:00.000Z",
+    });
+    addCapture(store, other.id, "analytics-other-capture", {
+      createdAt: "2026-09-10T11:30:00.000Z",
+    });
+
+    const failed = store.createOrGet({
+      ownerUserId: owner.id,
+      sourceUrl: "https://www.instagram.com/reel/analytics-failed",
+      normalizedUrl: "https://www.instagram.com/reel/analytics-failed",
+      sourceHash: "analytics-failed",
+    }).job;
+    store.setStatus(failed.id, "failed");
+    const active = store.createOrGet({
+      ownerUserId: owner.id,
+      sourceUrl: "https://www.instagram.com/reel/analytics-active",
+      normalizedUrl: "https://www.instagram.com/reel/analytics-active",
+      sourceHash: "analytics-active",
+    }).job;
+    store.setStatus(active.id, "processing");
+    const complete = store.createOrGet({
+      ownerUserId: owner.id,
+      sourceUrl: "https://www.instagram.com/reel/analytics-complete",
+      normalizedUrl: "https://www.instagram.com/reel/analytics-complete",
+      sourceHash: "analytics-complete",
+    }).job;
+    store.setStatus(complete.id, "complete");
+    const otherFailed = store.createOrGet({
+      ownerUserId: other.id,
+      sourceUrl: "https://www.instagram.com/reel/analytics-other-failed",
+      normalizedUrl: "https://www.instagram.com/reel/analytics-other-failed",
+      sourceHash: "analytics-other-failed",
+    }).job;
+    store.setStatus(otherFailed.id, "failed");
+
+    expect(store.inboxAnalytics(owner.id, cutoff)).toEqual({
+      totalCaptures: 3,
+      capturesLast24Hours: 2,
+      failedImports: 1,
+    });
+    expect(store.inboxAnalytics(other.id, cutoff)).toEqual({
+      totalCaptures: 1,
+      capturesLast24Hours: 1,
+      failedImports: 1,
+    });
+    const empty = store.createUser("analytics-empty", "hash");
+    expect(store.inboxAnalytics(empty.id, cutoff)).toEqual({
+      totalCaptures: 0,
+      capturesLast24Hours: 0,
+      failedImports: 0,
+    });
+
+    expect(store.retry(failed.id)).toBe(true);
+    expect(store.inboxAnalytics(owner.id, cutoff).failedImports).toBe(0);
+  });
+
   it("returns opaque cursors and exact unclassified counts through the browser API", async () => {
     const root = await mkdtemp(
       path.join(os.tmpdir(), "social-knowledge-pagination-"),
@@ -278,5 +348,128 @@ describe("capture pagination and count queries", () => {
       headers: { cookie: cookie! },
     });
     expect(tree.json().unclassifiedCount).toBe(2);
+  });
+
+  it("serves authenticated account-wide inbox analytics independently of capture queries", async () => {
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), "social-knowledge-analytics-api-"),
+    );
+    await mkdir(`${root}/data`);
+    const config = testConfig(root);
+    const store = new JobStore(config.databasePath);
+    stores.push(store);
+    const app = buildApp(config, store, new EventHub());
+    cleanups.push(async () => {
+      await app.close();
+      await rm(root, { recursive: true, force: true });
+    });
+
+    const setup = await app.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      headers: { authorization: `Bearer ${config.apiToken}` },
+      payload: { username: "analytics-api-owner", password: "a-strong-test-password" },
+    });
+    expect(setup.statusCode).toBe(201);
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: {
+        username: "analytics-api-owner",
+        password: "a-strong-test-password",
+      },
+    });
+    const setCookie = login.headers["set-cookie"];
+    const cookie = (Array.isArray(setCookie) ? setCookie[0] : setCookie)?.split(
+      ";",
+    )[0];
+    expect(cookie).toBeTruthy();
+    const owner = store.getUserByUsername("analytics-api-owner")!;
+    const other = store.createUser("analytics-api-other", "hash");
+    addCapture(store, owner.id, "api-recent", {
+      createdAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    addCapture(store, owner.id, "api-old", {
+      createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+    });
+    addCapture(store, other.id, "api-other-recent", {
+      createdAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const failed = store.createOrGet({
+      ownerUserId: owner.id,
+      sourceUrl: "https://www.instagram.com/reel/api-failed",
+      normalizedUrl: "https://www.instagram.com/reel/api-failed",
+      sourceHash: "api-failed",
+    }).job;
+    store.setStatus(failed.id, "failed");
+    const otherFailed = store.createOrGet({
+      ownerUserId: other.id,
+      sourceUrl: "https://www.instagram.com/reel/api-other-failed",
+      normalizedUrl: "https://www.instagram.com/reel/api-other-failed",
+      sourceHash: "api-other-failed",
+    }).job;
+    store.setStatus(otherFailed.id, "failed");
+
+    expect(
+      (await app.inject({ method: "GET", url: "/api/v1/inbox-analytics" }))
+        .statusCode,
+    ).toBe(401);
+    const analytics = await app.inject({
+      method: "GET",
+      url: "/api/v1/inbox-analytics",
+      headers: { cookie: cookie! },
+    });
+    expect(analytics.statusCode).toBe(200);
+    expect(analytics.headers["cache-control"]).toBe("no-store");
+    expect(analytics.json()).toEqual({
+      totalCaptures: 2,
+      capturesLast24Hours: 1,
+      failedImports: 1,
+      generatedAt: expect.any(String),
+    });
+    expect(Number.isNaN(Date.parse(analytics.json().generatedAt))).toBe(false);
+
+    const filtered = await app.inject({
+      method: "GET",
+      url: "/api/v1/captures?limit=1&platform=facebook",
+      headers: { cookie: cookie! },
+    });
+    expect(filtered.statusCode).toBe(200);
+    const firstPage = await app.inject({
+      method: "GET",
+      url: "/api/v1/captures?limit=1",
+      headers: { cookie: cookie! },
+    });
+    expect(firstPage.statusCode).toBe(200);
+    expect(firstPage.json().nextCursor).toEqual(expect.any(String));
+    const secondPage = await app.inject({
+      method: "GET",
+      url: `/api/v1/captures?limit=1&cursor=${encodeURIComponent(firstPage.json().nextCursor)}`,
+      headers: { cookie: cookie! },
+    });
+    expect(secondPage.statusCode).toBe(200);
+    const afterFilter = await app.inject({
+      method: "GET",
+      url: "/api/v1/inbox-analytics",
+      headers: { cookie: cookie! },
+    });
+    expect(afterFilter.json()).toMatchObject({
+      totalCaptures: 2,
+      capturesLast24Hours: 1,
+      failedImports: 1,
+    });
+
+    const retried = await app.inject({
+      method: "POST",
+      url: `/api/v1/jobs/${failed.id}/retry`,
+      headers: { cookie: cookie! },
+    });
+    expect(retried.statusCode).toBe(200);
+    const afterRetry = await app.inject({
+      method: "GET",
+      url: "/api/v1/inbox-analytics",
+      headers: { cookie: cookie! },
+    });
+    expect(afterRetry.json()).toMatchObject({ failedImports: 0 });
   });
 });
