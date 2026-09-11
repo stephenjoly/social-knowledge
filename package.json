@@ -18,7 +18,8 @@
     "test:e2e": "playwright test",
     "smoke:live": "node scripts/smoke-live.mjs",
     "library:migrate:dry-run": "node dist/migrate-library.js --dry-run",
-    "library:migrate:apply": "node dist/migrate-library.js --apply"
+    "library:migrate:apply": "node dist/migrate-library.js --apply",
+    "thumbnails:backfill": "node dist/thumbnail-backfill-cli.js"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
