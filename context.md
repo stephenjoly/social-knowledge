@@ -28,5 +28,6 @@ Social Knowledge turns deliberately submitted Facebook and Instagram media into 
 | Preview, staging, production, rollback | [Deployment model](docs/deployment-model.md) |
 | Security | [Security policy](SECURITY.md) |
 | Plans and deferred work | [Execution plans](docs/exec-plans/README.md), [technical debt](docs/tech-debt.md) |
+| Product priorities | [Roadmap](docs/roadmap.md) |
 
 Update this file only when the product purpose, top-level architecture, release ownership, or invariants change.
