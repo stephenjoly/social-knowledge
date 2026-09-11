@@ -25,6 +25,11 @@ export type CaptureCursor = {
   id: string;
 };
 
+export type ThumbnailBackfillCandidate = {
+  captureId: string;
+  video: AssetRecord;
+};
+
 export class JobStore {
   readonly database: Database.Database;
   constructor(filename: string) {
@@ -307,9 +312,7 @@ export class JobStore {
       params.push(query.userId);
     }
     if (query.cursor) {
-      where.push(
-        "(c.created_at < ? OR (c.created_at = ? AND c.id < ?))",
-      );
+      where.push("(c.created_at < ? OR (c.created_at = ? AND c.id < ?))");
       params.push(
         query.cursor.createdAt,
         query.cursor.createdAt,
@@ -794,6 +797,105 @@ export class JobStore {
     return this.getOwnedCapture(userId, captureId)
       ? this.getAsset(captureId, assetId)
       : null;
+  }
+  thumbnailBackfillCandidates(): ThumbnailBackfillCandidate[] {
+    const rows = this.database
+      .prepare(
+        `SELECT c.id AS capture_id,a.*
+         FROM captures c
+         JOIN assets a ON a.capture_id=c.id AND a.kind='video'
+         WHERE NOT EXISTS (
+           SELECT 1 FROM assets thumbnail
+           WHERE thumbnail.capture_id=c.id AND thumbnail.kind='thumbnail'
+         )
+         AND (
+           SELECT COUNT(*) FROM assets video
+           WHERE video.capture_id=c.id AND video.kind='video'
+         )=1
+         ORDER BY c.created_at,c.id`,
+      )
+      .all() as Row[];
+    return rows.map((row) => ({
+      captureId: String(row.capture_id),
+      video: this.mapAsset(row),
+    }));
+  }
+  addBackfilledThumbnail(input: {
+    captureId: string;
+    videoAssetId: string;
+    assetId: string;
+    path: string;
+    mimeType: "image/jpeg";
+    sizeBytes: number;
+  }): "added" | "already_present" {
+    return this.database.transaction(() => {
+      const capture = this.database
+        .prepare("SELECT id FROM captures WHERE id=?")
+        .get(input.captureId) as { id: string } | undefined;
+      if (!capture) throw new Error("thumbnail_backfill_capture_missing");
+
+      const videos = this.database
+        .prepare(
+          "SELECT * FROM assets WHERE capture_id=? AND kind='video' ORDER BY position,id",
+        )
+        .all(input.captureId) as Row[];
+      if (videos.length !== 1 || String(videos[0]?.id) !== input.videoAssetId)
+        throw new Error("thumbnail_backfill_video_mismatch");
+
+      const existing = this.database
+        .prepare(
+          "SELECT id FROM assets WHERE capture_id=? AND kind='thumbnail' LIMIT 1",
+        )
+        .get(input.captureId);
+      if (existing) return "already_present";
+      if (!Number.isSafeInteger(input.sizeBytes) || input.sizeBytes <= 0)
+        throw new Error("thumbnail_backfill_invalid_size");
+
+      const position = Number(
+        (
+          this.database
+            .prepare(
+              "SELECT COALESCE(MAX(position),-1)+1 AS position FROM assets WHERE capture_id=?",
+            )
+            .get(input.captureId) as { position: number }
+        ).position,
+      );
+      this.database
+        .prepare(
+          "INSERT INTO assets(id,capture_id,kind,path,mime_type,size_bytes,position) VALUES(?,?,'thumbnail',?,?,?,?)",
+        )
+        .run(
+          input.assetId,
+          input.captureId,
+          input.path,
+          input.mimeType,
+          input.sizeBytes,
+          position,
+        );
+      return "added";
+    })();
+  }
+  removeBackfilledThumbnail(input: {
+    captureId: string;
+    assetId: string;
+    path: string;
+    sizeBytes: number;
+  }): "removed" | "missing" {
+    return this.database.transaction(() => {
+      const asset = this.database
+        .prepare(
+          "SELECT * FROM assets WHERE id=? AND capture_id=? AND kind='thumbnail'",
+        )
+        .get(input.assetId, input.captureId) as Row | undefined;
+      if (!asset) return "missing";
+      if (
+        String(asset.path) !== input.path ||
+        Number(asset.size_bytes) !== input.sizeBytes
+      )
+        throw new Error("thumbnail_backfill_asset_mismatch");
+      this.database.prepare("DELETE FROM assets WHERE id=?").run(input.assetId);
+      return "removed";
+    })();
   }
   private assets(captureId: string) {
     return (

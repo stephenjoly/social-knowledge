@@ -3,6 +3,13 @@ import path from "node:path";
 import { execa } from "execa";
 import type { DownloadResult, ProcessedMedia } from "./types.js";
 
+export function selectThumbnailPath(
+  downloadedThumbnailPath: string | null,
+  framePaths: string[],
+) {
+  return downloadedThumbnailPath ?? framePaths[0] ?? null;
+}
+
 export class MediaProcessor {
   async process(download: DownloadResult): Promise<ProcessedMedia> {
     const audioPath = path.join(download.workDir, "audio.mp3");
@@ -11,7 +18,22 @@ export class MediaProcessor {
 
     await execa(
       "ffmpeg",
-      ["-hide_banner", "-loglevel", "error", "-y", "-i", download.videoPath, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", audioPath],
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        download.videoPath,
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-b:a",
+        "64k",
+        audioPath,
+      ],
       { timeout: 10 * 60_000 },
     );
 
@@ -38,6 +60,11 @@ export class MediaProcessor {
       .sort()
       .map((file) => path.join(framesDir, file));
 
-    return { ...download, audioPath, framePaths };
+    return {
+      ...download,
+      audioPath,
+      framePaths,
+      thumbnailPath: selectThumbnailPath(download.thumbnailPath, framePaths),
+    };
   }
 }

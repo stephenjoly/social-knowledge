@@ -1,0 +1,61 @@
+# Durable thumbnail fallback and archive backfill
+
+Status: active
+Owner: Codex
+Started: 2026-09-11
+
+## Context
+
+Production has archived videos for every capture, but 82 captures observed on 2026-09-10 have no
+thumbnail asset because Facebook did not consistently provide a downloadable thumbnail. The Inbox
+therefore renders a platform-letter placeholder even though the source video is healthy.
+
+## Scope
+
+Use an already-extracted analysis frame when a new download has no upstream thumbnail. Add an
+idempotent, journaled maintenance command to generate and register JPEG thumbnails from existing
+archived videos. Do not re-download sources or rerun transcription, analysis, or classification.
+
+## Acceptance criteria
+
+- New captures retain upstream thumbnails and otherwise archive the first extracted JPEG frame.
+- Dry-run reports every capture with exactly one video and no thumbnail without writing data.
+- Apply validates generated JPEGs, never overwrites a file or asset, and is resumable.
+- Rollback removes only manifest-owned asset rows and checksum-matching generated files.
+- Production backfill leaves no readable video capture without a thumbnail asset.
+
+## Approach
+
+Add persistence methods for thumbnail-backfill discovery and exact conditional insert/removal. Add a
+compiled maintenance service and CLI with dry-run, apply, and rollback modes. Journal prepared and
+committed mutations in append-only JSONL. Validate and release through preview/staging/production,
+then back up SQLite and apply the production repair as the container runtime user.
+
+## Progress
+
+- [x] Implement runtime fallback and persistence boundary.
+- [x] Implement maintenance CLI and rollback journal.
+- [x] Add focused regression and recovery tests.
+- [x] Pass repository checks and container build.
+- [ ] Validate staging, deploy production, and apply the backfill.
+- [ ] Reconcile homelab documentation and archive this plan.
+
+## Decisions
+
+- 2026-09-11: Preserve every upstream thumbnail; use the first existing analysis frame only as the
+  fallback so normal ingestion adds no extra media pass.
+- 2026-09-11: Backfill from archived videos rather than re-importing social sources.
+- 2026-09-11: Use no-clobber file publication and a prepared-before-commit journal so interrupted
+  work is recoverable without restoring the full database.
+
+## Verification
+
+Run focused Vitest coverage, `npm run check`, and a production Docker build. In staging, verify a
+fallback capture through the card, detail poster, asset route, and archive. In production, run the
+dry-run, apply, SQLite integrity/foreign-key/duplicate checks, and UI spot checks.
+
+## Risks and recovery
+
+Malformed or missing videos are recorded and skipped without changing source data. Unsafe existing
+thumbnail paths abort rather than overwrite. Application regressions use the retained Dokploy
+release; backfill rollback uses exact asset IDs and file checksums from the manifest.
