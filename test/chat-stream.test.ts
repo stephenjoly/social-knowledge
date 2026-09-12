@@ -86,12 +86,17 @@ describe("SSE stream helpers", () => {
       data: { sources: [], sufficient: false },
     });
     state = applyStreamEvent(state, {
+      event: "status",
+      data: { status: "Writing a grounded answer…" },
+    });
+    state = applyStreamEvent(state, {
       event: "cancelled",
       data: { errorCode: "cancelled", message: "Answer stopped." },
     });
     expect(state).toMatchObject({
       assistantId: "assistant-1",
       text: "**partial",
+      statusText: "Writing a grounded answer…",
       status: "cancelled",
       errorCode: "cancelled",
     });

@@ -40,6 +40,8 @@ const schema = z.object({
   PLATFORM_CREDENTIALS_KEY: z.string().min(32).optional(),
   AI_CREDENTIALS_KEY: optionalSecret,
   AI_CREDENTIALS_PREVIOUS_KEYS: z.string().default(""),
+  ASK_CONTEXT_BUDGET_TOKENS: z.coerce.number().int().min(8000).default(24000),
+  ASK_COMPACTION_THRESHOLD: z.coerce.number().min(0.4).max(0.9).default(0.7),
   FACEBOOK_IMPERSONATE: z.string().default("chrome-99"),
   BOOTSTRAP_ADMIN_USERNAME: z.string().default("demo"),
   BOOTSTRAP_ADMIN_PASSWORD_HASH: z.string().optional(),
@@ -95,6 +97,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     aiCredentialsPreviousKeys: parsed.AI_CREDENTIALS_PREVIOUS_KEYS.split(",")
       .map((value) => value.trim())
       .filter(Boolean),
+    askContextBudgetTokens: parsed.ASK_CONTEXT_BUDGET_TOKENS,
+    askCompactionThreshold: parsed.ASK_COMPACTION_THRESHOLD,
     facebookImpersonate: parsed.FACEBOOK_IMPERSONATE.trim() || undefined,
     bootstrapAdminUsername: parsed.BOOTSTRAP_ADMIN_USERNAME,
     bootstrapAdminPasswordHash: parsed.BOOTSTRAP_ADMIN_PASSWORD_HASH,

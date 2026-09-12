@@ -41,6 +41,8 @@ Capture and Ask requests are blocked until the signed-in account has a verified 
 
 Provider credentials use versioned AES-256-GCM encryption. Set `AI_CREDENTIALS_KEY` to a stable random value of at least 32 characters. To rotate it, set the new value and temporarily list old values, comma-separated, in `AI_CREDENTIALS_PREVIOUS_KEYS` until users replace their stored credentials. Existing deployments fall back to `PLATFORM_CREDENTIALS_KEY`, then `API_TOKEN`.
 
+Ask AI stores each user and assistant turn with its role and uses a dedicated turn planner to resolve follow-ups. Formatting-only follow-ups reuse the prior answer's cited captures, while new subjects run archive search. When the conversation approaches `ASK_CONTEXT_BUDGET_TOKENS` (default `24000`), older turns are replaced in the model request by a persisted, untrusted checkpoint; the original transcript remains intact in SQLite. If the summarizer is temporarily unavailable, a bounded local checkpoint excerpt keeps the turn usable and is marked in retrieval diagnostics. Tune `ASK_COMPACTION_THRESHOLD` (default `0.7`) to compact earlier or later.
+
 Comment extraction is best-effort. When `FETCH_COMMENTS=true`, the archive keeps up to ten available comments, prioritizing pinned and highly liked responses; a platform returning no comments does not prevent the capture from completing.
 
 ## Local development

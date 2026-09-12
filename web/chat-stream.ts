@@ -47,6 +47,7 @@ export type StreamState<Source = unknown> = {
   text: string;
   sources: Source[];
   sufficient: boolean | null;
+  statusText: string | null;
   status: StreamStatus;
   errorCode: string | null;
   errorMessage: string | undefined;
@@ -58,6 +59,7 @@ export function initialStreamState<Source = unknown>(): StreamState<Source> {
     text: "",
     sources: [],
     sufficient: null,
+    statusText: null,
     status: "pending",
     errorCode: null,
     errorMessage: undefined,
@@ -89,6 +91,12 @@ export function applyStreamEvent<Source = unknown>(
       ...state,
       sources: Array.isArray(data.sources) ? (data.sources as Source[]) : [],
       sufficient: typeof data.sufficient === "boolean" ? data.sufficient : null,
+    };
+  }
+  if (event.event === "status") {
+    return {
+      ...state,
+      statusText: typeof data.status === "string" ? data.status : null,
     };
   }
   if (event.event === "completed") return { ...state, status: "complete" };

@@ -122,6 +122,68 @@ describe("AI provider settings", () => {
     store.close();
   });
 
+  it("preserves role-ordered conversation history when routing to Cerebras", async () => {
+    const store = new JobStore(":memory:");
+    const user = store.createUser("role-order", "hash");
+    let chatBody: any = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith("/models"))
+          return new Response(
+            JSON.stringify({ data: [{ id: "qwen-3.8-27b" }] }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        chatBody = JSON.parse(String(init?.body ?? "{}"));
+        return new Response(
+          JSON.stringify({
+            choices: [
+              { message: { role: "assistant", content: '{"ok":true}' } },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+    const service = new AiProviderService(store, testConfig("/tmp/ai-roles"));
+    await service.verifyAndSave(user.id, "cerebras", "csk-role-order-1234");
+    await service.runForUser(user.id, () =>
+      service.routedClient().responses.create({
+        model: "ignored",
+        instructions: "Return JSON.",
+        input: [
+          { role: "user", content: "first question" },
+          { role: "assistant", content: "first answer" },
+          { role: "user", content: "follow-up" },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "test",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              required: ["ok"],
+              properties: { ok: { type: "boolean" } },
+            },
+          },
+        },
+      }),
+    );
+    expect(chatBody.messages).toEqual([
+      { role: "system", content: "Return JSON." },
+      { role: "user", content: "first question" },
+      { role: "assistant", content: "first answer" },
+      { role: "user", content: "follow-up" },
+    ]);
+    store.close();
+  });
+
   it("marks a provider as needing attention after authentication is revoked", async () => {
     const store = new JobStore(":memory:");
     const user = store.createUser("demo", "hash");

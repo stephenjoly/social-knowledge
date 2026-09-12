@@ -581,6 +581,7 @@ describe("API", () => {
     const conversation = store.createConversation(user.id)!;
     const askService: Pick<AskService, "answer"> = {
       answer: async (input) => {
+        input.onStatus?.("Understanding your request…");
         input.onDelta("first");
         await new Promise((resolve) => setTimeout(resolve, 25));
         input.onDelta(" second");
@@ -588,7 +589,16 @@ describe("API", () => {
           answer: "first second",
           sources: [],
           sufficient: false,
-          diagnostics: { terms: [], selected: [] },
+          diagnostics: {
+            action: "none",
+            standaloneQuestion: "stream this answer",
+            terms: [],
+            selected: [],
+            reusedCaptureIds: [],
+            compacted: false,
+            compactionFallback: false,
+            estimatedContextTokens: 0,
+          },
         };
       },
     };
@@ -622,6 +632,8 @@ describe("API", () => {
     expect(response.headers["x-accel-buffering"]).toBe("no");
     const wire = response.body;
     expect(wire).toContain("event: started");
+    expect(wire).toContain("event: status");
+    expect(wire).toContain("Understanding your request");
     expect(wire).toContain('data: {"text":"first"}');
     expect(wire).toContain('data: {"text":" second"}');
     expect(wire).toContain("event: sources");

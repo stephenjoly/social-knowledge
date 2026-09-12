@@ -195,6 +195,7 @@ type ChatMessage = {
   sources: AskSource[];
   sufficient: boolean | null;
   status: "pending" | "complete" | "failed" | "cancelled";
+  statusText?: string | null;
   errorCode: string | null;
   retryOf: string | null;
   userMessageId: string | null;
@@ -1848,6 +1849,8 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
         new Error(
           problem.error === "conversation_busy"
             ? "This conversation is already answering in another tab."
+            : problem.error === "ai_provider_required"
+              ? "Connect and verify an AI provider in Settings before using Ask AI."
             : problem.error === "invalid_message"
               ? "Enter a question between 1 and 2,000 characters."
               : problem.error === "invalid_request_id"
@@ -1889,6 +1892,7 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
         content: state.text,
         sources: state.sources,
         sufficient: state.sufficient,
+        statusText: state.statusText,
         ...(state.status === "pending" ? {} : { status: state.status }),
         errorCode: state.errorCode,
       });
@@ -2015,6 +2019,7 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
       sources: [],
       sufficient: null,
       status: "complete",
+      statusText: null,
       errorCode: null,
       retryOf: null,
       userMessageId: null,
@@ -2027,6 +2032,7 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
       sources: [],
       sufficient: null,
       status: "pending",
+      statusText: null,
       errorCode: null,
       retryOf: null,
       userMessageId: userMessage.id,
@@ -2054,6 +2060,7 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
       sources: [],
       sufficient: null,
       status: "pending",
+      statusText: null,
       errorCode: null,
       retryOf: message.id,
     };
@@ -2185,7 +2192,9 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
                     message.content
                   )
                 ) : message.status === "pending" ? (
-                  <span className="typing">Searching your archive…</span>
+                  <span className="typing">
+                    {message.statusText || "Searching your archive…"}
+                  </span>
                 ) : (
                   <span>
                     {message.status === "cancelled"
