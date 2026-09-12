@@ -1,8 +1,9 @@
 # Conversational Ask AI context and retrieval
 
-Status: active
+Status: completed
 Owner: Codex
 Started: 2026-09-11
+Completed: 2026-09-12
 
 ## Context
 
@@ -46,8 +47,9 @@ Cerebras interface rather than using a provider-specific compact endpoint.
 - [x] Harden search stop words and exact taxonomy matching.
 - [x] Add focused follow-up, compaction, provider-role, and search regressions.
 - [x] Pass type checking, production build, documentation check, and full unit/integration suite.
-- [ ] Validate the conversational journey in staging with representative saved evidence.
-- [ ] Move this plan to `completed/` after staging acceptance.
+- [x] Validate the conversational journey in an isolated Dokploy preview and the merged staging
+  image with synthetic saved evidence.
+- [x] Move this plan to `completed/` after staging acceptance.
 
 ## Decisions
 
@@ -64,10 +66,25 @@ Cerebras interface rather than using a provider-specific compact endpoint.
 
 ## Verification
 
-Run `npm run check` in a clean checkout. Before staging acceptance, exercise: a first archive list,
-the exact brief-bulleted-list follow-up, a follow-up needing new evidence, a long transcript that
-triggers compaction, provider switching, retry, cancellation, and an empty archive. Inspect retrieval
-diagnostics for action, reused IDs, compaction, and selected sources.
+The staging-integrated branch passed `npm run check`: documentation, strict type checking, production
+build, 90 enabled tests, and 3 intentional skips. GitHub CI passed on the feature branch and merged
+staging commit.
+
+The disposable Dokploy preview passed public smoke. A deployed `AskService` acceptance used two
+synthetic DIY captures and a deterministic model boundary to exercise the initial archive request and
+the exact `Can you just give me a really brief bulleted list?` follow-up. Diagnostics reported
+`reuse_sources`; every selected result was a `conversation-source`, the prior capture IDs were
+preserved, and persisted roles remained user/assistant/user/assistant. Browser acceptance through the
+preview reverse proxy passed streaming, cancellation, and retry. The synthetic user was removed and
+Dokploy removed the closed preview after merge.
+
+Permanent staging deployed merge `b4817b1` as image
+`sha256:315a95a89f3bf3e6942f668e2efbcb665227cbdd34a3e348e33126c95acb2751`; its branch CI and public
+smoke passed. Staging is intentionally empty and has no configured external provider, so live
+provider-backed generation was not available there. Provider role preservation, new-evidence
+retrieval, long-context compaction and fallback, and empty-archive behavior remain covered by the
+deterministic suite. A production-shaped online database copy migrated with the accepted image with
+SQLite integrity `ok`, zero foreign-key violations, and the `conversation_compactions` table present.
 
 ## Risks and recovery
 
