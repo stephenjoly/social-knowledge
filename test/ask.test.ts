@@ -87,6 +87,12 @@ describe("AskService", () => {
       transcript: "Try Rio de Mello for grilled chicken.",
     });
     const conversation = store.createConversation(user.id)!;
+    const payload = JSON.stringify({
+      answer: "Rio de Mello is one saved option [1].",
+      citedCaptureIds: [capture.id],
+      sufficient: true,
+    });
+    let providerFinished = false;
     const turn = store.beginConversationTurn(
       user.id,
       String(conversation.id),
@@ -103,14 +109,22 @@ describe("AskService", () => {
           referencedCaptureIds: [],
         }),
       })
-      .mockResolvedValueOnce(
-        streamedJson({
-          answer: "Rio de Mello is one saved option [1].",
-          citedCaptureIds: [capture.id],
-          sufficient: true,
-        }),
+      .mockImplementationOnce(async () =>
+        (async function* () {
+          yield {
+            type: "response.output_text.delta",
+            delta: payload.slice(0, 25),
+          };
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          yield {
+            type: "response.output_text.delta",
+            delta: payload.slice(25),
+          };
+          providerFinished = true;
+        })(),
       );
     const deltas: string[] = [];
+    let deltaReceivedBeforeProviderFinished = false;
     const result = await new AskService(
       { responses: { create } } as unknown as OpenAI,
       testConfig("/tmp/ask-test"),
@@ -121,13 +135,17 @@ describe("AskService", () => {
       assistantId: turn.assistantId,
       question: "What Lisbon restaurants have I saved?",
       signal: new AbortController().signal,
-      onDelta: (text) => deltas.push(text),
+      onDelta: (text) => {
+        deltas.push(text);
+        if (!providerFinished) deltaReceivedBeforeProviderFinished = true;
+      },
     });
     expect(result.sources.map((source) => source.id)).toEqual([capture.id]);
     expect(
       store.getConversation(user.id, String(conversation.id))?.messages,
     ).toHaveLength(2);
     expect(deltas.join("")).toBe("Rio de Mello is one saved option [1].");
+    expect(deltaReceivedBeforeProviderFinished).toBe(true);
     expect(String(create.mock.calls[0]?.[0]?.instructions)).toContain(
       "untrusted data",
     );
