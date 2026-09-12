@@ -33,7 +33,7 @@ Apple Shortcut / browser / MCP client
 | AI processing | `src/transcriber.ts`, `src/translator.ts`, `src/title-generator.ts`, `src/analyzer.ts` | Typed model interactions and knowledge extraction |
 | Persistence | `src/db.ts` | SQLite schema, migrations, account-scoped records and queries |
 | Archive | `src/archive.ts`, `src/vault-writer.ts`, `src/library-publisher.ts` | Durable media, Markdown notes, library publication |
-| Knowledge access | `src/knowledge.ts`, `src/ask.ts`, `src/mcp.ts`, `src/openapi.ts` | Search, traversal, read-only agent access and contracts |
+| Knowledge access | `src/knowledge.ts`, `src/ask.ts`, `src/mcp.ts`, `src/openapi.ts` | Search, role-preserving conversational retrieval, compaction checkpoints, read-only agent access and contracts |
 | Connections | `src/oauth.ts`, `src/platform-connections.ts` | MCP authorization and encrypted platform credentials |
 | Browser UI | `web/` | Authenticated dashboard; it consumes HTTP APIs rather than storage directly |
 | Operations | `Dockerfile`, `compose*.yaml`, `deploy/`, `scripts/` | Reproducible build, deployment, smoke checks and rollback |

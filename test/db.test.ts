@@ -176,6 +176,16 @@ describe("JobStore", () => {
     store.moveCapture(capture!.id, manualTarget.id);
     store.assignClassification(capture!.id, capture!.analysis.classification);
     expect(store.libraryAssignment(capture!.id)?.nodeId).toBe(manualTarget.id);
+    const designNode = store
+      .libraryTree()
+      .find((node) => node.label === "Home & Design")!;
+    store.moveCapture(capture!.id, designNode.id);
+    // Taxonomy labels are tokenized, not substring-matched: "des" must not
+    // accidentally match the "design" part of Home & Design.
+    expect(store.searchKnowledge(ownerUserId, "des", 10)).toEqual([]);
+    expect(
+      store.searchKnowledge(ownerUserId, "me brief bulleted list", 10),
+    ).toEqual([]);
   });
 
   it("creates turns idempotently, enforces one active attempt, and retries without duplicating the user", () => {

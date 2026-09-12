@@ -42,6 +42,18 @@ export type InboxAnalyticsCounts = {
   failedImports: number;
 };
 
+export type ConversationCompaction = {
+  id: string;
+  conversationId: string;
+  throughMessageId: string;
+  summary: string;
+  sourceIds: string[];
+  provider: string | null;
+  model: string | null;
+  estimatedTokens: number | null;
+  createdAt: string;
+};
+
 export class JobStore {
   readonly database: Database.Database;
   constructor(filename: string) {
@@ -1586,6 +1598,91 @@ export class JobStore {
       })),
     };
   }
+  latestConversationCompaction(userId: string, conversationId: string) {
+    const row = this.database
+      .prepare(
+        `SELECT cc.id,cc.conversation_id AS conversationId,
+                cc.through_message_id AS throughMessageId,
+                cc.summary,cc.source_ids_json AS sourceIdsJson,
+                cc.provider,cc.model,cc.estimated_tokens AS estimatedTokens,
+                cc.created_at AS createdAt
+           FROM conversation_compactions cc
+           JOIN conversations c ON c.id=cc.conversation_id
+          WHERE cc.conversation_id=? AND c.user_id=?
+          ORDER BY cc.created_at DESC,cc.rowid DESC LIMIT 1`,
+      )
+      .get(conversationId, userId) as Row | undefined;
+    if (!row) return null;
+    let sourceIds: string[] = [];
+    try {
+      const parsed = JSON.parse(String(row.sourceIdsJson ?? "[]"));
+      if (Array.isArray(parsed))
+        sourceIds = parsed.filter(
+          (value): value is string => typeof value === "string",
+        );
+    } catch {
+      // Treat a malformed optional checkpoint field as empty memory. The
+      // original transcript remains authoritative and is still queryable.
+    }
+    return {
+      id: String(row.id),
+      conversationId: String(row.conversationId),
+      throughMessageId: String(row.throughMessageId),
+      summary: String(row.summary),
+      sourceIds,
+      provider: row.provider as string | null,
+      model: row.model as string | null,
+      estimatedTokens:
+        row.estimatedTokens === null || row.estimatedTokens === undefined
+          ? null
+          : Number(row.estimatedTokens),
+      createdAt: String(row.createdAt),
+    } satisfies ConversationCompaction;
+  }
+  saveConversationCompaction(input: {
+    userId: string;
+    conversationId: string;
+    throughMessageId: string;
+    summary: string;
+    sourceIds: string[];
+    provider?: string | null;
+    model?: string | null;
+    estimatedTokens?: number | null;
+  }) {
+    const owns = this.database
+      .prepare("SELECT 1 FROM conversations WHERE id=? AND user_id=?")
+      .get(input.conversationId, input.userId);
+    if (!owns) throw new Error("conversation_not_found");
+    const target = this.database
+      .prepare(
+        "SELECT 1 FROM conversation_messages WHERE id=? AND conversation_id=?",
+      )
+      .get(input.throughMessageId, input.conversationId);
+    if (!target) throw new Error("compaction_target_not_found");
+    const id = randomUUID();
+    this.database
+      .prepare(
+        `INSERT INTO conversation_compactions(
+           id,conversation_id,through_message_id,summary,source_ids_json,
+           provider,model,estimated_tokens,created_at
+         ) VALUES(?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        id,
+        input.conversationId,
+        input.throughMessageId,
+        input.summary,
+        JSON.stringify(input.sourceIds),
+        input.provider ?? null,
+        input.model ?? null,
+        input.estimatedTokens ?? null,
+        new Date().toISOString(),
+      );
+    return this.latestConversationCompaction(
+      input.userId,
+      input.conversationId,
+    );
+  }
   addConversationMessage(
     userId: string,
     conversationId: string,
@@ -1804,6 +1901,52 @@ export class JobStore {
   }
   searchKnowledge(userId: string, query: string, limit?: number) {
     const stop = new Set([
+      "a",
+      "an",
+      "i",
+      "my",
+      "our",
+      "ours",
+      "its",
+      "their",
+      "theirs",
+      "one",
+      "ones",
+      "another",
+      "more",
+      "some",
+      "any",
+      "all",
+      "be",
+      "brief",
+      "bulleted",
+      "can",
+      "do",
+      "does",
+      "for",
+      "give",
+      "just",
+      "list",
+      "me",
+      "please",
+      "really",
+      "return",
+      "only",
+      "short",
+      "make",
+      "put",
+      "format",
+      "into",
+      "it",
+      "in",
+      "to",
+      "of",
+      "as",
+      "at",
+      "on",
+      "or",
+      "but",
+      "not",
       "what",
       "which",
       "where",
@@ -1833,7 +1976,6 @@ export class JobStore {
       "were",
       "the",
       "and",
-      "for",
       "you",
       "your",
       "mine",
@@ -1876,7 +2018,10 @@ export class JobStore {
       const labels = this.libraryBreadcrumb(String(row.nodeId))
         .map((node) => node.label.toLowerCase())
         .join(" ");
-      return tokens.some((token) => labels.includes(token));
+      const labelTerms = labels
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((term) => term.length > 1);
+      return tokens.some((token) => labelTerms.includes(token));
     });
     for (const row of extra) {
       const id = String(row.id),
@@ -1906,6 +2051,22 @@ export class JobStore {
         reason: String(row.reason ?? "fts"),
       };
     });
+  }
+  ownedCapturesByIds(userId: string, ids: string[]) {
+    const unique = [...new Set(ids)].filter(Boolean);
+    if (!unique.length) return [];
+    const placeholders = unique.map(() => "?").join(",");
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM captures WHERE owner_user_id=? AND id IN (${placeholders})`,
+      )
+      .all(userId, ...unique) as Row[];
+    const byId = new Map(
+      rows.map((row) => [String(row.id), this.mapCapture(row, true)]),
+    );
+    return unique
+      .map((id) => byId.get(id))
+      .filter((capture): capture is CaptureRecord => Boolean(capture));
   }
   ownedCaptures(userId: string) {
     return (
@@ -2175,6 +2336,8 @@ export class JobStore {
     CREATE INDEX IF NOT EXISTS idx_conversations_user_updated ON conversations(user_id,updated_at DESC);
     CREATE TABLE IF NOT EXISTS conversation_messages(id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,role TEXT NOT NULL,content TEXT NOT NULL,sources_json TEXT NOT NULL DEFAULT '[]',sufficient INTEGER,created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_conversation_messages ON conversation_messages(conversation_id,created_at);
+    CREATE TABLE IF NOT EXISTS conversation_compactions(id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,through_message_id TEXT NOT NULL REFERENCES conversation_messages(id) ON DELETE CASCADE,summary TEXT NOT NULL,source_ids_json TEXT NOT NULL DEFAULT '[]',provider TEXT,model TEXT,estimated_tokens INTEGER,created_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_conversation_compactions ON conversation_compactions(conversation_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS knowledge_exports(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,status TEXT NOT NULL,include_transcript INTEGER NOT NULL,include_comments INTEGER NOT NULL,path TEXT,error_code TEXT,record_count INTEGER,created_at TEXT NOT NULL,expires_at TEXT NOT NULL,kind TEXT NOT NULL DEFAULT 'metadata');
     CREATE INDEX IF NOT EXISTS idx_knowledge_exports_user ON knowledge_exports(user_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS platform_connections(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,platform TEXT NOT NULL CHECK(platform IN ('facebook','instagram')),encrypted_payload TEXT NOT NULL,status TEXT NOT NULL,cookie_count INTEGER NOT NULL,last_validated_at TEXT,last_used_at TEXT,last_error_code TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(user_id,platform));
