@@ -483,6 +483,24 @@ type AiProvider = {
   verifiedAt: string | null;
   supportsVision: boolean;
 };
+type AccountUser = {
+  id: string;
+  username: string;
+  role: string;
+  createdAt?: string;
+};
+type Invitation = {
+  id: string;
+  role: "admin" | "member";
+  createdAt: string;
+  expiresAt: string;
+  consumedAt: string | null;
+  revokedAt: string | null;
+};
+type InvitationDetails = {
+  role: "admin" | "member";
+  expiresAt: string;
+};
 
 async function api<T>(path: string, options: RequestInit = {}) {
   const response = await fetch(path, {
@@ -503,39 +521,76 @@ async function api<T>(path: string, options: RequestInit = {}) {
 const assetUrl = (captureId: string, assetId: string) =>
   `/api/v1/captures/${captureId}/assets/${assetId}`;
 
-function Auth({ setup, onDone }: { setup: boolean; onDone: () => void }) {
-  const [username, setUsername] = useState("demo");
+function RegistrationForm({
+  setup,
+  inviteToken,
+  invite,
+  onDone,
+}: {
+  setup?: boolean;
+  inviteToken?: string;
+  invite?: InvitationDetails | null;
+  onDone: () => void;
+}) {
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [setupToken, setSetupToken] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [acknowledged, setAcknowledged] = useState(false);
   const [error, setError] = useState("");
+  const isAdministrator = setup || invite?.role === "admin";
+  const heading = setup
+    ? "Create your private archive"
+    : invite?.role === "admin"
+      ? "Join as an administrator"
+      : "Join this private archive";
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
+    if (password !== confirmation) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (isAdministrator && !acknowledged) {
+      setError("Confirm that you understand this account has administrator access.");
+      return;
+    }
     try {
-      await api(setup ? "/api/auth/setup" : "/api/auth/login", {
+      await api(setup ? "/api/auth/setup" : "/api/auth/invitations/redeem", {
         method: "POST",
-        headers: setup ? { Authorization: `Bearer ${setupToken}` } : {},
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({
+          username,
+          password,
+          ...(setup ? { administratorAcknowledged: acknowledged } : {}),
+          ...(inviteToken
+            ? { token: inviteToken, administratorAcknowledged: acknowledged }
+            : {}),
+        }),
       });
-      if (setup)
-        await api("/api/auth/login", {
-          method: "POST",
-          body: JSON.stringify({ username, password }),
-        });
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to sign in");
+      const code = (e as { body?: { error?: string } }).body?.error;
+      setError(
+        code === "setup_complete"
+          ? "An administrator account has already been created. Sign in instead."
+          : code === "invalid_invitation"
+            ? "This invitation is no longer valid. Ask an administrator for a new link."
+            : e instanceof Error
+              ? e.message
+              : "Unable to create your account.",
+      );
     }
   }
   return (
     <main className="auth">
       <section className="auth-card">
         <div className="mark">◉</div>
-        <h1>{setup ? "Create your private archive" : "Welcome back"}</h1>
+        <h1>{heading}</h1>
         <p>
           {setup
-            ? "Create the administrator account. You can make a Shortcut API key after signing in."
-            : "Sign in to your Social Knowledge archive."}
+            ? "Your first account manages access to this archive. Connect an AI provider next, or set it up later."
+            : isAdministrator
+              ? "This invitation grants administrator access. Administrators can invite others, but cannot see their private archive data."
+              : "Choose your own sign-in details. Your saved archive stays private to your account."}
         </p>
         <form onSubmit={submit}>
           <label>
@@ -544,6 +599,9 @@ function Auth({ setup, onDone }: { setup: boolean; onDone: () => void }) {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
+              minLength={2}
+              maxLength={40}
+              required
             />
           </label>
           <label>
@@ -553,22 +611,156 @@ function Auth({ setup, onDone }: { setup: boolean; onDone: () => void }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               minLength={12}
-              autoComplete={setup ? "new-password" : "current-password"}
+              autoComplete="new-password"
+              required
             />
           </label>
-          {setup && (
+          <label>
+            Confirm password
+            <input
+              type="password"
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+              minLength={12}
+              autoComplete="new-password"
+              required
+            />
+          </label>
+          {isAdministrator && (
             <label>
-              Setup token
-              <input
-                type="password"
-                value={setupToken}
-                onChange={(e) => setSetupToken(e.target.value)}
-                autoComplete="off"
-              />
+              <span className="auth-acknowledgement">
+                <input
+                  type="checkbox"
+                  checked={acknowledged}
+                  onChange={(event) => setAcknowledged(event.target.checked)}
+                />
+                I understand this is an administrator account and can manage access to this archive.
+              </span>
             </label>
           )}
+          <button>Create account</button>
+          {error && <p className="error" role="alert">{error}</p>}
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function Auth({
+  setup,
+  inviteToken,
+  onDone,
+}: {
+  setup: boolean;
+  inviteToken: string | null;
+  onDone: (created?: boolean) => void;
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [invite, setInvite] = useState<InvitationDetails | null>(null);
+  const [loadingInvite, setLoadingInvite] = useState(Boolean(inviteToken));
+  useEffect(() => {
+    if (!inviteToken) return;
+    void api<{ invitation: InvitationDetails }>("/api/auth/invitations/inspect", {
+      method: "POST",
+      body: JSON.stringify({ token: inviteToken }),
+    })
+      .then((result) => setInvite(result.invitation))
+      .catch(() => setError("This invitation is no longer valid. Ask an administrator for a new link."))
+      .finally(() => setLoadingInvite(false));
+  }, [inviteToken]);
+  if (setup || (inviteToken && invite))
+    return (
+      <RegistrationForm
+        setup={setup}
+        inviteToken={inviteToken ?? undefined}
+        invite={invite}
+        onDone={() => onDone(true)}
+      />
+    );
+  if (inviteToken && loadingInvite)
+    return <main className="auth"><p>Checking invitation…</p></main>;
+  if (inviteToken && error)
+    return <main className="auth"><section className="auth-card"><h1>Invitation unavailable</h1><p className="error" role="alert">{error}</p></section></main>;
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    try {
+      await api("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+      });
+      onDone(false);
+    } catch (e) {
+      setError(e instanceof Error ? "Incorrect username or password." : "Unable to sign in.");
+    }
+  }
+  return (
+    <main className="auth">
+      <section className="auth-card">
+        <div className="mark">◉</div>
+        <h1>Welcome back</h1>
+        <p>Sign in to your Social Knowledge archive.</p>
+        <form onSubmit={submit}>
+          <label>
+            Username
+            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+            />
+          </label>
           <button>Continue</button>
-          {error && <p className="error">{error}</p>}
+          {error && <p className="error" role="alert">{error}</p>}
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function ProviderOnboarding({ onDone }: { onDone: () => void }) {
+  const [provider, setProvider] = useState<"openai" | "cerebras">("cerebras");
+  const [apiKey, setApiKey] = useState("");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  return (
+    <main className="auth">
+      <section className="auth-card onboarding-card">
+        <div className="mark">◉</div>
+        <h1>Make your archive useful</h1>
+        <p>Connect an AI provider to capture posts and ask questions. Your key is encrypted and verified before it is saved.</p>
+        <form onSubmit={async (event) => {
+          event.preventDefault();
+          setSubmitting(true);
+          setMessage("Testing the key with the provider…");
+          try {
+            await api(`/api/v1/ai-providers/${provider}`, { method: "PUT", body: JSON.stringify({ apiKey }) });
+            onDone();
+          } catch (error) {
+            setMessage((error as { body?: { error?: string } }).body?.error === "invalid_api_key" ? "The provider rejected that API key. Check it and try again." : "The provider could not be reached. Try again shortly.");
+          } finally {
+            setSubmitting(false);
+          }
+        }}>
+          <label>Provider
+            <select value={provider} onChange={(event) => setProvider(event.target.value as "openai" | "cerebras")}>
+              <option value="cerebras">Cerebras</option><option value="openai">OpenAI</option>
+            </select>
+          </label>
+          <label>{provider === "cerebras" ? "Cerebras" : "OpenAI"} API key
+            <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" placeholder="Paste API key" required />
+          </label>
+          <button disabled={submitting}>{submitting ? "Verifying…" : "Verify and continue"}</button>
+          <button type="button" className="secondary-button" onClick={onDone}>Set up later</button>
+          <p className="settings-help">Without a verified provider, Capture and Ask AI remain unavailable. You can connect one in Settings any time.</p>
+          {message && <p className="action-feedback" role="status">{message}</p>}
         </form>
       </section>
     </main>
@@ -764,7 +956,96 @@ function Detail({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
-function Settings() {
+function AccessManagement() {
+  const [users, setUsers] = useState<AccountUser[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [role, setRole] = useState<"member" | "admin">("member");
+  const [administratorAcknowledged, setAdministratorAcknowledged] = useState(false);
+  const [message, setMessage] = useState("");
+  const [createdInvitationUrl, setCreatedInvitationUrl] = useState("");
+  async function load() {
+    const [userResult, invitationResult] = await Promise.all([
+      api<{ users: AccountUser[] }>("/api/v1/admin/users"),
+      api<{ invitations: Invitation[] }>("/api/v1/admin/invitations"),
+    ]);
+    setUsers(userResult.users);
+    setInvitations(invitationResult.invitations);
+  }
+  useEffect(() => { void load(); }, []);
+  const copyInvitation = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setMessage("Invitation link copied. It is shown only when created or regenerated.");
+    } catch {
+      setMessage("Copy the invitation link from the field below.");
+    }
+  };
+  const create = async (event: FormEvent) => {
+    event.preventDefault();
+    setMessage("");
+    if (role === "admin" && !administratorAcknowledged) {
+      setMessage("Confirm administrator access before creating this invitation.");
+      return;
+    }
+    try {
+      const result = await api<{ invitation: Invitation; invitationUrl: string }>(
+        "/api/v1/admin/invitations",
+        { method: "POST", body: JSON.stringify({ role, administratorAcknowledged }) },
+      );
+      setCreatedInvitationUrl(result.invitationUrl);
+      setMessage(`${role === "admin" ? "Administrator" : "Member"} invitation created. It expires in 24 hours.`);
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Invitation could not be created.");
+    }
+  };
+  return (
+    <section className="settings-card access-management">
+      <h2>People and access</h2>
+      <p className="settings-help">Administrators can invite people and manage invitations. Each person’s archive, connections, API keys, and exports remain private to their account.</p>
+      <form onSubmit={create}>
+        <label>
+          Invitation role
+          <select value={role} onChange={(event) => { setRole(event.target.value as "member" | "admin"); setAdministratorAcknowledged(false); }}>
+            <option value="member">Member — private archive access</option>
+            <option value="admin">Administrator — can manage access</option>
+          </select>
+        </label>
+        {role === "admin" && (
+          <label className="toggle-label">
+            <input type="checkbox" checked={administratorAcknowledged} onChange={(event) => setAdministratorAcknowledged(event.target.checked)} />
+            I understand this invitation grants administrator access.
+          </label>
+        )}
+        <button>Create invitation</button>
+      </form>
+      {message && <p className="action-feedback" role="status">{message}</p>}
+      {createdInvitationUrl && (
+        <div className="token-box invitation-link">
+          <strong>Share this link securely</strong>
+          <input value={createdInvitationUrl} readOnly aria-label="New invitation link" />
+          <button type="button" onClick={() => void copyInvitation(createdInvitationUrl)}>Copy invitation</button>
+        </div>
+      )}
+      <div className="access-list">
+        <h3>Accounts</h3>
+        {users.map((user) => <article key={user.id}><div><strong>{user.username}</strong><small>{user.role === "admin" ? "Administrator" : "Member"}{user.createdAt ? ` · joined ${new Date(user.createdAt).toLocaleDateString()}` : ""}</small></div></article>)}
+        {!users.length && <p className="settings-help">Loading accounts…</p>}
+      </div>
+      <div className="access-list">
+        <h3>Invitations</h3>
+        {invitations.map((invitation) => {
+          const inactive = invitation.consumedAt || invitation.revokedAt || new Date(invitation.expiresAt).getTime() < Date.now();
+          const state = invitation.consumedAt ? "Used" : invitation.revokedAt ? "Revoked" : new Date(invitation.expiresAt).getTime() < Date.now() ? "Expired" : "Active";
+          return <article key={invitation.id}><div><strong>{invitation.role === "admin" ? "Administrator" : "Member"} invitation</strong><small>{state} · expires {new Date(invitation.expiresAt).toLocaleString()}</small></div><div className="access-actions">{!inactive && <button type="button" className="secondary-button" onClick={async () => { await api(`/api/v1/admin/invitations/${invitation.id}/revoke`, { method: "POST" }); setMessage("Invitation revoked."); await load(); }}>Revoke</button>}{!invitation.consumedAt && <button type="button" className="secondary-button" onClick={async () => { const result = await api<{ invitationUrl: string }>(`/api/v1/admin/invitations/${invitation.id}/regenerate`, { method: "POST" }); setCreatedInvitationUrl(result.invitationUrl); setMessage("New invitation link created. The previous link no longer works."); await load(); }}>Regenerate</button>}</div></article>;
+        })}
+        {!invitations.length && <p className="settings-help">No invitations yet.</p>}
+      </div>
+    </section>
+  );
+}
+
+function Settings({ user }: { user: AccountUser | null }) {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [name, setName] = useState("iPhone Shortcut");
   const [token, setToken] = useState("");
@@ -993,6 +1274,7 @@ function Settings() {
           </button>
         )}
       </section>
+      {user?.role === "admin" && <AccessManagement />}
       <section className="settings-card">
         <h2>Facebook and Instagram</h2>
         <p className="settings-help">
@@ -2296,8 +2578,20 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
 
 function App() {
   const [authState, setAuthState] = useState<
-    "loading" | "setup" | "login" | "ready"
+    "loading" | "setup" | "login" | "onboarding" | "ready"
   >("loading");
+  const [user, setUser] = useState<AccountUser | null>(null);
+  const [inviteToken] = useState(() => {
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const token = fragment.get("invite");
+    if (token)
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${window.location.pathname}${window.location.search}`,
+      );
+    return token;
+  });
   const initialTab = new URLSearchParams(window.location.search).get("tab");
   const [tab, setTab] = useState<
     "inbox" | "library" | "ask" | "activity" | "capture" | "settings"
@@ -2353,9 +2647,11 @@ function App() {
   const [jobDetails, setJobDetails] = useState<JobDetails | null>(null);
   async function check() {
     try {
-      await api("/api/auth/me");
+      const result = await api<{ user: AccountUser }>("/api/auth/me");
+      setUser(result.user);
       setAuthState("ready");
     } catch (e) {
+      setUser(null);
       const err = e as { body?: { setupRequired?: boolean } };
       setAuthState(err.body?.setupRequired ? "setup" : "login");
     }
@@ -2529,11 +2825,18 @@ function App() {
         <p>Loading…</p>
       </main>
     );
+  if (authState === "onboarding")
+    return <ProviderOnboarding onDone={() => void check()} />;
   if (authState !== "ready")
     return (
       <Auth
         setup={authState === "setup"}
-        onDone={() => {
+        inviteToken={inviteToken}
+        onDone={(created) => {
+          if (created) {
+            setAuthState("onboarding");
+            return;
+          }
           const returnTo = new URLSearchParams(window.location.search).get(
             "returnTo",
           );
@@ -2617,6 +2920,7 @@ function App() {
           className="logout"
           onClick={async () => {
             await api("/api/auth/logout", { method: "POST" });
+            setUser(null);
             setAuthState("login");
           }}
         >
@@ -3028,7 +3332,7 @@ function App() {
             </form>
           </div>
         )}
-        {tab === "settings" && <Settings />}
+        {tab === "settings" && <Settings user={user} />}
       </main>
       {detail && <Detail id={detail} onClose={() => setDetail(null)} />}
       {jobDetails && (

@@ -1614,6 +1614,65 @@ textarea {
 .auth-card p {
   color: #9aacaa;
 }
+.auth-acknowledgement {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: #c1cfca;
+  line-height: 1.45;
+}
+.auth-acknowledgement input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+.onboarding-card select {
+  width: 100%;
+}
+.access-management > form {
+  margin-top: 18px;
+}
+.access-management .toggle-label {
+  flex: 2;
+  min-width: 250px;
+}
+.invitation-link input {
+  width: 100%;
+  min-width: 0;
+}
+.access-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 26px;
+}
+.access-list h3 {
+  margin: 0 0 2px;
+  font-size: 15px;
+}
+.access-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid #2b3a3e;
+  border-radius: 12px;
+  background: #0e1719;
+}
+.access-list article > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.access-list small {
+  color: #879894;
+}
+.access-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
 .scrim {
   position: fixed;
   inset: 0;
@@ -1844,6 +1903,10 @@ summary {
   }
   .settings-card form {
     display: grid;
+  }
+  .access-list article {
+    align-items: flex-start;
+    flex-direction: column;
   }
   .library-layout {
     display: block;

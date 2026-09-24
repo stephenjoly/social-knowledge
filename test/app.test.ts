@@ -112,7 +112,7 @@ describe("API", () => {
     expect(spec.json().servers[0].url).toBe(config.appUrl);
   });
 
-  it("separates browser sessions from the Shortcut token and validates mutation origins", async () => {
+  it("creates the first administrator without a setup token and validates mutation origins", async () => {
     const root = await mkdtemp(
       path.join(os.tmpdir(), "social-knowledge-auth-"),
     );
@@ -126,25 +126,50 @@ describe("API", () => {
       await rm(root, { recursive: true, force: true });
     });
 
-    const unauthorizedSetup = await app.inject({
+    const missingAcknowledgement = await app.inject({
       method: "POST",
       url: "/api/auth/setup",
       payload: { username: "attacker", password: "a-strong-test-password" },
     });
-    expect(unauthorizedSetup.statusCode).toBe(401);
+    expect(missingAcknowledgement.statusCode).toBe(400);
 
     const setup = await app.inject({
       method: "POST",
       url: "/api/auth/setup",
-      headers: { authorization: `Bearer ${config.apiToken}` },
-      payload: { username: "demo", password: "a-strong-test-password" },
+      payload: {
+        username: "demo",
+        password: "a-strong-test-password",
+        administratorAcknowledged: true,
+      },
     });
     expect(setup.statusCode).toBe(201);
+    expect(setup.json().user).toMatchObject({ username: "demo", role: "admin" });
+    expect(setup.body).not.toContain(config.apiToken);
+    const setupCookie = setup.headers["set-cookie"];
+    expect(setupCookie).toBeTruthy();
+    expect(setupCookie).toContain("HttpOnly");
+    expect(setupCookie).toContain("Secure");
+    const cookie = (Array.isArray(setupCookie) ? setupCookie[0] : setupCookie)?.split(
+      ";",
+    )[0];
+    expect(cookie).toBeTruthy();
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/auth/me",
+          headers: { cookie: cookie! },
+        })
+      ).json().user,
+    ).toMatchObject({ username: "demo", role: "admin" });
     const repeatedSetup = await app.inject({
       method: "POST",
       url: "/api/auth/setup",
-      headers: { authorization: `Bearer ${config.apiToken}` },
-      payload: { username: "second", password: "another-strong-password" },
+      payload: {
+        username: "second",
+        password: "another-strong-password",
+        administratorAcknowledged: true,
+      },
     });
     expect(repeatedSetup.statusCode).toBe(409);
     const login = await app.inject({
@@ -153,11 +178,6 @@ describe("API", () => {
       payload: { username: "demo", password: "a-strong-test-password" },
     });
     expect(login.statusCode).toBe(200);
-    const setCookie = login.headers["set-cookie"];
-    const cookie = (Array.isArray(setCookie) ? setCookie[0] : setCookie)?.split(
-      ";",
-    )[0];
-    expect(cookie).toBeTruthy();
 
     vi.stubGlobal(
       "fetch",
@@ -561,6 +581,230 @@ describe("API", () => {
       }),
     ).toBe(true);
     store.close();
+  });
+
+  it("limits invitation administration to administrators and issues one-time account sessions", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "social-knowledge-invites-"));
+    await mkdir(path.join(root, "data"));
+    const config = testConfig(root);
+    const store = new JobStore(config.databasePath);
+    const administrator = store.createInitialUser("archive-admin", "hash")!;
+    const administratorSession = "administrator-session";
+    store.createSession(
+      administrator.id,
+      AuthService.hashToken(administratorSession),
+      new Date(Date.now() + 60_000).toISOString(),
+    );
+    const existingMember = store.createUser("existing-member", "hash", "member");
+    const memberSession = "member-session";
+    store.createSession(
+      existingMember.id,
+      AuthService.hashToken(memberSession),
+      new Date(Date.now() + 60_000).toISOString(),
+    );
+    const app = buildApp(config, store, new EventHub());
+    cleanups.push(async () => {
+      await app.close();
+      store.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    const adminCookie = `social_knowledge_session=${administratorSession}`;
+    const memberCookie = `social_knowledge_session=${memberSession}`;
+    const tokenFrom = (url: string) =>
+      new URLSearchParams(new URL(url).hash.slice(1)).get("invite")!;
+    const redeem = (token: string, username: string, index: number, extra = {}) =>
+      app.inject({
+        method: "POST",
+        url: "/api/auth/invitations/redeem",
+        remoteAddress: `10.0.0.${index}`,
+        payload: {
+          token,
+          username,
+          password: "a-strong-invited-password",
+          ...extra,
+        },
+      });
+
+    expect(
+      (
+        await app.inject({ method: "GET", url: "/api/v1/admin/users" })
+      ).statusCode,
+    ).toBe(401);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/v1/admin/users",
+          headers: { cookie: memberCookie },
+        })
+      ).statusCode,
+    ).toBe(403);
+    const missingAdminAcknowledgement = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/invitations",
+      headers: { cookie: adminCookie },
+      payload: { role: "admin" },
+    });
+    expect(missingAdminAcknowledgement.statusCode).toBe(400);
+    expect(missingAdminAcknowledgement.json().error).toBe(
+      "administrator_acknowledgement_required",
+    );
+
+    const memberInvitation = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/invitations",
+      headers: { cookie: adminCookie },
+      payload: { role: "member" },
+    });
+    expect(memberInvitation.statusCode).toBe(201);
+    expect(memberInvitation.json().invitation).toMatchObject({
+      role: "member",
+      consumedAt: null,
+      revokedAt: null,
+    });
+    expect(memberInvitation.json().invitationUrl).toContain("#invite=");
+    const memberToken = tokenFrom(memberInvitation.json().invitationUrl);
+    const inspectMember = await app.inject({
+      method: "POST",
+      url: "/api/auth/invitations/inspect",
+      payload: { token: memberToken },
+    });
+    expect(inspectMember.statusCode).toBe(200);
+    expect(inspectMember.json().invitation.role).toBe("member");
+    expect(new Date(inspectMember.json().invitation.expiresAt).getTime()).toBeGreaterThan(
+      Date.now() + 23 * 60 * 60 * 1000,
+    );
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/v1/admin/invitations",
+      headers: { cookie: adminCookie },
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.body).not.toContain(memberToken);
+    expect(listed.body).not.toContain("invitationUrl");
+
+    const memberRedeemed = await redeem(memberToken, "new-member", 1);
+    expect(memberRedeemed.statusCode).toBe(201);
+    expect(memberRedeemed.json().user).toMatchObject({
+      username: "new-member",
+      role: "member",
+    });
+    const memberSetCookie = memberRedeemed.headers["set-cookie"];
+    const newMemberCookie = (Array.isArray(memberSetCookie)
+      ? memberSetCookie[0]
+      : memberSetCookie
+    )?.split(";")[0];
+    expect(newMemberCookie).toBeTruthy();
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/auth/me",
+          headers: { cookie: newMemberCookie! },
+        })
+      ).json().user,
+    ).toMatchObject({ username: "new-member", role: "member" });
+    expect((await redeem(memberToken, "second-use", 2)).statusCode).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/v1/admin/invitations",
+          headers: { cookie: newMemberCookie! },
+        })
+      ).statusCode,
+    ).toBe(403);
+
+    const administratorInvitation = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/invitations",
+      headers: { cookie: adminCookie },
+      payload: { role: "admin", administratorAcknowledged: true },
+    });
+    const administratorToken = tokenFrom(administratorInvitation.json().invitationUrl);
+    const missingRedeemAcknowledgement = await redeem(
+      administratorToken,
+      "unacknowledged-admin",
+      3,
+    );
+    expect(missingRedeemAcknowledgement.statusCode).toBe(400);
+    expect(missingRedeemAcknowledgement.json().error).toBe(
+      "administrator_acknowledgement_required",
+    );
+    const administratorRedeemed = await redeem(
+      administratorToken,
+      "invited-admin",
+      4,
+      { administratorAcknowledged: true },
+    );
+    expect(administratorRedeemed.statusCode).toBe(201);
+    expect(administratorRedeemed.json().user.role).toBe("admin");
+
+    const revokeInvitation = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/invitations",
+      headers: { cookie: adminCookie },
+      payload: { role: "member" },
+    });
+    const revokedId = revokeInvitation.json().invitation.id;
+    const revokedToken = tokenFrom(revokeInvitation.json().invitationUrl);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: `/api/v1/admin/invitations/${revokedId}/revoke`,
+          headers: { cookie: adminCookie },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect((await redeem(revokedToken, "revoked-user", 5)).statusCode).toBe(400);
+
+    const replaceInvitation = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/invitations",
+      headers: { cookie: adminCookie },
+      payload: { role: "admin", administratorAcknowledged: true },
+    });
+    const originalToken = tokenFrom(replaceInvitation.json().invitationUrl);
+    const regenerated = await app.inject({
+      method: "POST",
+      url: `/api/v1/admin/invitations/${replaceInvitation.json().invitation.id}/regenerate`,
+      headers: { cookie: adminCookie },
+    });
+    expect(regenerated.statusCode).toBe(201);
+    expect(regenerated.json().invitation.role).toBe("admin");
+    const replacementToken = tokenFrom(regenerated.json().invitationUrl);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/auth/invitations/inspect",
+          payload: { token: originalToken },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/auth/invitations/inspect",
+          payload: { token: replacementToken },
+        })
+      ).json().invitation.role,
+    ).toBe("admin");
+
+    const raceInvitation = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/invitations",
+      headers: { cookie: adminCookie },
+      payload: { role: "member" },
+    });
+    const raceToken = tokenFrom(raceInvitation.json().invitationUrl);
+    const race = await Promise.all([
+      redeem(raceToken, "race-winner-a", 6),
+      redeem(raceToken, "race-winner-b", 7),
+    ]);
+    expect(race.map((response) => response.statusCode).sort()).toEqual([201, 400]);
   });
 
   it("sets streaming headers and preserves answer delta ordering", async () => {

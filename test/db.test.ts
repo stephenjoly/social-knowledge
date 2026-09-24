@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { AuthService } from "../src/auth.js";
 import { JobStore } from "../src/db.js";
 
 describe("JobStore", () => {
@@ -10,6 +11,102 @@ describe("JobStore", () => {
     });
     expect(store.createInitialUser("second-admin", "hash")).toBeNull();
     expect(store.userCount()).toBe(1);
+    store.close();
+  });
+
+  it("keeps invitation bearer tokens hashed and creates the assigned isolated role once", () => {
+    const store = new JobStore(":memory:");
+    const administrator = store.createInitialUser("first-admin", "hash")!;
+    const rawToken = "private-invitation-bearer-token";
+    const invitation = store.createInvitation({
+      createdByUserId: administrator.id,
+      role: "member",
+      tokenHash: AuthService.hashToken(rawToken),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    });
+
+    const persisted = store.database
+      .prepare("SELECT token_hash AS tokenHash FROM invitations WHERE id=?")
+      .get(invitation.id) as { tokenHash: string };
+    expect(persisted.tokenHash).toBe(AuthService.hashToken(rawToken));
+    expect(persisted.tokenHash).not.toContain(rawToken);
+
+    expect(
+      store.redeemInvitation({
+        tokenHash: AuthService.hashToken(rawToken),
+        username: "invited-member",
+        passwordHash: "member-password-hash",
+      }),
+    ).toMatchObject({
+      ok: true,
+      user: { username: "invited-member", role: "member" },
+    });
+    expect(
+      store.redeemInvitation({
+        tokenHash: AuthService.hashToken(rawToken),
+        username: "second-use",
+        passwordHash: "second-password-hash",
+      }),
+    ).toEqual({ ok: false, reason: "invalid_invitation" });
+    expect(store.listUsers()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ username: "first-admin", role: "admin" }),
+        expect.objectContaining({ username: "invited-member", role: "member" }),
+      ]),
+    );
+    expect(store.listInvitations()[0]).toMatchObject({
+      id: invitation.id,
+      consumedAt: expect.any(String),
+    });
+    store.close();
+  });
+
+  it("rejects expired and revoked invitations and regenerates an unused invitation", () => {
+    const store = new JobStore(":memory:");
+    const administrator = store.createInitialUser("first-admin", "hash")!;
+    const expiredToken = "expired-invitation-token";
+    store.createInvitation({
+      createdByUserId: administrator.id,
+      role: "admin",
+      tokenHash: AuthService.hashToken(expiredToken),
+      expiresAt: new Date(Date.now() - 1_000).toISOString(),
+    });
+    expect(store.inspectInvitation(AuthService.hashToken(expiredToken))).toBeNull();
+    expect(
+      store.redeemInvitation({
+        tokenHash: AuthService.hashToken(expiredToken),
+        username: "expired-admin",
+        passwordHash: "hash",
+      }),
+    ).toEqual({ ok: false, reason: "invalid_invitation" });
+
+    const revokedToken = "revoked-invitation-token";
+    const revoked = store.createInvitation({
+      createdByUserId: administrator.id,
+      role: "member",
+      tokenHash: AuthService.hashToken(revokedToken),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    });
+    expect(store.revokeInvitation(revoked.id)).toBe(true);
+    expect(store.inspectInvitation(AuthService.hashToken(revokedToken))).toBeNull();
+
+    const original = store.createInvitation({
+      createdByUserId: administrator.id,
+      role: "admin",
+      tokenHash: AuthService.hashToken("replace-me"),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    });
+    const replacement = store.regenerateInvitation({
+      id: original.id,
+      createdByUserId: administrator.id,
+      tokenHash: AuthService.hashToken("replacement-token"),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    });
+    expect(replacement).toMatchObject({ role: "admin", revokedAt: null });
+    expect(store.inspectInvitation(AuthService.hashToken("replace-me"))).toBeNull();
+    expect(
+      store.inspectInvitation(AuthService.hashToken("replacement-token")),
+    ).toMatchObject({ id: replacement?.id, role: "admin" });
     store.close();
   });
 

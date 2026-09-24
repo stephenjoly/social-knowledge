@@ -297,8 +297,11 @@ describe("capture pagination and count queries", () => {
     const setup = await app.inject({
       method: "POST",
       url: "/api/auth/setup",
-      headers: { authorization: `Bearer ${config.apiToken}` },
-      payload: { username: "api-owner", password: "a-strong-test-password" },
+      payload: {
+        username: "api-owner",
+        password: "a-strong-test-password",
+        administratorAcknowledged: true,
+      },
     });
     expect(setup.statusCode).toBe(201);
     const login = await app.inject({
@@ -367,10 +370,10 @@ describe("capture pagination and count queries", () => {
     const setup = await app.inject({
       method: "POST",
       url: "/api/auth/setup",
-      headers: { authorization: `Bearer ${config.apiToken}` },
       payload: {
         username: "analytics-api-owner",
         password: "a-strong-test-password",
+        administratorAcknowledged: true,
       },
     });
     expect(setup.statusCode).toBe(201);

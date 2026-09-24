@@ -84,6 +84,18 @@ export function buildApp(
     trustProxy: config.trustedProxies.length ? config.trustedProxies : false,
   });
   const auth = new AuthService(store, config);
+  const setSessionCookie = (
+    reply: { setCookie: (name: string, value: string, options: object) => unknown },
+    session: { token: string; expiresAt: string },
+  ) => {
+    reply.setCookie(SESSION_COOKIE, session.token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/",
+      expires: new Date(session.expiresAt),
+    });
+  };
   const library = new LibraryPublisher(store, config.vaultDir);
   const userNodeMarkdown = (
     node: NonNullable<ReturnType<JobStore["libraryNode"]>>,
@@ -327,21 +339,18 @@ export function buildApp(
           max: 5,
           timeWindow: "15 minutes",
           keyGenerator: (request: any) =>
-            AuthService.hashToken(
-              `${request.ip}:${request.headers.authorization ?? "anonymous"}`,
-            ),
+            AuthService.hashToken(request.ip),
         },
       },
     },
     async (request, reply) => {
       if (store.userCount() > 0)
         return reply.code(409).send({ error: "setup_complete" });
-      if (!auth.legacyToken(request))
-        return reply.code(401).send({ error: "invalid_setup_token" });
       const input = z
         .object({
-          username: z.string().min(2).max(40),
-          password: z.string().min(12),
+          username: z.string().trim().min(2).max(40),
+          password: z.string().min(12).max(1024),
+          administratorAcknowledged: z.literal(true),
         })
         .safeParse(request.body);
       if (!input.success)
@@ -351,7 +360,74 @@ export function buildApp(
         await hash(input.data.password),
       );
       if (!user) return reply.code(409).send({ error: "setup_complete" });
+      const session = auth.issueSession(user);
+      setSessionCookie(reply, session);
       return reply.code(201).send({ user });
+    },
+  );
+  app.post(
+    "/api/auth/invitations/inspect",
+    {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: "15 minutes",
+          keyGenerator: (request: any) => AuthService.hashToken(request.ip),
+        },
+      },
+    },
+    async (request, reply) => {
+      const input = z
+        .object({ token: z.string().min(32).max(200) })
+        .safeParse(request.body);
+      if (!input.success)
+        return reply.code(400).send({ error: "invalid_invitation" });
+      const invitation = store.inspectInvitation(AuthService.hashToken(input.data.token));
+      return invitation
+        ? { invitation: { role: invitation.role, expiresAt: invitation.expiresAt } }
+        : reply.code(400).send({ error: "invalid_invitation" });
+    },
+  );
+  app.post(
+    "/api/auth/invitations/redeem",
+    {
+      config: {
+        rateLimit: {
+          max: 5,
+          timeWindow: "15 minutes",
+          keyGenerator: (request: any) => AuthService.hashToken(request.ip),
+        },
+      },
+    },
+    async (request, reply) => {
+      const input = z
+        .object({
+          token: z.string().min(32).max(200),
+          username: z.string().trim().min(2).max(40),
+          password: z.string().min(12).max(1024),
+          administratorAcknowledged: z.boolean().optional(),
+        })
+        .safeParse(request.body);
+      if (!input.success)
+        return reply.code(400).send({ error: "invalid_request" });
+      const tokenHash = AuthService.hashToken(input.data.token);
+      const invitation = store.inspectInvitation(tokenHash);
+      if (!invitation)
+        return reply.code(400).send({ error: "invalid_invitation" });
+      if (invitation.role === "admin" && !input.data.administratorAcknowledged)
+        return reply.code(400).send({ error: "administrator_acknowledgement_required" });
+      const result = store.redeemInvitation({
+        tokenHash,
+        username: input.data.username,
+        passwordHash: await hash(input.data.password),
+      });
+      if (!result.ok)
+        return reply
+          .code(result.reason === "username_taken" ? 409 : 400)
+          .send({ error: result.reason });
+      const session = auth.issueSession(result.user);
+      setSessionCookie(reply, session);
+      return reply.code(201).send({ user: result.user });
     },
   );
   app.post(
@@ -379,13 +455,7 @@ export function buildApp(
       const result = await auth.login(input.data.username, input.data.password);
       if (!result)
         return reply.code(401).send({ error: "invalid_credentials" });
-      reply.setCookie(SESSION_COOKIE, result.token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        path: "/",
-        expires: new Date(result.expiresAt),
-      });
+      setSessionCookie(reply, result);
       return { user: result.user };
     },
   );
@@ -709,6 +779,99 @@ export function buildApp(
           return reply.code(403).send({ error: "invalid_origin" });
       }
     });
+    const requireAdmin = (request: any, reply: any) => {
+      const user = auth.user(request)!;
+      if (user.role !== "admin") {
+        reply.code(403).send({ error: "forbidden" });
+        return null;
+      }
+      return user;
+    };
+    const newInvitation = (
+      userId: string,
+      role: "member" | "admin",
+    ) => {
+      const token = randomBytes(32).toString("base64url");
+      const invitation = store.createInvitation({
+        createdByUserId: userId,
+        role,
+        tokenHash: AuthService.hashToken(token),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      });
+      return {
+        invitation,
+        invitationUrl: `${config.appUrl.replace(/\/$/, "")}/#invite=${token}`,
+      };
+    };
+    protectedApi.get("/api/v1/admin/users", async (request, reply) => {
+      if (!requireAdmin(request, reply)) return;
+      return { users: store.listUsers() };
+    });
+    protectedApi.get("/api/v1/admin/invitations", async (request, reply) => {
+      if (!requireAdmin(request, reply)) return;
+      return { invitations: store.listInvitations() };
+    });
+    protectedApi.post(
+      "/api/v1/admin/invitations",
+      {
+        config: { rateLimit: { max: 20, timeWindow: "1 hour" } },
+      },
+      async (request, reply) => {
+        const user = requireAdmin(request, reply);
+        if (!user) return;
+        const input = z
+          .object({
+            role: z.enum(["member", "admin"]).default("member"),
+            administratorAcknowledged: z.boolean().optional(),
+          })
+          .safeParse(request.body ?? {});
+        if (!input.success)
+          return reply.code(400).send({ error: "invalid_request" });
+        if (input.data.role === "admin" && !input.data.administratorAcknowledged)
+          return reply.code(400).send({
+            error: "administrator_acknowledgement_required",
+          });
+        return reply.code(201).send(newInvitation(user.id, input.data.role));
+      },
+    );
+    protectedApi.post(
+      "/api/v1/admin/invitations/:id/revoke",
+      async (request, reply) => {
+        if (!requireAdmin(request, reply)) return;
+        const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+        if (!params.success)
+          return reply.code(400).send({ error: "invalid_request" });
+        return store.revokeInvitation(params.data.id)
+          ? { ok: true }
+          : reply.code(404).send({ error: "invitation_not_found" });
+      },
+    );
+    protectedApi.post(
+      "/api/v1/admin/invitations/:id/regenerate",
+      {
+        config: { rateLimit: { max: 20, timeWindow: "1 hour" } },
+      },
+      async (request, reply) => {
+        const user = requireAdmin(request, reply);
+        if (!user) return;
+        const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+        if (!params.success)
+          return reply.code(400).send({ error: "invalid_request" });
+        const token = randomBytes(32).toString("base64url");
+        const invitation = store.regenerateInvitation({
+          id: params.data.id,
+          createdByUserId: user.id,
+          tokenHash: AuthService.hashToken(token),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        });
+        return invitation
+          ? reply.code(201).send({
+              invitation,
+              invitationUrl: `${config.appUrl.replace(/\/$/, "")}/#invite=${token}`,
+            })
+          : reply.code(404).send({ error: "invitation_not_found" });
+      },
+    );
     protectedApi.get("/api/v1/inbox-analytics", async (request, reply) => {
       reply.header("Cache-Control", "no-store");
       const generatedAt = new Date().toISOString();
