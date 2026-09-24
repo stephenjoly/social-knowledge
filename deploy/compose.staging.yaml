@@ -18,7 +18,6 @@ services:
       VAULT_DIR: /vault
       MEDIA_DIR: /media
       API_TOKEN: ${API_TOKEN:?Set a staging-only API_TOKEN}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set a staging-only OPENAI_API_KEY}
       APP_URL: ${APP_URL:?Set the staging URL}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       FETCH_COMMENTS: ${FETCH_COMMENTS:-false}

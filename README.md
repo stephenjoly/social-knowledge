@@ -20,7 +20,7 @@ The worker retries transient failures and recovers interrupted jobs after a rest
 - Node.js 22+
 - FFmpeg
 - `yt-dlp`
-- An OpenAI API key for audio transcription; each user connects OpenAI or Cerebras for generation in Settings
+- An account-scoped OpenAI connection for audio transcription; users may independently choose OpenAI or Cerebras for analysis
 
 Docker includes all runtime dependencies.
 
@@ -29,15 +29,15 @@ Docker includes all runtime dependencies.
 The safest first run uses disposable project-local storage rather than your real Obsidian vault:
 
 1. Copy `.env.example` to `.env`.
-2. Put a long random value in `API_TOKEN` and add `OPENAI_API_KEY` locally for audio transcription. Never commit `.env`. `API_TOKEN` is for legacy Shortcut capture and an encryption-compatibility fallback; it is not a browser sign-up credential.
+2. Put a long random value in `API_TOKEN`. Never commit `.env`. `API_TOKEN` is for legacy Shortcut capture and an encryption-compatibility fallback; it is not a browser sign-up credential.
 3. Set `DATA_DIR=/data`, `VAULT_DIR=/vault`, and `MEDIA_DIR=/media` for Docker.
 4. Create the local `data`, `vault`, and `media` directories.
 5. Run `docker compose up --build -d`.
 6. Keep the fresh application private until this step: open it and create the first administrator with a strong password, confirmation, and acknowledgement of administrator authority. The first successful registration is signed in immediately; an unclaimed, publicly reachable deployment can be claimed by its first visitor.
-7. In the onboarding step, connect an OpenAI or Cerebras API key. The app tests the key before encrypting and storing it, or choose **Set up later** and connect it from **Settings → AI provider** before using Capture or Ask.
+7. In the onboarding step, connect provider keys. Capture requires an OpenAI connection for transcription and either OpenAI or Cerebras for analysis; Ask requires only an analysis selection. The app tests each key before encrypting and storing it.
 8. Submit one public Reel, watch Activity, then open the completed card in Inbox.
 
-Capture and Ask requests are blocked until the signed-in account has a verified AI provider. Provider definitions and routing live in `src/ai-providers.ts`, so another OpenAI-compatible generation provider can be added without changing the capture pipeline. Cerebras generation uses `CEREBRAS_ANALYSIS_MODEL` (default `qwen-3.8-27b`). OpenAI-backed captures use that user's verified OpenAI credential for both transcription and generation. Cerebras-backed captures use the server-side `OPENAI_API_KEY` for transcription because Cerebras Inference does not expose the required audio endpoint.
+Transcription and analysis are separate account-scoped selections. Provider definitions and routing live in `src/ai-providers.ts`. OpenAI supplies transcription and can also supply analysis; Cerebras supplies analysis only. `OPENAI_TRANSCRIPTION_MODEL`, `OPENAI_ANALYSIS_MODEL`, and `CEREBRAS_ANALYSIS_MODEL` define the supported model catalog, while credentials remain encrypted per user. The application does not require or fall back to a deployment-wide `OPENAI_API_KEY`.
 
 Provider credentials use versioned AES-256-GCM encryption. Set `AI_CREDENTIALS_KEY` to a stable random value of at least 32 characters. To rotate it, set the new value and temporarily list old values, comma-separated, in `AI_CREDENTIALS_PREVIOUS_KEYS` until users replace their stored credentials. Existing deployments fall back to `PLATFORM_CREDENTIALS_KEY`, then `API_TOKEN`.
 
@@ -63,7 +63,7 @@ E2E_PASSWORD=your-test-password \
 npm run test:e2e
 ```
 
-Set a long random `API_TOKEN`, provide `OPENAI_API_KEY`, and use disposable local directories for `VAULT_DIR` and `MEDIA_DIR` until the configuration has been validated. Keep a fresh local or preview deployment off public networks until its first administrator has registered.
+Set a long random `API_TOKEN` and use disposable local directories for `VAULT_DIR` and `MEDIA_DIR` until the configuration has been validated. Keep a fresh local or preview deployment off public networks until its first administrator has registered.
 
 ### Non-production demo accounts
 
@@ -156,7 +156,7 @@ Set a stable, randomly generated `PLATFORM_CREDENTIALS_KEY` of at least 32 chara
 
 For a remote deployment, set `BIND_ADDRESS`, `APP_URL`, and `TRUSTED_PROXIES` explicitly. Keep the application bound to loopback or a private interface, terminate TLS at a trusted reverse proxy, and list only that proxy's address or CIDR in `TRUSTED_PROXIES`. Public static documentation does not require exposing the application itself.
 
-`compose.dokploy-managed.yaml` is the dashboard-managed deployment definition. It uses the already-built local image and declares the original sandbox volumes as external, allowing Dokploy to control service lifecycle without replacing or deleting existing data. Runtime variables, including `OPENAI_API_KEY` and optional `NTFY_*` values, are editable in the Dokploy service UI.
+`compose.dokploy-managed.yaml` is the dashboard-managed deployment definition. It uses the already-built local image and declares the original sandbox volumes as external, allowing Dokploy to control service lifecycle without replacing or deleting existing data. Optional runtime variables such as `NTFY_*` are editable in the Dokploy service UI; AI credentials belong to users and are managed in the application.
 
 Set `NTFY_URL`, `NTFY_TOPIC`, and, when required by the ntfy server, `NTFY_TOKEN` to receive completion and final-failure pushes. Notifications contain only the platform, a bounded safe title, and a link to the authenticated Activity page.
 

@@ -42,7 +42,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
     .click();
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(
-    page.getByRole("heading", { name: "Make your archive useful" }),
+    page.getByRole("heading", { name: "Transcribe your captures" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Set up later" }).click();
 
@@ -68,7 +68,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
     .fill("a-strong-member-password");
   await invitedPage.getByRole("button", { name: "Create account" }).click();
   await expect(
-    invitedPage.getByRole("heading", { name: "Make your archive useful" }),
+    invitedPage.getByRole("heading", { name: "Transcribe your captures" }),
   ).toBeVisible();
   await invitedPage.getByRole("button", { name: "Set up later" }).click();
   await expect(invitedPage.getByRole("button", { name: "Settings" })).toBeVisible();
