@@ -34,6 +34,8 @@ GitHub Actions validates every pull request and pushes to `staging` and `main`. 
 
 Dokploy must keep **Require collaborator permissions** enabled, use a small preview limit, and remove preview Applications when PRs close. A preview URL proves only that an environment was created; it is not a health or acceptance attestation.
 
+For convenient manual testing, the staging Application may set `DEMO_ACCOUNTS_ENABLED=true`; preview Applications that inherit its environment recreate the same synthetic member and administrator credentials in their own container-local databases. This is credential consistency, not shared persistence. Never enable the flag on production or place real data in a demo account.
+
 ## First production cutover checklist
 
 - Record the running production image ID and external volume names.

@@ -54,6 +54,25 @@ export type ConversationCompaction = {
   createdAt: string;
 };
 
+export type InvitationRole = "member" | "admin";
+
+export type InvitationRecord = {
+  id: string;
+  role: InvitationRole;
+  createdByUserId: string;
+  createdAt: string;
+  expiresAt: string;
+  consumedAt: string | null;
+  revokedAt: string | null;
+};
+
+export type AccountRecord = {
+  id: string;
+  username: string;
+  role: string;
+  createdAt: string;
+};
+
 export class JobStore {
   readonly database: Database.Database;
   constructor(filename: string) {
@@ -1058,6 +1077,21 @@ export class JobStore {
       );
     return { id, username: username.toLowerCase(), role };
   }
+  upsertDemoUser(
+    username: string,
+    passwordHash: string,
+    role: "member" | "admin",
+  ) {
+    const normalizedUsername = username.toLowerCase();
+    const existing = this.getUserByUsername(normalizedUsername);
+    if (existing) {
+      this.database
+        .prepare("UPDATE users SET password_hash=?,role=? WHERE id=?")
+        .run(passwordHash, role, existing.id);
+      return { id: existing.id, username: normalizedUsername, role };
+    }
+    return this.createUser(normalizedUsername, passwordHash, role);
+  }
   createInitialUser(username: string, passwordHash: string) {
     const normalizedUsername = username.toLowerCase();
     const create = this.database.transaction(() => {
@@ -1077,6 +1111,152 @@ export class JobStore {
       return { id, username: normalizedUsername, role: "admin" };
     });
     return create();
+  }
+  listUsers(): AccountRecord[] {
+    return this.database
+      .prepare(
+        "SELECT id,username,role,created_at AS createdAt FROM users ORDER BY created_at,id",
+      )
+      .all() as AccountRecord[];
+  }
+  createInvitation(input: {
+    createdByUserId: string;
+    role: InvitationRole;
+    tokenHash: string;
+    expiresAt: string;
+  }): InvitationRecord {
+    const id = randomUUID(), now = new Date().toISOString();
+    this.database
+      .prepare(
+        "INSERT INTO invitations(id,token_hash,role,created_by_user_id,created_at,expires_at,consumed_at,consumed_by_user_id,revoked_at) VALUES(?,?,?,?,?,?,NULL,NULL,NULL)",
+      )
+      .run(id, input.tokenHash, input.role, input.createdByUserId, now, input.expiresAt);
+    return {
+      id,
+      role: input.role,
+      createdByUserId: input.createdByUserId,
+      createdAt: now,
+      expiresAt: input.expiresAt,
+      consumedAt: null,
+      revokedAt: null,
+    };
+  }
+  listInvitations(): InvitationRecord[] {
+    return (
+      this.database
+        .prepare(
+          "SELECT id,role,created_by_user_id AS createdByUserId,created_at AS createdAt,expires_at AS expiresAt,consumed_at AS consumedAt,revoked_at AS revokedAt FROM invitations ORDER BY created_at DESC,id DESC",
+        )
+        .all() as Array<Record<string, unknown>>
+    ).map((row) => this.mapInvitation(row));
+  }
+  inspectInvitation(tokenHash: string): InvitationRecord | null {
+    const row = this.database
+      .prepare(
+        "SELECT id,role,created_by_user_id AS createdByUserId,created_at AS createdAt,expires_at AS expiresAt,consumed_at AS consumedAt,revoked_at AS revokedAt FROM invitations WHERE token_hash=? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?",
+      )
+      .get(tokenHash, new Date().toISOString()) as Record<string, unknown> | undefined;
+    return row ? this.mapInvitation(row) : null;
+  }
+  redeemInvitation(input: {
+    tokenHash: string;
+    username: string;
+    passwordHash: string;
+  }):
+    | { ok: true; user: { id: string; username: string; role: InvitationRole } }
+    | { ok: false; reason: "invalid_invitation" | "username_taken" } {
+    const redeem = this.database.transaction(() => {
+      const now = new Date().toISOString();
+      const invitation = this.database
+        .prepare(
+          "SELECT id,role FROM invitations WHERE token_hash=? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?",
+        )
+        .get(input.tokenHash, now) as { id: string; role: InvitationRole } | undefined;
+      if (!invitation) return { ok: false as const, reason: "invalid_invitation" as const };
+      const username = input.username.toLowerCase();
+      const exists = this.database
+        .prepare("SELECT 1 FROM users WHERE username=?")
+        .get(username);
+      if (exists) return { ok: false as const, reason: "username_taken" as const };
+      const user = { id: randomUUID(), username, role: invitation.role };
+      this.database
+        .prepare(
+          "INSERT INTO users(id,username,password_hash,role,created_at) VALUES(?,?,?,?,?)",
+        )
+        .run(user.id, user.username, input.passwordHash, user.role, now);
+      const consumed = this.database
+        .prepare(
+          "UPDATE invitations SET consumed_at=?,consumed_by_user_id=? WHERE id=? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?",
+        )
+        .run(now, user.id, invitation.id, now);
+      if (consumed.changes !== 1) throw new Error("invitation_redeem_race");
+      return { ok: true as const, user };
+    });
+    try {
+      return redeem();
+    } catch (error) {
+      if (error instanceof Error && error.message === "invitation_redeem_race")
+        return { ok: false, reason: "invalid_invitation" };
+      if (
+        error instanceof Error &&
+        error.message.includes("UNIQUE constraint failed: users.username")
+      )
+        return { ok: false, reason: "username_taken" };
+      throw error;
+    }
+  }
+  revokeInvitation(id: string) {
+    return (
+      this.database
+        .prepare(
+          "UPDATE invitations SET revoked_at=? WHERE id=? AND consumed_at IS NULL AND revoked_at IS NULL",
+        )
+        .run(new Date().toISOString(), id).changes > 0
+    );
+  }
+  regenerateInvitation(input: {
+    id: string;
+    createdByUserId: string;
+    tokenHash: string;
+    expiresAt: string;
+  }): InvitationRecord | null {
+    const regenerate = this.database.transaction(() => {
+      const existing = this.database
+        .prepare("SELECT role,consumed_at AS consumedAt FROM invitations WHERE id=?")
+        .get(input.id) as { role: InvitationRole; consumedAt: string | null } | undefined;
+      if (!existing || existing.consumedAt) return null;
+      const now = new Date().toISOString();
+      this.database
+        .prepare("UPDATE invitations SET revoked_at=COALESCE(revoked_at,?) WHERE id=?")
+        .run(now, input.id);
+      const id = randomUUID();
+      this.database
+        .prepare(
+          "INSERT INTO invitations(id,token_hash,role,created_by_user_id,created_at,expires_at,consumed_at,consumed_by_user_id,revoked_at) VALUES(?,?,?,?,?,?,NULL,NULL,NULL)",
+        )
+        .run(id, input.tokenHash, existing.role, input.createdByUserId, now, input.expiresAt);
+      return {
+        id,
+        role: existing.role,
+        createdByUserId: input.createdByUserId,
+        createdAt: now,
+        expiresAt: input.expiresAt,
+        consumedAt: null,
+        revokedAt: null,
+      };
+    });
+    return regenerate();
+  }
+  private mapInvitation(row: Record<string, unknown>): InvitationRecord {
+    return {
+      id: String(row.id),
+      role: row.role as InvitationRole,
+      createdByUserId: String(row.createdByUserId),
+      createdAt: String(row.createdAt),
+      expiresAt: String(row.expiresAt),
+      consumedAt: (row.consumedAt as string | null) ?? null,
+      revokedAt: (row.revokedAt as string | null) ?? null,
+    };
   }
   deleteUser(username: string) {
     const user = this.getUserByUsername(username);
@@ -2318,6 +2498,9 @@ export class JobStore {
     CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,role TEXT NOT NULL,created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,token_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_sessions_hash ON sessions(token_hash);
+    CREATE TABLE IF NOT EXISTS invitations(id TEXT PRIMARY KEY,token_hash TEXT NOT NULL UNIQUE,role TEXT NOT NULL CHECK(role IN ('member','admin')),created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,created_at TEXT NOT NULL,expires_at TEXT NOT NULL,consumed_at TEXT,consumed_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,revoked_at TEXT);
+    CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON invitations(token_hash);
+    CREATE INDEX IF NOT EXISTS idx_invitations_created_at ON invitations(created_at DESC);
     CREATE TABLE IF NOT EXISTS api_keys(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,name TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,prefix TEXT NOT NULL,created_at TEXT NOT NULL,last_used_at TEXT);
     CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(token_hash);
     CREATE TABLE IF NOT EXISTS oauth_clients(client_id TEXT PRIMARY KEY,name TEXT NOT NULL,redirect_uris_json TEXT NOT NULL,created_at TEXT NOT NULL);

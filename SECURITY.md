@@ -10,6 +10,12 @@ Include the affected version or commit, reproduction steps, impact, and any sugg
 
 Social Knowledge is designed as a private, self-hosted application. Keep the application on loopback or a private network, terminate TLS at a trusted reverse proxy, and configure `TRUSTED_PROXIES` with only the proxy addresses or CIDRs that directly connect to the app.
 
-The first administrator setup requires the deployment's `API_TOKEN`. Store that token, the OpenAI key, social-media cookie files, runtime databases, media, exports, and knowledge-vault content outside Git. The checked-in `.gitignore` excludes the standard local paths, but operators are responsible for validating custom deployment paths.
+The first successful registration claims the administrator account without requiring the deployment's `API_TOKEN`. Therefore, an unclaimed instance exposed to the internet can be taken over by its first visitor. Keep a fresh deployment on loopback or a private network until its intended administrator has completed registration, then confirm browser login before widening access.
+
+After the archive is claimed, only administrators can create accounts through 24-hour, single-use invitation links. Treat each invitation link as a password: share it only through a trusted private channel, never include it in tickets, logs, source control, or chat transcripts, and revoke it if it might have been disclosed. Administrator invitations grant account-management authority; use member invitations by default.
+
+Store `API_TOKEN`, the OpenAI key, social-media cookie files, runtime databases, media, exports, invitation links, and knowledge-vault content outside Git. `API_TOKEN` remains for legacy Shortcut capture and an encryption-compatibility fallback; it is no longer a setup or browser-login credential. The checked-in `.gitignore` excludes the standard local paths, but operators are responsible for validating custom deployment paths.
+
+`DEMO_ACCOUNTS_ENABLED` intentionally publishes synthetic login credentials through the login page. It is disabled by default and must be enabled only for isolated preview or staging Applications containing no real user information. Preview databases are disposable and isolated from one another; they do not share accounts or archive data even when they inherit the same demo credentials.
 
 Public GitHub Pages documentation is separate from the running application and does not require making the application publicly reachable.

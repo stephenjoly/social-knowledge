@@ -18,6 +18,7 @@ import { TitleGenerator } from "./title-generator.js";
 import { LibraryPublisher } from "./library-publisher.js";
 import { PlatformConnectionService } from "./platform-connections.js";
 import { AiProviderService } from "./ai-providers.js";
+import { ensureDemoAccounts } from "./demo-accounts.js";
 
 const config = loadConfig();
 await Promise.all([
@@ -35,6 +36,7 @@ if (store.userCount() === 0 && config.bootstrapAdminPasswordHash)
     config.bootstrapAdminUsername,
     config.bootstrapAdminPasswordHash,
   );
+await ensureDemoAccounts(store, config);
 const events = new EventHub();
 const platformConnections = new PlatformConnectionService(store, config);
 const aiProviders = new AiProviderService(store, config);

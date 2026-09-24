@@ -10,6 +10,15 @@ const booleanFromEnv = z
       ["1", "true", "yes", "on"].includes(value.toLowerCase()),
   );
 
+const disabledBooleanFromEnv = z
+  .string()
+  .optional()
+  .transform((value) =>
+    value === undefined
+      ? false
+      : ["1", "true", "yes", "on"].includes(value.toLowerCase()),
+  );
+
 const optionalUrl = z.preprocess(
   (value) =>
     typeof value === "string" && value.trim() === "" ? undefined : value,
@@ -45,6 +54,11 @@ const schema = z.object({
   FACEBOOK_IMPERSONATE: z.string().default("chrome-99"),
   BOOTSTRAP_ADMIN_USERNAME: z.string().default("demo"),
   BOOTSTRAP_ADMIN_PASSWORD_HASH: z.string().optional(),
+  DEMO_ACCOUNTS_ENABLED: disabledBooleanFromEnv,
+  DEMO_MEMBER_USERNAME: z.string().min(2).max(40).default("demo-member"),
+  DEMO_MEMBER_PASSWORD: z.string().min(12).default("DemoMember123!"),
+  DEMO_ADMIN_USERNAME: z.string().min(2).max(40).default("demo-admin"),
+  DEMO_ADMIN_PASSWORD: z.string().min(12).default("DemoAdmin123!"),
   SESSION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   APP_URL: z.string().url().default("http://localhost:8787"),
   TRUSTED_PROXIES: z.string().default(""),
@@ -102,6 +116,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     facebookImpersonate: parsed.FACEBOOK_IMPERSONATE.trim() || undefined,
     bootstrapAdminUsername: parsed.BOOTSTRAP_ADMIN_USERNAME,
     bootstrapAdminPasswordHash: parsed.BOOTSTRAP_ADMIN_PASSWORD_HASH,
+    demoAccounts: parsed.DEMO_ACCOUNTS_ENABLED
+      ? [
+          {
+            username: parsed.DEMO_MEMBER_USERNAME.toLowerCase(),
+            password: parsed.DEMO_MEMBER_PASSWORD,
+            role: "member" as const,
+          },
+          {
+            username: parsed.DEMO_ADMIN_USERNAME.toLowerCase(),
+            password: parsed.DEMO_ADMIN_PASSWORD,
+            role: "admin" as const,
+          },
+        ]
+      : [],
     sessionDays: parsed.SESSION_DAYS,
     appUrl: parsed.APP_URL.replace(/\/$/, ""),
     trustedProxies: parsed.TRUSTED_PROXIES.split(",")
