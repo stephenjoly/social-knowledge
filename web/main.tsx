@@ -477,11 +477,21 @@ type AiProvider = {
   name: string;
   docsUrl: string;
   connected: boolean;
-  active: boolean;
   status: string;
   keyHint: string | null;
   verifiedAt: string | null;
   supportsVision: boolean;
+  capabilities: { transcription: boolean; analysis: boolean };
+  models: { transcription: string[]; analysis: string[] };
+};
+type AiSelection = { provider: "openai" | "cerebras"; model: string };
+type AiProviderState = {
+  providers: AiProvider[];
+  selections: {
+    transcription: AiSelection | null;
+    analysis: AiSelection | null;
+  };
+  readiness: { capture: boolean; ask: boolean };
 };
 type AccountUser = {
   id: string;
@@ -766,40 +776,72 @@ function Auth({
 }
 
 function ProviderOnboarding({ onDone }: { onDone: () => void }) {
-  const [provider, setProvider] = useState<"openai" | "cerebras">("cerebras");
+  const [state, setState] = useState<AiProviderState | null>(null);
+  const [step, setStep] = useState<"transcription" | "analysis">("transcription");
+  const [provider, setProvider] = useState<"openai" | "cerebras">("openai");
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  useEffect(() => {
+    void api<AiProviderState>("/api/v1/ai-providers").then((result) => {
+      setState(result);
+      if (result.selections.transcription) setStep("analysis");
+    });
+  }, []);
+  const selectedProvider = state?.providers.find((item) => item.id === provider);
+  async function choose(selection: "transcription" | "analysis", selected: AiSelection) {
+    const result = await api<AiProviderState>("/api/v1/ai-settings", {
+      method: "PUT",
+      body: JSON.stringify({ [selection]: selected }),
+    });
+    setState(result);
+    return result;
+  }
   return (
     <main className="auth">
       <section className="auth-card onboarding-card">
         <div className="mark">◉</div>
-        <h1>Make your archive useful</h1>
-        <p>Connect an AI provider to capture posts and ask questions. Your key is encrypted and verified before it is saved.</p>
+        <p className="step-label">Step {step === "transcription" ? "1" : "2"} of 2</p>
+        <h1>{step === "transcription" ? "Transcribe your captures" : "Analyze your archive"}</h1>
+        <p>{step === "transcription" ? "Connect OpenAI to turn reel audio into searchable text." : "Choose the provider that summarizes captures and answers questions."} Keys are encrypted and verified before they are saved.</p>
         <form onSubmit={async (event) => {
           event.preventDefault();
           setSubmitting(true);
           setMessage("Testing the key with the provider…");
           try {
-            await api(`/api/v1/ai-providers/${provider}`, { method: "PUT", body: JSON.stringify({ apiKey }) });
-            onDone();
+            let result = state!;
+            if (!selectedProvider?.connected) {
+              result = await api<AiProviderState>(`/api/v1/ai-providers/${provider}`, { method: "PUT", body: JSON.stringify({ apiKey }) });
+              setState(result);
+            }
+            const definition = result.providers.find((item) => item.id === provider)!;
+            const model = definition.models[step][0];
+            if (!model) throw new Error("model_unavailable");
+            result = await choose(step, { provider, model });
+            setApiKey("");
+            if (step === "transcription") {
+              setStep("analysis");
+              setProvider(result.providers.find((item) => item.id === "openai")?.connected ? "openai" : "cerebras");
+              setMessage("Transcription is ready. Now choose how to analyze your archive.");
+            } else onDone();
           } catch (error) {
             setMessage((error as { body?: { error?: string } }).body?.error === "invalid_api_key" ? "The provider rejected that API key. Check it and try again." : "The provider could not be reached. Try again shortly.");
           } finally {
             setSubmitting(false);
           }
         }}>
-          <label>Provider
-            <select value={provider} onChange={(event) => setProvider(event.target.value as "openai" | "cerebras")}>
-              <option value="cerebras">Cerebras</option><option value="openai">OpenAI</option>
+          {step === "analysis" && <label>Analysis provider
+            <select value={provider} onChange={(event) => { setProvider(event.target.value as "openai" | "cerebras"); setApiKey(""); }}>
+              <option value="openai">OpenAI</option><option value="cerebras">Cerebras</option>
             </select>
-          </label>
-          <label>{provider === "cerebras" ? "Cerebras" : "OpenAI"} API key
+          </label>}
+          {selectedProvider?.models[step][0] && <p className="model-choice"><span>{step === "transcription" ? "Transcription model" : "Analysis model"}</span><strong>{selectedProvider.models[step][0]}</strong></p>}
+          {selectedProvider?.connected ? <p className="connected-choice"><strong>{selectedProvider.name} connected</strong><span>{selectedProvider.keyHint} · no need to enter the key again</span></p> : <label>{provider === "cerebras" ? "Cerebras" : "OpenAI"} API key
             <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" placeholder="Paste API key" required />
-          </label>
-          <button disabled={submitting}>{submitting ? "Verifying…" : "Verify and continue"}</button>
+          </label>}
+          <button disabled={submitting || !state}>{submitting ? "Verifying…" : step === "transcription" ? "Connect transcription" : "Use for analysis"}</button>
           <button type="button" className="secondary-button" onClick={onDone}>Set up later</button>
-          <p className="settings-help">Without a verified provider, Capture and Ask AI remain unavailable. You can connect one in Settings any time.</p>
+          <p className="settings-help">Capture needs transcription and analysis. Ask only needs analysis. You can finish either setup in Settings.</p>
           {message && <p className="action-feedback" role="status">{message}</p>}
         </form>
       </section>
@@ -1102,7 +1144,7 @@ function Settings({ user }: { user: AccountUser | null }) {
   const [mcpUrl, setMcpUrl] = useState("");
   const [libraryExports, setLibraryExports] = useState<LibraryExport[]>([]);
   const [backupMessage, setBackupMessage] = useState("");
-  const [aiProviders, setAiProviders] = useState<AiProvider[]>([]);
+  const [aiState, setAiState] = useState<AiProviderState | null>(null);
   const [selectedAiProvider, setSelectedAiProvider] = useState<
     "openai" | "cerebras"
   >("cerebras");
@@ -1129,7 +1171,7 @@ function Settings({ user }: { user: AccountUser | null }) {
       api<{ connections: PlatformConnection[] }>(
         "/api/v1/platform-connections",
       ),
-      api<{ providers: AiProvider[] }>("/api/v1/ai-providers"),
+      api<AiProviderState>("/api/v1/ai-providers"),
     ]);
     setKeys(keyResult.apiKeys);
     setDefaultLanguage(preferenceResult.preferences.defaultLanguage);
@@ -1138,7 +1180,7 @@ function Settings({ user }: { user: AccountUser | null }) {
     setMcpUrl(connectionResult.mcpUrl);
     setLibraryExports(exportResult.exports);
     setPlatformConnections(platformResult.connections);
-    setAiProviders(aiResult.providers);
+    setAiState(aiResult);
   }
   useEffect(() => {
     void load();
@@ -1210,17 +1252,52 @@ function Settings({ user }: { user: AccountUser | null }) {
         </p>
       </div>
       <section className="settings-card ai-provider-settings">
-        <h2>AI provider</h2>
+        <h2>AI processing</h2>
         <p className="settings-help">
-          A verified provider key is required before you can capture or ask
-          questions. The key is encrypted at rest and is never shown again.
+          Choose transcription and analysis separately. Provider keys are
+          encrypted at rest and never shown again.
         </p>
+        <div className="ai-readiness" role="status">
+          <strong>{aiState?.readiness.capture ? "Capture ready" : "Capture needs transcription and analysis"}</strong>
+          <span>{aiState?.readiness.ask ? "Ask is ready." : "Ask needs an analysis provider."}</span>
+        </div>
+        <div className="ai-task-grid">
+          {(["transcription", "analysis"] as const).map((task) => {
+            const selection = aiState?.selections[task];
+            const options = (aiState?.providers ?? []).filter((item) => item.capabilities[task]);
+            return <article className="ai-task" key={task}>
+              <span className="step-label">{task === "transcription" ? "Step 1" : "Step 2"}</span>
+              <h3>{task === "transcription" ? "Transcription" : "Analysis & Ask"}</h3>
+              <p>{task === "transcription" ? "Turns audio into searchable text. OpenAI is currently required." : "Creates summaries, topics, vision insights, and answers."}</p>
+              <label>Provider
+                <select value={selection?.provider ?? ""} onChange={async (event) => {
+                  const provider = event.target.value as "openai" | "cerebras";
+                  const definition = options.find((item) => item.id === provider);
+                  if (!definition?.connected) { setSelectedAiProvider(provider); setProviderMessage(`Connect ${definition?.name ?? provider} below before selecting it for ${task}.`); return; }
+                  const model = definition.models[task][0];
+                  const result = await api<AiProviderState>("/api/v1/ai-settings", { method: "PUT", body: JSON.stringify({ [task]: { provider, model } }) });
+                  setAiState(result);
+                  setProviderMessage(`${task === "transcription" ? "Transcription" : "Analysis"} selection updated.`);
+                }}>
+                  <option value="" disabled>Choose provider</option>
+                  {options.map((item) => <option key={item.id} value={item.id}>{item.name}{item.connected ? " · connected" : " · connect first"}</option>)}
+                </select>
+              </label>
+              {selection && <label>Model
+                <select value={selection.model} onChange={async (event) => {
+                  const result = await api<AiProviderState>("/api/v1/ai-settings", { method: "PUT", body: JSON.stringify({ [task]: { provider: selection.provider, model: event.target.value } }) });
+                  setAiState(result);
+                  setProviderMessage(`${task === "transcription" ? "Transcription" : "Analysis"} model updated.`);
+                }}>{options.find((item) => item.id === selection.provider)?.models[task].map((model) => <option key={model}>{model}</option>)}</select>
+              </label>}
+              <strong className={selection ? "task-status ready" : "task-status"}>{selection ? `${options.find((item) => item.id === selection.provider)?.name} · ${selection.model}` : "Not configured"}</strong>
+            </article>;
+          })}
+        </div>
+        <h3 className="provider-connections-title">Provider connections</h3>
         <div className="platform-connections">
-          {aiProviders.map((provider) => (
-            <article
-              className={provider.active ? "selected-provider" : ""}
-              key={provider.id}
-            >
+          {(aiState?.providers ?? []).map((provider) => (
+            <article key={provider.id}>
               <div className="platform-connection-heading">
                 <div>
                   <strong>{provider.name}</strong>
@@ -1228,7 +1305,7 @@ function Settings({ user }: { user: AccountUser | null }) {
                     className={`connection-state ${provider.connected ? "connected" : ""}`}
                   >
                     {provider.connected
-                      ? "Verified · active"
+                      ? "Verified"
                       : provider.status === "needs_attention"
                         ? "Reconnect needed"
                         : "Not connected"}
@@ -1240,15 +1317,20 @@ function Settings({ user }: { user: AccountUser | null }) {
                   ? `${provider.keyHint} · verified ${new Date(provider.verifiedAt!).toLocaleString()}`
                   : provider.id === "cerebras"
                     ? "Fast text generation through Cerebras Inference. Transcript, description, and comments are analyzed; sampled video frames are not sent."
-                    : "OpenAI generation and structured outputs."}
+                    : "Required for transcription; also supports analysis and vision."}
               </p>
               <button
                 type="button"
                 className="secondary-button"
                 onClick={() => setSelectedAiProvider(provider.id)}
               >
-                {selectedAiProvider === provider.id ? "Selected" : "Select"}
+                {provider.connected ? "Replace key" : `Connect ${provider.name}`}
               </button>
+              {provider.connected && <button type="button" className="text-button danger-button" onClick={async () => {
+                const result = await api<AiProviderState>(`/api/v1/ai-providers/${provider.id}`, { method: "DELETE" });
+                setAiState(result);
+                setProviderMessage(`${provider.name} disconnected. Any task that used it now needs a provider.`);
+              }}>Disconnect {provider.name}</button>}
             </article>
           ))}
         </div>
@@ -1258,15 +1340,13 @@ function Settings({ user }: { user: AccountUser | null }) {
             setVerifyingProvider(true);
             setProviderMessage("Testing the key with the provider…");
             try {
-              await api(`/api/v1/ai-providers/${selectedAiProvider}`, {
+              const result = await api<AiProviderState>(`/api/v1/ai-providers/${selectedAiProvider}`, {
                 method: "PUT",
                 body: JSON.stringify({ apiKey: providerApiKey }),
               });
+              setAiState(result);
               setProviderApiKey("");
-              setProviderMessage(
-                "API key verified. Captures and Ask are ready.",
-              );
-              await load();
+              setProviderMessage(`${selectedAiProvider === "cerebras" ? "Cerebras" : "OpenAI"} connected. Review the task selections above.`);
             } catch (error) {
               setProviderMessage(
                 (error as { body?: { error?: string } }).body?.error ===
@@ -1298,20 +1378,6 @@ function Settings({ user }: { user: AccountUser | null }) {
           <p className="action-feedback" role="status">
             {providerMessage}
           </p>
-        )}
-        {aiProviders.some((provider) => provider.connected) && (
-          <button
-            className="secondary-button"
-            onClick={async () => {
-              await api("/api/v1/ai-providers", { method: "DELETE" });
-              setProviderMessage(
-                "AI provider disconnected. New captures are blocked.",
-              );
-              await load();
-            }}
-          >
-            Disconnect AI provider
-          </button>
         )}
       </section>
       {user?.role === "admin" && <AccessManagement />}
@@ -2171,8 +2237,8 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
         new Error(
           problem.error === "conversation_busy"
             ? "This conversation is already answering in another tab."
-            : problem.error === "ai_provider_required"
-              ? "Connect and verify an AI provider in Settings before using Ask AI."
+            : problem.error === "ai_provider_required" || problem.error === "analysis_provider_required"
+              ? "Choose a connected analysis provider in Settings before using Ask AI."
             : problem.error === "invalid_message"
               ? "Enter a question between 1 and 2,000 characters."
               : problem.error === "invalid_request_id"
@@ -2911,12 +2977,15 @@ function App() {
       setTab("activity");
       await load();
     } catch (e) {
-      const providerRequired =
-        (e as { body?: { error?: string } }).body?.error ===
-        "ai_provider_required";
+      const errorCode = (e as { body?: { error?: string } }).body?.error;
+      const providerRequired = ["ai_provider_required", "analysis_provider_required", "transcription_required"].includes(errorCode ?? "");
       setMessage(
-        providerRequired
-          ? "Connect and verify an AI provider before capturing."
+        errorCode === "transcription_required"
+          ? "Choose a connected OpenAI transcription model in Settings before capturing."
+          : errorCode === "analysis_provider_required"
+            ? "Choose a connected analysis provider in Settings before capturing."
+            : providerRequired
+              ? "Finish AI processing setup before capturing."
           : e instanceof Error
             ? e.message
             : "Submission failed",

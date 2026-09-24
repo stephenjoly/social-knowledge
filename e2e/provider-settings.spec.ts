@@ -27,8 +27,12 @@ test.beforeAll(async () => {
     init?: RequestInit,
   ) => {
     const url = input instanceof Request ? input.url : String(input);
-    if (url === "https://api.cerebras.ai/v1/models")
-      return new Response(JSON.stringify({ data: [{ id: "qwen-3.8-27b" }] }), {
+    if (url === "https://api.cerebras.ai/v1/models" || url === "https://api.openai.com/v1/models")
+      return new Response(JSON.stringify({ data: [
+        { id: "qwen-3.8-27b" },
+        { id: config.analysisModel },
+        { id: config.transcriptionModel },
+      ] }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -45,7 +49,7 @@ test.afterAll(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-test("requires setup, verifies Cerebras, redacts the key, and disconnects", async ({
+test("configures transcription and analysis independently and disconnects safely", async ({
   page,
 }) => {
   await page.goto(`http://127.0.0.1:${port}`);
@@ -59,19 +63,29 @@ test("requires setup, verifies Cerebras, redacts the key, and disconnects", asyn
   await page.getByRole("button", { name: "Capture", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
 
-  await page.getByLabel("Cerebras API key").fill("csk-browser-secret-1234");
+  await page.getByRole("button", { name: "Connect OpenAI" }).click();
+  await page.getByLabel("OpenAI API key").fill("sk-browser-secret-1234");
   await page.getByRole("button", { name: "Verify and use" }).click();
   await expect(
-    page.getByText("API key verified. Captures and Ask are ready."),
+    page.getByText("OpenAI connected. Review the task selections above."),
   ).toBeVisible();
-  await expect(page.getByText("Verified · active")).toBeVisible();
+  await expect(page.getByText("Capture ready")).toBeVisible();
+  await expect(page.getByText("Ask is ready.")).toBeVisible();
   await expect(page.locator("body")).not.toContainText(
-    "csk-browser-secret-1234",
+    "sk-browser-secret-1234",
   );
 
-  await page.getByRole("button", { name: "Disconnect AI provider" }).click();
+  await page.getByRole("button", { name: "Connect Cerebras" }).click();
+  await page.getByLabel("Cerebras API key").fill("csk-browser-secret-1234");
+  await page.getByRole("button", { name: "Verify and use" }).click();
+  await page.getByLabel("Provider").nth(1).selectOption("cerebras");
+  await expect(page.getByText("Analysis selection updated.")).toBeVisible();
+  await expect(page.getByText(/Cerebras · qwen-3.8-27b/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Disconnect OpenAI" }).click();
   await expect(
-    page.getByText("AI provider disconnected. New captures are blocked."),
+    page.getByText("OpenAI disconnected. Any task that used it now needs a provider."),
   ).toBeVisible();
-  await expect(page.getByText("Verified · active")).toHaveCount(0);
+  await expect(page.getByText("Capture needs transcription and analysis")).toBeVisible();
+  await expect(page.getByText("Ask is ready.")).toBeVisible();
 });

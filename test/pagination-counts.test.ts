@@ -397,6 +397,12 @@ describe("capture pagination and count queries", () => {
       "test-encrypted-payload",
       "test…key",
     );
+    store.saveAiTaskSelections(owner.id, {
+      transcriptionProvider: "openai",
+      transcriptionModel: config.transcriptionModel,
+      analysisProvider: "openai",
+      analysisModel: config.analysisModel,
+    });
     const other = store.createUser("analytics-api-other", "hash");
     addCapture(store, owner.id, "api-recent", {
       createdAt: new Date(Date.now() - 60_000).toISOString(),

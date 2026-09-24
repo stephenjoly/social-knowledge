@@ -33,7 +33,11 @@ export class AiProviderService {
   private readonly encryptionKey: Buffer;
   private readonly encryptionKeyId: string;
   private readonly decryptionKeys = new Map<string, Buffer>();
-  private readonly users = new AsyncLocalStorage<string>();
+  private readonly users = new AsyncLocalStorage<{
+    userId: string;
+    provider?: AiProviderId;
+    model?: string;
+  }>();
   constructor(
     private readonly store: JobStore,
     private readonly config: AppConfig,
@@ -55,38 +59,122 @@ export class AiProviderService {
   }
 
   list(userId: string) {
-    const active = this.store.aiProviderConnection(userId);
+    const connections = this.store.aiProviderConnections(userId);
     return aiProviderIds.map((id) => ({
       ...definitions[id],
-      connected: active?.provider === id && active.status === "verified",
-      active: active?.provider === id,
-      status: active?.provider === id ? active.status : "not_connected",
-      keyHint: active?.provider === id ? active.keyHint : null,
-      verifiedAt: active?.provider === id ? active.verifiedAt : null,
+      capabilities: {
+        transcription: id === "openai",
+        analysis: true,
+      },
+      models: {
+        transcription: id === "openai" ? [this.config.transcriptionModel] : [],
+        analysis: [
+          id === "openai"
+            ? this.config.analysisModel
+            : this.config.cerebrasAnalysisModel,
+        ],
+      },
+      connected: connections.some(
+        (connection) => connection.provider === id && connection.status === "verified",
+      ),
+      status:
+        connections.find((connection) => connection.provider === id)?.status ??
+        "not_connected",
+      keyHint:
+        connections.find((connection) => connection.provider === id)?.keyHint ??
+        null,
+      verifiedAt:
+        connections.find((connection) => connection.provider === id)
+          ?.verifiedAt ?? null,
     }));
   }
 
+  settings(userId: string) {
+    const selected = this.store.aiTaskSelections(userId);
+    const connections = this.store.aiProviderConnections(userId);
+    const verified = (provider: string | null) =>
+      Boolean(
+        provider &&
+          connections.some(
+            (connection) =>
+              connection.provider === provider &&
+              connection.status === "verified",
+          ),
+      );
+    const transcription =
+      selected.transcriptionProvider === "openai" &&
+      (selected.transcriptionModel === null ||
+        selected.transcriptionModel === this.config.transcriptionModel) &&
+      verified("openai")
+        ? {
+            provider: "openai" as const,
+            model: selected.transcriptionModel ?? this.config.transcriptionModel,
+          }
+        : null;
+    const analysis =
+      selected.analysisProvider &&
+      (selected.analysisModel === null ||
+        selected.analysisModel === this.analysisModel(selected.analysisProvider)) &&
+      verified(selected.analysisProvider)
+        ? {
+            provider: selected.analysisProvider as AiProviderId,
+            model:
+              selected.analysisModel ??
+              this.analysisModel(selected.analysisProvider as AiProviderId),
+          }
+        : null;
+    return {
+      providers: this.list(userId),
+      selections: { transcription, analysis },
+      readiness: { capture: Boolean(transcription && analysis), ask: Boolean(analysis) },
+    };
+  }
+
   configured(userId: string) {
-    return this.store.aiProviderConnection(userId)?.status === "verified";
+    return this.settings(userId).readiness.ask;
+  }
+
+  captureSelections(userId: string) {
+    const settings = this.settings(userId);
+    if (!settings.selections.transcription) throw new Error("transcription_required");
+    if (!settings.selections.analysis) throw new Error("analysis_provider_required");
+    return {
+      transcriptionProvider: settings.selections.transcription.provider,
+      transcriptionModel: settings.selections.transcription.model,
+      analysisProvider: settings.selections.analysis.provider,
+      analysisModel: settings.selections.analysis.model,
+    };
   }
 
   activeProvider(userId: string): AiProviderId | null {
-    const connection = this.store.aiProviderConnection(userId);
-    return connection?.status === "verified"
-      ? (connection.provider as AiProviderId)
-      : null;
+    return this.settings(userId).selections.analysis?.provider ?? null;
   }
 
   runForUser<T>(
     userId: string,
     action: () => T,
     provider?: AiProviderId | null,
+    model?: string | null,
   ): T {
-    return this.users.run(`${userId}:${provider ?? ""}`, action);
+    const analysis = this.settings(userId).selections.analysis;
+    const selectedProvider = provider ?? analysis?.provider;
+    const selectedModel = model ?? analysis?.model;
+    return this.users.run(
+      {
+        userId,
+        ...(selectedProvider ? { provider: selectedProvider } : {}),
+        ...(selectedModel ? { model: selectedModel } : {}),
+      },
+      action,
+    );
   }
 
-  enterUser(userId: string) {
-    this.users.enterWith(userId);
+  enterUser(userId: string, provider?: AiProviderId | null, model?: string | null) {
+    this.users.enterWith({
+      userId,
+      ...(provider ? { provider } : {}),
+      ...(model ? { model } : {}),
+    });
   }
 
   /** An OpenAI-shaped generation client so existing generation stages remain provider-agnostic. */
@@ -97,13 +185,13 @@ export class AiProviderService {
         create: async (request: any, options?: any) => {
           const context = service.users.getStore();
           if (!context) throw new Error("ai_provider_required");
-          const separator = context.lastIndexOf(":");
-          const userId = separator < 0 ? context : context.slice(0, separator);
-          const boundProvider =
-            separator < 0
-              ? null
-              : (context.slice(separator + 1) as AiProviderId);
-          const route = service.client(userId, boundProvider || undefined);
+          if (!context.provider || !context.model)
+            throw new Error("analysis_provider_required");
+          const route = service.client(
+            context.userId,
+            context.provider,
+            context.model,
+          );
           try {
             if (route.provider === "openai")
               return await route.client.responses.create(
@@ -195,7 +283,7 @@ export class AiProviderService {
               (error as { status?: number }).status === 401 ||
               (error as { status?: number }).status === 403
             )
-              service.store.markAiProviderAttention(userId, route.provider);
+              service.store.markAiProviderAttention(context.userId, route.provider);
             throw error;
           }
         },
@@ -218,13 +306,15 @@ export class AiProviderService {
     const models = (await response.json().catch(() => null)) as {
       data?: Array<{ id?: string }>;
     } | null;
-    const requiredModel =
+    const requiredModels =
       provider === "cerebras"
-        ? this.config.cerebrasAnalysisModel
-        : this.config.analysisModel;
+        ? [this.config.cerebrasAnalysisModel]
+        : [this.config.transcriptionModel, this.config.analysisModel];
     if (
       Array.isArray(models?.data) &&
-      !models.data.some((model) => model.id === requiredModel)
+      requiredModels.some(
+        (requiredModel) => !models.data!.some((model) => model.id === requiredModel),
+      )
     )
       throw new Error("model_unavailable");
     const iv = randomBytes(12);
@@ -241,15 +331,66 @@ export class AiProviderService {
     const payload = `v1.${this.encryptionKeyId}.${encryptedPayload}`;
     const keyHint = `${key.slice(0, 5)}…${key.slice(-4)}`;
     this.store.saveAiProviderConnection(userId, provider, payload, keyHint);
-    return this.list(userId);
+    const current = this.store.aiTaskSelections(userId);
+    this.store.saveAiTaskSelections(userId, {
+      transcriptionProvider:
+        current.transcriptionProvider ?? (provider === "openai" ? "openai" : null),
+      transcriptionModel:
+        current.transcriptionModel ??
+        (provider === "openai" ? this.config.transcriptionModel : null),
+      analysisProvider: current.analysisProvider ?? provider,
+      analysisModel: current.analysisModel ?? this.analysisModel(provider),
+    });
+    return this.settings(userId);
   }
 
-  remove(userId: string) {
-    return this.store.deleteAiProviderConnection(userId);
+  remove(userId: string, provider: AiProviderId) {
+    this.store.deleteAiProviderConnection(userId, provider);
+    return this.settings(userId);
   }
 
-  client(userId: string, expectedProvider?: AiProviderId) {
-    const connection = this.store.aiProviderConnectionSecret(userId);
+  saveSelections(userId: string, selections: {
+    transcription?: { provider: "openai"; model: string } | null | undefined;
+    analysis?: { provider: AiProviderId; model: string } | null | undefined;
+  }) {
+    const current = this.store.aiTaskSelections(userId);
+    const next = {
+      transcriptionProvider:
+        selections.transcription === undefined
+          ? current.transcriptionProvider
+          : selections.transcription?.provider ?? null,
+      transcriptionModel:
+        selections.transcription === undefined
+          ? current.transcriptionModel
+          : selections.transcription?.model ?? null,
+      analysisProvider:
+        selections.analysis === undefined
+          ? current.analysisProvider
+          : selections.analysis?.provider ?? null,
+      analysisModel:
+        selections.analysis === undefined
+          ? current.analysisModel
+          : selections.analysis?.model ?? null,
+    };
+    if (
+      next.transcriptionProvider !== null &&
+      (next.transcriptionProvider !== "openai" ||
+        next.transcriptionModel !== this.config.transcriptionModel ||
+        this.store.aiProviderConnection(userId, "openai")?.status !== "verified")
+    )
+      throw new Error("invalid_transcription_selection");
+    if (
+      next.analysisProvider !== null &&
+      (next.analysisModel !== this.analysisModel(next.analysisProvider as AiProviderId) ||
+        this.store.aiProviderConnection(userId, next.analysisProvider)?.status !== "verified")
+    )
+      throw new Error("invalid_analysis_selection");
+    this.store.saveAiTaskSelections(userId, next);
+    return this.settings(userId);
+  }
+
+  client(userId: string, expectedProvider?: AiProviderId, expectedModel?: string) {
+    const connection = this.store.aiProviderConnectionSecret(userId, expectedProvider);
     if (!connection || connection.status !== "verified")
       throw new Error("ai_provider_required");
     if (expectedProvider && connection.provider !== expectedProvider)
@@ -282,12 +423,16 @@ export class AiProviderService {
       }
     }
     if (!apiKey) throw new Error("ai_credentials_unreadable");
+    const provider = connection.provider as AiProviderId;
+    const model = expectedModel ?? this.analysisModel(provider);
+    if (
+      model !== this.analysisModel(provider) &&
+      !(provider === "openai" && model === this.config.transcriptionModel)
+    )
+      throw new Error("model_unavailable");
     return {
       provider: connection.provider as AiProviderId,
-      model:
-        connection.provider === "cerebras"
-          ? this.config.cerebrasAnalysisModel
-          : this.config.analysisModel,
+      model,
       client: new OpenAI({
         apiKey,
         ...(connection.provider === "cerebras"
@@ -295,6 +440,12 @@ export class AiProviderService {
           : {}),
       }),
     };
+  }
+
+  private analysisModel(provider: AiProviderId) {
+    return provider === "cerebras"
+      ? this.config.cerebrasAnalysisModel
+      : this.config.analysisModel;
   }
 }
 

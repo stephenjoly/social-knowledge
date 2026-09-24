@@ -1,5 +1,4 @@
 import { mkdir } from "node:fs/promises";
-import OpenAI from "openai";
 import { Analyzer } from "./analyzer.js";
 import { buildApp } from "./app.js";
 import { MediaArchive } from "./archive.js";
@@ -41,7 +40,6 @@ const events = new EventHub();
 const platformConnections = new PlatformConnectionService(store, config);
 const aiProviders = new AiProviderService(store, config);
 const app = buildApp(config, store, events, platformConnections, aiProviders);
-const openai = new OpenAI({ apiKey: config.openAiApiKey });
 const generationClient = aiProviders.routedClient();
 const worker = new JobWorker(
   config,
@@ -50,8 +48,6 @@ const worker = new JobWorker(
     downloader: new MediaDownloader(config, platformConnections),
     processor: new MediaProcessor(),
     transcriber: new Transcriber(
-      openai,
-      config,
       (userId) => aiProviders.client(userId, "openai").client,
     ),
     translator: new Translator(generationClient, config),

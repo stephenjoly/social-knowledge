@@ -2,9 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AiProviderService } from "../src/ai-providers.js";
 import { JobStore } from "../src/db.js";
 import { testConfig } from "./helpers.js";
+import { loadConfig } from "../src/config.js";
 
 describe("AI provider settings", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("starts without a deployment-wide OpenAI key", () => {
+    const config = loadConfig({
+      API_TOKEN: "test-token-that-is-at-least-24-characters",
+    });
+    expect(config.openAiApiKey).toBeUndefined();
+  });
 
   it("verifies and encrypts a Cerebras key without returning it", async () => {
     const store = new JobStore(":memory:");
@@ -31,9 +39,8 @@ describe("AI provider settings", () => {
         headers: { Authorization: "Bearer csk-secret-value-1234" },
       }),
     );
-    expect(providers.find((item) => item.id === "cerebras")).toMatchObject({
+    expect(providers.providers.find((item) => item.id === "cerebras")).toMatchObject({
       connected: true,
-      active: true,
     });
     expect(JSON.stringify(providers)).not.toContain("csk-secret-value-1234");
     expect(
@@ -58,6 +65,43 @@ describe("AI provider settings", () => {
       service.verifyAndSave(user.id, "openai", "bad-key"),
     ).rejects.toThrow("invalid_api_key");
     expect(service.configured(user.id)).toBe(false);
+    store.close();
+  });
+
+  it("keeps both connections and selects transcription independently", async () => {
+    const store = new JobStore(":memory:");
+    const user = store.createUser("separate-tasks", "hash");
+    const config = testConfig("/tmp/ai-separate-tasks");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = input instanceof Request ? input.url : String(input);
+        const data = url.includes("cerebras")
+          ? [{ id: config.cerebrasAnalysisModel }]
+          : [
+              { id: config.transcriptionModel },
+              { id: config.analysisModel },
+            ];
+        return new Response(JSON.stringify({ data }), { status: 200 });
+      }),
+    );
+    const service = new AiProviderService(store, config);
+    await service.verifyAndSave(user.id, "openai", "sk-openai-test-key");
+    await service.verifyAndSave(user.id, "cerebras", "csk-cerebras-test-key");
+    const settings = service.saveSelections(user.id, {
+      analysis: { provider: "cerebras", model: config.cerebrasAnalysisModel },
+    });
+    expect(settings.providers.filter((provider) => provider.connected)).toHaveLength(2);
+    expect(settings.selections).toEqual({
+      transcription: { provider: "openai", model: config.transcriptionModel },
+      analysis: { provider: "cerebras", model: config.cerebrasAnalysisModel },
+    });
+    expect(settings.readiness).toEqual({ capture: true, ask: true });
+
+    const afterRemoval = service.remove(user.id, "openai");
+    expect(afterRemoval.selections.transcription).toBeNull();
+    expect(afterRemoval.selections.analysis?.provider).toBe("cerebras");
+    expect(afterRemoval.readiness).toEqual({ capture: false, ask: true });
     store.close();
   });
 

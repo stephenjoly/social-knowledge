@@ -39,7 +39,7 @@ const schema = z.object({
   MEDIA_DIR: z.string().default("./data/media"),
   UI_DIR: z.string().default("./dist-ui"),
   API_TOKEN: z.string().min(24),
-  OPENAI_API_KEY: z.string().min(1),
+  OPENAI_API_KEY: z.string().min(1).optional(),
   OPENAI_TRANSCRIPTION_MODEL: z.string().default("gpt-4o-mini-transcribe"),
   OPENAI_ANALYSIS_MODEL: z.string().default("gpt-5-mini"),
   CEREBRAS_ANALYSIS_MODEL: z.string().default("qwen-3.8-27b"),
@@ -90,6 +90,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     workDir: path.join(dataDir, "work"),
     exportDir: path.join(dataDir, "exports"),
     apiToken: parsed.API_TOKEN,
+    // Kept as an optional compatibility input for offline maintenance scripts.
+    // The running application never uses a deployment-wide AI credential.
     openAiApiKey: parsed.OPENAI_API_KEY,
     transcriptionModel: parsed.OPENAI_TRANSCRIPTION_MODEL,
     analysisModel: parsed.OPENAI_ANALYSIS_MODEL,
