@@ -1,0 +1,238 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Social Knowledge · Roadmap review</title><style>
+  /* ---- tokens. Every var has a fallback so the file works standalone. ---- */
+  :root {
+    --bg:       var(--background, #ffffff);
+    --fg:       var(--foreground, #09090b);
+    --muted:    var(--muted, #f4f4f5);
+    --muted-fg: var(--muted-foreground, #71717a);
+    --card-bg:  var(--card, #ffffff);
+    --bd:       var(--border, #e4e4e7);
+    --acc:      var(--accent, #f4f4f5);
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:transparent; }
+  body, table, th, td, p, li, h2 {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  .wrap { width:100%; max-width:2000px; margin:0 auto; color:var(--fg); padding:26px 48px 44px; }
+
+  h2 { font-size:15px; font-weight:600; margin:26px 0 3px; letter-spacing:-.012em; }
+  h2:first-of-type { margin-top:0; }
+  .sub, .sec-note { font-size:11.5px; color:var(--muted-fg); margin:0 0 9px; line-height:1.55; }
+
+  /* ---- card-wrapped table ---- */
+  .tbl { width:100%; overflow-x:auto; background:var(--card-bg);
+         border:1px solid var(--bd); border-radius:var(--radius);
+         box-shadow:0 1px 2px 0 rgb(0 0 0 / .04); }
+  table { border-collapse:separate; border-spacing:0; width:100%; min-width:1100px;
+          font-size:11.5px; table-layout:fixed; }
+  /* narrow tables must NOT inherit the wide grid's percentages */
+  table.slim { min-width:620px; table-layout:auto; }
+  table.slim th, table.slim td { width:auto !important; }
+  thead th { position:sticky; top:0; z-index:1; text-align:left; font-weight:500; font-size:10px;
+             text-transform:uppercase; letter-spacing:.06em; color:var(--muted-fg);
+             background:var(--muted); padding:9px 12px; border-bottom:1px solid var(--bd);
+             white-space:nowrap; }
+  tbody td { padding:11px 12px; vertical-align:top; line-height:1.5;
+             border-bottom:1px solid var(--bd); }
+  tbody tr:last-child td { border-bottom:none; }
+  tbody tr:hover td { background:color-mix(in srgb, var(--acc) 55%, transparent); }
+
+  .c-num { width:3%; color:var(--muted-fg); font-variant-numeric:tabular-nums; }
+  .c-feat{ width:14%; font-weight:600; }
+  .c-ev  { width:24%; }
+  .c-eff { width:5%; }
+  .c-st  { width:10%; }
+  .c-upd { width:22%; }
+
+  /* ---- badges: categorical (status) ---- */
+  .st { display:inline-flex; align-items:center; padding:2px 8px; border-radius:999px;
+        font-size:10px; font-weight:600; white-space:nowrap; border:1px solid transparent; }
+  .s-done  { background:#f0fdf4; color:#15803d; border-color:#bbf7d0; }
+  .s-prog  { background:#fefce8; color:#a16207; border-color:#fef08a; }
+  .s-ready { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+  .s-res   { background:#faf5ff; color:#7e22ce; border-color:#e9d5ff; }
+  .s-scope { background:#f4f4f5; color:#52525b; border-color:#e4e4e7; }
+  .s-risk  { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
+
+  /* ---- badges: ordinal (effort) — a ramp, not a palette ---- */
+  .eff { display:inline-flex; padding:2px 7px; border-radius:999px; font-size:10px;
+         font-weight:600; white-space:nowrap; border:1px solid transparent; }
+  .e-low     { background:#f0fdfa; color:#0f766e; border-color:#99f6e4; }
+  .e-lowmed  { background:#f0fdf4; color:#15803d; border-color:#bbf7d0; }
+  .e-med     { background:#fefce8; color:#a16207; border-color:#fef08a; }
+  .e-medhigh { background:#fff7ed; color:#c2410c; border-color:#fed7aa; }
+  .e-high    { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
+  .e-xhigh   { background:#fdf2f8; color:#9d174d; border-color:#fbcfe8; }
+
+  /* ---- evidence list: currentColor bullets never vanish ---- */
+  ul.evlist { margin:0; padding:0; list-style:none; }
+  ul.evlist li { position:relative; padding-left:13px; margin-bottom:5px; }
+  ul.evlist li:last-child { margin-bottom:0; }
+  ul.evlist li::before { content:""; position:absolute; left:1px; top:.58em;
+    width:4px; height:4px; border-radius:50%; background:currentColor; opacity:.42; }
+
+  /* ---- paired rows ---- */
+  svg.lnk { width:11px; height:11px; vertical-align:-1px; margin-right:5px; color:#7c3aed; }
+  tr.paired td { background:color-mix(in srgb, #7c3aed 4%, transparent); }
+  tr.paired td:first-child { box-shadow:inset 2px 0 0 #7c3aed; }
+
+  /* ---- fixed filter dock ---- */
+  .filterdock { position:fixed; left:0; right:0; bottom:0; z-index:50;
+    background:color-mix(in srgb, var(--card-bg) 92%, transparent);
+    backdrop-filter:saturate(180%) blur(12px);
+    border-top:1px solid var(--bd); box-shadow:0 -4px 16px -6px rgb(0 0 0 / .18); }
+  .dockinner { max-width:2000px; margin:0 auto; padding:9px 48px 10px;
+               max-height:46vh; overflow-y:auto; }
+  /* expanded: visible so tooltips escape. collapsed: hidden so it clips. */
+  .fchipwrap { overflow:visible; transition:max-height .22s ease, opacity .18s ease; }
+  .filterdock.collapsed .fchipwrap { max-height:0; opacity:0; overflow:hidden; }
+  .filterdock.no-anim .fchipwrap { transition:none !important; }
+  .frow { display:flex; align-items:flex-start; gap:10px; margin-bottom:6px; }
+  .flabel { flex:0 0 62px; font-size:10px; font-weight:600; text-transform:uppercase;
+            letter-spacing:.06em; color:var(--muted-fg); padding-top:5px; }
+  .fchips { display:flex; flex-wrap:wrap; gap:5px; }
+  .chip { font:inherit; font-size:10.5px; font-weight:500; padding:2.5px 9px; border-radius:999px;
+          cursor:pointer; border:1px solid var(--bd); background:var(--card-bg); color:var(--fg); }
+  .chip:hover { background:var(--muted); }
+  .chip[aria-pressed="true"] { background:#18181b; color:#fff; border-color:#18181b; }
+  .fstatus { display:flex; align-items:center; gap:10px; margin-top:8px; padding-top:8px;
+             border-top:1px solid var(--bd); }
+  .filterdock.collapsed .fstatus { margin-top:0; padding-top:0; border-top:none; }
+  .togglebtn, .clearbtn { font:inherit; font-size:10.5px; font-weight:600; padding:3px 9px;
+    border-radius:6px; border:1px solid var(--bd); background:var(--card-bg);
+    color:var(--fg); cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
+  .filterdock.collapsed .togglebtn { background:#18181b; color:#fff; border-color:#18181b; }
+  .chev { width:12px; height:12px; transition:transform .22s ease; }
+  .filterdock.collapsed .chev { transform:rotate(180deg); }
+  #fcount { font-size:11px; color:var(--muted-fg); }
+  .fbadge { display:none; min-width:16px; padding:0 5px; border-radius:999px; background:#fff;
+            color:#18181b; font-size:9.5px; font-weight:700; line-height:16px; text-align:center; }
+  .filterdock.has-filters .fbadge { display:inline-block; }
+  .fpills { display:flex; flex-wrap:wrap; gap:4px; flex:1 1 auto; min-width:0; }
+  .fpill { display:inline-flex; align-items:center; gap:4px; font-size:9.5px; font-weight:600;
+           padding:1.5px 7px; border-radius:999px; background:#18181b; color:#fff; }
+  .fpill button { all:unset; cursor:pointer; opacity:.7; }
+  tr.hidden-row, .sec-hidden { display:none; }
+
+  /* ---- hover definition tooltip ---- */
+  .chip[data-tip] { position:relative; }
+  .chip[data-tip]::after { content:attr(data-tip); position:absolute; left:50%;
+    bottom:calc(100% + 9px); transform:translateX(-50%); width:238px; padding:8px 10px;
+    border-radius:7px; background:#18181b; color:#fff; font-size:10px; font-weight:500;
+    line-height:1.5; text-align:left; text-transform:none; white-space:normal;
+    opacity:0; visibility:hidden; z-index:80; pointer-events:none;
+    transition:opacity .12s ease .35s, visibility 0s linear .47s; }
+  .chip[data-tip]:hover::after { opacity:1; visibility:visible; transition-delay:.35s, 0s; }
+
+  /* media queries AFTER the base rule, or source order cancels them */
+  @media (max-width:1200px) { .wrap { padding:22px 32px 36px; } .dockinner { padding:10px 32px 11px; } }
+  @media (max-width:760px)  { .wrap { padding:18px 18px 28px; } .dockinner { padding:9px 18px 10px; } }
+
+html,body{background:#f7f8fa}.wrap{max-width:1800px;padding-top:34px}
+.hero{border-bottom:1px solid var(--bd);padding-bottom:20px;margin-bottom:10px}
+.kicker{font-size:10px;font-weight:700;letter-spacing:.15em;color:#52617d;margin:0 0 8px}
+h1{font-size:31px;letter-spacing:-.035em;line-height:1.1;margin:0 0 10px}
+.intro{font-size:13px;line-height:1.55;max-width:850px;color:#475569;margin:0}
+.source-note{font-size:11px;color:#64748b;margin:12px 0 26px}.source-note a{color:#163b69}
+.section-count{font-size:10px;color:#64748b;font-weight:400;margin-left:6px}
+table{min-width:1180px}.c-num{width:5%}.c-feat{width:22%}.c-scope{width:45%}
+.c-area{width:10%}.c-basis{width:10%}.c-kind{width:8%}
+.c-area,.c-basis{color:#526078}.tbl{margin-bottom:20px}.sec-note{font-size:12px;max-width:1100px}
+@media(max-width:760px){h1{font-size:26px}}
+</style></head><body><main class="wrap"><header class="hero"><p class="kicker">SOCIAL KNOWLEDGE · PRODUCT PLANNING</p><h1>Roadmap review</h1><p class="intro">Sixteen proposals from the owner walkthrough and prior roadmap. Filter by horizon, theme, or work type. Horizons show planning intent, not delivery commitments.</p></header><p class="source-note">Source: <a href="roadmap.md">docs/roadmap/2026-09-24/roadmap.md</a> · Updated 2026-09-24 · Hover a filter chip for its meaning.</p><h2>First 1–2 months <span class="section-count">5 items</span></h2><div class="tbl"><table><thead><tr><th class="c-num">#</th><th class="c-feat">Initiative</th><th class="c-scope">Scope / outcome</th><th class="c-area">Theme</th><th class="c-basis">Source</th><th class="c-kind">Work</th></tr></thead><tbody><tr data-hz="1-2mo" data-area="AI" data-kind="Build"><td class="c-num">1</td><td class="c-feat">Make AI setup a two-step choice</td><td class="c-scope">Step 1: configure a transcription provider/model. Step 2: configure an analysis provider/model. Show which models support each job, verify credentials and model access, and make the selected choices visible and editable in Settings. The same model, provider, or credential may serve both jobs when capable; the choices remain separate. Today transcription is a server-side OpenAI model selected by environment variable, while each account selects an OpenAI or Cerebras generation provider with a server-configured analysis model. Plan the account-scoped settings and migration before implementation, and decide explicitly whether Ask uses the analysis choice.</td><td class="c-area">AI</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-ready">Build</span></td></tr><tr data-hz="1-2mo" data-area="AI" data-kind="Build"><td class="c-num">2</td><td class="c-feat">Improve insight quality</td><td class="c-scope">Tune extraction and presentation so a simple clip does not produce eight marginal takeaways or unnecessary actions. Prefer concise, specific claims; show an action only when the source warrants one. Keep evidence and source attribution. Evaluate with a small set of varied captures before rollout.</td><td class="c-area">AI</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-ready">Build</span></td></tr><tr data-hz="1-2mo" data-area="Experience" data-kind="Build"><td class="c-num">3</td><td class="c-feat">Refresh the core interface as one coordinated UI program</td><td class="c-scope">Start with the Inbox search and filter experience, then the capture detail, Ask, Activity, and shared visual patterns. Preserve the useful grid and playback. Prototype the field picker, visible filter controls, multi-select values, and inclusion/exclusion operators; make active filters easy to read and clear.</td><td class="c-area">Experience</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-ready">Build</span></td></tr><tr data-hz="1-2mo" data-area="Experience" data-kind="Build"><td class="c-num">4</td><td class="c-feat">Make recovery and capture more direct</td><td class="c-scope">Show failed Activity jobs first with retry guidance; add a + action in the Inbox header that opens the existing capture form in a modal.</td><td class="c-area">Experience</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-ready">Build</span></td></tr><tr data-hz="1-2mo" data-area="Library" data-kind="Build"><td class="c-num">5</td><td class="c-feat">Make the complete archive export obvious</td><td class="c-scope">Surface the existing account-owned full-library .tar.gz download from the Library and/or collection area, with clear contents and expiry. The backend export already exists under Settings; this is a discovery and usability task, not a new export engine.</td><td class="c-area">Library</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-ready">Build</span></td></tr></tbody></table></div><h2>Months 3–6 <span class="section-count">5 items</span></h2><div class="tbl"><table><thead><tr><th class="c-num">#</th><th class="c-feat">Initiative</th><th class="c-scope">Scope / outcome</th><th class="c-area">Theme</th><th class="c-basis">Source</th><th class="c-kind">Work</th></tr></thead><tbody><tr data-hz="3-6mo" data-area="Library" data-kind="Build"><td class="c-num">1</td><td class="c-feat">Add a sortable table beside the grid</td><td class="c-scope">Allow sorting by title, capture date, source, category, and topic/tag where those fields are reliable. Keep selection, playback, and detail access consistent across views; verify sorting works across all pages of results.</td><td class="c-area">Library</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-ready">Build</span></td></tr><tr data-hz="3-6mo" data-area="Library" data-kind="Build"><td class="c-num">2</td><td class="c-feat">Clarify one primary category and multiple tags/topics per capture</td><td class="c-scope">Reconcile the existing Library classification tree and generated topics with the requested category/tag model. Let users correct classification and tags, and make both usable in filters and sorting. Preserve existing data and owner isolation.</td><td class="c-area">Library</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-ready">Build</span></td></tr><tr data-hz="3-6mo" data-area="Library" data-kind="Build"><td class="c-num">3</td><td class="c-feat">Add account-owned notes to captures</td><td class="c-scope">Let users write and edit notes from the detail drawer and Library, keep generated text distinct from user text, and include notes in search and portable exports. Decide how edits interact with generated Markdown before implementation.</td><td class="c-area">Library</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-ready">Build</span></td></tr><tr data-hz="3-6mo" data-area="Experience" data-kind="Build"><td class="c-num">4</td><td class="c-feat">Rebuild Settings navigation</td><td class="c-scope">Use a left sidebar with sections such as Profile, Security, AI, Connections, API keys, and Exports. Keep current settings discoverable on smaller screens. Explore a summary-style configuration here, initially with a few understandable choices; assess a free-form system prompt only after defining validation and source-grounding rules.</td><td class="c-area">Experience</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-ready">Build</span></td></tr><tr data-hz="3-6mo" data-area="Accounts" data-kind="Build"><td class="c-num">5</td><td class="c-feat">Finish account administration from the prior roadmap</td><td class="c-scope">First-account setup, roles, invitations, and user listing are already on staging. Remaining scope: protected account removal, role changes, and secure password reset/recovery. Write a separate execution plan because identity deletion and recovery are sensitive.</td><td class="c-area">Accounts</td><td class="c-basis">Prior roadmap</td><td class="c-kind"><span class="st s-ready">Build</span></td></tr></tbody></table></div><h2>Months 6–12 <span class="section-count">3 items</span></h2><div class="tbl"><table><thead><tr><th class="c-num">#</th><th class="c-feat">Initiative</th><th class="c-scope">Scope / outcome</th><th class="c-area">Theme</th><th class="c-basis">Source</th><th class="c-kind">Work</th></tr></thead><tbody><tr data-hz="6-12mo" data-area="Integrations" data-kind="Build"><td class="c-num">1</td><td class="c-feat">Provide a guided Apple Shortcut download</td><td class="c-scope">Build on the existing Shortcut and account API keys so a signed-in user can install a working personal Shortcut with minimal manual setup. Design key creation, handoff, revocation, and error recovery without embedding a reusable secret in a public artifact. Confirm Apple&#x27;s signing/import constraints before choosing the exact flow.</td><td class="c-area">Integrations</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-ready">Build</span></td></tr><tr data-hz="6-12mo" data-area="Integrations" data-kind="Explore"><td class="c-num">2</td><td class="c-feat">Investigate ongoing Obsidian vault sync</td><td class="c-scope">Support an explicitly connected, user-controlled vault or folder, create/update one note per capture, and define edit ownership, conflict handling, deletion, offline recovery, and credential boundaries. Start with a technical/product design and a narrow pilot; current server-side Markdown publication and one-shot export are separate capabilities.</td><td class="c-area">Integrations</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-res">Explore</span></td></tr><tr data-hz="6-12mo" data-area="Library" data-kind="Conditional"><td class="c-num">3</td><td class="c-feat">Scale Library navigation if evidence warrants it</td><td class="c-scope">Extend cursor pagination to category and Unclassified lists when collection size or measured query cost justifies it.</td><td class="c-area">Library</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-scope">Conditional</span></td></tr></tbody></table></div><h2>12+ months <span class="section-count">3 items</span></h2><div class="tbl"><table><thead><tr><th class="c-num">#</th><th class="c-feat">Initiative</th><th class="c-scope">Scope / outcome</th><th class="c-area">Theme</th><th class="c-basis">Source</th><th class="c-kind">Work</th></tr></thead><tbody><tr data-hz="12plus" data-area="Experience" data-kind="Explore"><td class="c-num">1</td><td class="c-feat">Reconsider Inbox and Library information architecture</td><td class="c-scope">Test whether the capture collection should be called Library and whether the separate knowledge-base view should become an advanced view, since the owner rarely opens it. Do this after the collection, notes, and table changes provide a real basis for evaluation.</td><td class="c-area">Experience</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-res">Explore</span></td></tr><tr data-hz="12plus" data-area="AI" data-kind="Explore"><td class="c-num">2</td><td class="c-feat">Consider advanced summary templates and prompt controls</td><td class="c-scope">If simpler style choices do not meet user needs, design per-user templates with safe defaults, preview, versioning, and a way to reprocess existing captures. Never let user templates erase original evidence or attribution.</td><td class="c-area">AI</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-res">Explore</span></td></tr><tr data-hz="12plus" data-area="Integrations" data-kind="Explore"><td class="c-num">3</td><td class="c-feat">Assess additional source platforms, including TikTok</td><td class="c-scope">The walkthrough referred to TikToks, while the product and URL validator currently support Facebook and Instagram. Confirm whether TikTok is a requested integration or shorthand for short videos, then validate demand, ingestion reliability, and rights before committing it to a build horizon.</td><td class="c-area">Integrations</td><td class="c-basis">Owner feedback</td><td class="c-kind"><span class="st s-res">Explore</span></td></tr></tbody></table></div><h2>Open decisions</h2><p class="sec-note">Confirm TikTok scope, Inbox/Library naming, category and tag edits, note export behavior, Obsidian sync ownership, and whether Ask shares the analysis model. The source roadmap has more detail.</p></main><div class="filterdock collapsed" id="fbar"><div class="dockinner"><div class="fchipwrap" id="fchipwrap"><div class="frow"><span class="flabel">When</span><div class="fchips"><button type="button" class="chip" data-grp="hz" data-val="1-2mo" data-tip="Daily capture and review">1–2 months</button><button type="button" class="chip" data-grp="hz" data-val="3-6mo" data-tip="Organization and personalization">3–6 months</button><button type="button" class="chip" data-grp="hz" data-val="6-12mo" data-tip="Portability and integrations">6–12 months</button><button type="button" class="chip" data-grp="hz" data-val="12plus" data-tip="Broader product shape">12+ months</button></div></div><div class="frow"><span class="flabel">Theme</span><div class="fchips"><button type="button" class="chip" data-grp="area" data-val="AI" data-tip="Models and generated knowledge">AI</button><button type="button" class="chip" data-grp="area" data-val="Experience" data-tip="Interface and daily workflow">Experience</button><button type="button" class="chip" data-grp="area" data-val="Library" data-tip="Browsing, organization, and export">Library</button><button type="button" class="chip" data-grp="area" data-val="Accounts" data-tip="Identity and administration">Accounts</button><button type="button" class="chip" data-grp="area" data-val="Integrations" data-tip="Shortcut, Obsidian, and platforms">Integrations</button></div></div><div class="frow"><span class="flabel">Work</span><div class="fchips"><button type="button" class="chip" data-grp="kind" data-val="Build" data-tip="Proposed product change">Build</button><button type="button" class="chip" data-grp="kind" data-val="Explore" data-tip="Research or pilot before build scope">Explore</button><button type="button" class="chip" data-grp="kind" data-val="Conditional" data-tip="Proceed when need is observed">Conditional</button></div></div></div><div class="fstatus"><button type="button" id="ftoggle" class="togglebtn" aria-expanded="false"><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg><span id="ftoglabel">Show filters</span><span class="fbadge" id="fbadge">0</span></button><span id="fcount"></span><span id="fpills" class="fpills"></span><button type="button" id="fclear" class="clearbtn" hidden>Clear filters</button></div></div></div><script>
+(function(){
+  function boot(){
+  var dock=document.getElementById('fbar');
+  if(!dock){console.warn('filter dock not found');return;}
+  var LABEL={'1-2mo':'1–2 months','3-6mo':'3–6 months','6-12mo':'6–12 months','12plus':'12+ months'};
+  var sel={hz:new Set(),area:new Set(),kind:new Set()};
+  var chips=[].slice.call(document.querySelectorAll('.chip'));
+  var rows=[].slice.call(document.querySelectorAll('tr[data-hz]'));
+  var clear=document.getElementById('fclear'), count=document.getElementById('fcount');
+  var pills=document.getElementById('fpills'), badge=document.getElementById('fbadge');
+  var toggle=document.getElementById('ftoggle'), toglabel=document.getElementById('ftoglabel');
+
+  function syncPad(){                       // measure, never guess
+    requestAnimationFrame(function(){
+      document.body.style.paddingBottom=(dock.offsetHeight+18)+'px';
+    });
+  }
+  function ok(r){                           // OR within dimension, AND across
+    if(sel.hz.size&&!sel.hz.has(r.getAttribute('data-hz')))return false;
+    if(sel.area.size&&!sel.area.has(r.getAttribute('data-area')))return false;
+    if(sel.kind.size&&!sel.kind.has(r.getAttribute('data-kind')))return false;
+    return true;
+  }
+  function chipFor(g,v){return chips.filter(function(c){
+    return c.dataset.grp===g&&c.dataset.val===v;})[0];}
+  function renderPills(){
+    pills.innerHTML='';
+    ['hz','area','kind'].forEach(function(g){
+      sel[g].forEach(function(v){
+        var el=document.createElement('span'); el.className='fpill';
+        el.appendChild(document.createTextNode(g==='hz'?(LABEL[v]||v):v));
+        var b=document.createElement('button'); b.textContent='\u00d7';
+        b.setAttribute('aria-label','Remove '+v);
+        b.addEventListener('click',function(){
+          sel[g].delete(v);
+          var c=chipFor(g,v); if(c)c.setAttribute('aria-pressed','false');
+          apply();
+        });
+        el.appendChild(b); pills.appendChild(el);
+      });
+    });
+  }
+  function apply(){
+    var shown=0;
+    rows.forEach(function(r){var m=ok(r);r.classList.toggle('hidden-row',!m);if(m)shown++;});
+    document.querySelectorAll('h2').forEach(function(h){   // hide emptied sections
+      var node=h.nextElementSibling, group=[h], any=null;
+      while(node&&node.tagName!=='H2'){ group.push(node);
+        var rs=node.querySelectorAll?node.querySelectorAll('tr[data-hz]'):[];
+        if(rs.length){any=(any||false)||[].slice.call(rs).some(function(r){
+          return !r.classList.contains('hidden-row');});}
+        node=node.nextElementSibling;}
+      if(any!==null)group.forEach(function(n){n.classList.toggle('sec-hidden',!any);});
+    });
+    var n=sel.hz.size+sel.area.size+sel.kind.size;
+    count.textContent=n?('Showing '+shown+' of '+rows.length):('Showing all '+rows.length+' items');
+    clear.hidden=!n; renderPills();
+    if(badge)badge.textContent=n;
+    dock.classList.toggle('has-filters',n>0);
+    syncPad();
+  }
+  chips.forEach(function(c){
+    c.setAttribute('aria-pressed','false');
+    c.addEventListener('click',function(){
+      var g=c.dataset.grp,v=c.dataset.val,on=c.getAttribute('aria-pressed')==='true';
+      if(on){sel[g].delete(v);c.setAttribute('aria-pressed','false');}
+      else{sel[g].add(v);c.setAttribute('aria-pressed','true');}
+      apply();
+    });
+  });
+  clear.addEventListener('click',function(){
+    sel.hz.clear();sel.area.clear();sel.kind.clear();
+    chips.forEach(function(c){c.setAttribute('aria-pressed','false');});apply();
+  });
+  toggle.addEventListener('click',function(){
+    var col=dock.classList.toggle('collapsed');
+    toggle.setAttribute('aria-expanded',String(!col));
+    toglabel.textContent=col?'Show filters':'Hide filters';
+    setTimeout(syncPad,240);
+  });
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&(sel.hz.size||sel.area.size||sel.kind.size))clear.click();
+  });
+  window.addEventListener('resize',syncPad);
+  dock.classList.add('no-anim');            // no slam-shut on first paint
+  requestAnimationFrame(function(){
+    requestAnimationFrame(function(){ dock.classList.remove('no-anim'); });
+  });
+  apply();
+  }
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',boot);}
+  else{boot();}
+})();
+</script></body></html>
