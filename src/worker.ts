@@ -119,6 +119,8 @@ export class JobWorker {
         });
         const transcript = await this.services.transcriber.transcribe(
           media.audioPath,
+          job.ownerUserId,
+          job.aiProvider ?? null,
         );
 
         this.services.store.setStatus(job.id, "translating");
