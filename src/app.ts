@@ -508,16 +508,11 @@ export function buildApp(
         principal?.userId ??
         (auth.legacyToken(request) ? store.defaultUserId() : null);
       if (!ownerUserId) return reply.code(401).send({ error: "unauthorized" });
-      if (!aiProviderService.configured(ownerUserId))
-        return reply.code(428).send({
-          error: "ai_provider_required",
-          message:
-            "Connect and verify an AI provider in Settings before capturing.",
-        });
       const input = submitSchema.safeParse(request.body);
       if (!input.success)
         return reply.code(400).send({ error: "invalid_request" });
       try {
+        const selections = aiProviderService.captureSelections(ownerUserId);
         const social = normalizeSocialUrl(input.data.url);
         const result = store.createOrGet({
           ownerUserId,
@@ -525,21 +520,21 @@ export function buildApp(
           normalizedUrl: social.normalized,
           sourceHash: social.hash,
           userNote: input.data.note,
-          aiProvider: aiProviderService.activeProvider(ownerUserId),
+          ...selections,
         });
         const retried =
           !result.created &&
           result.job.status === "failed" &&
-          store.retry(
-            result.job.id,
-            aiProviderService.activeProvider(ownerUserId),
-          );
+          store.retry(result.job.id, selections);
         const job = retried ? store.get(result.job.id) : result.job;
         events.publish("job", { id: result.job.id, status: job?.status });
         return reply
           .code(result.created || retried ? 202 : 200)
           .send({ created: result.created, retried, job });
       } catch (error) {
+        const code = error instanceof Error ? error.message : "invalid_url";
+        if (["transcription_required", "analysis_provider_required"].includes(code))
+          return reply.code(428).send({ error: code });
         return reply.code(400).send({
           error: "invalid_url",
           message: error instanceof Error ? error.message : String(error),
@@ -926,9 +921,15 @@ export function buildApp(
       const user = auth.user(request)!;
       if (!store.getOwned(user.id, id))
         return reply.code(404).send({ error: "not_found" });
-      if (!aiProviderService.configured(user.id))
-        return reply.code(428).send({ error: "ai_provider_required" });
-      if (!store.retry(id, aiProviderService.activeProvider(user.id)))
+      let selections;
+      try {
+        selections = aiProviderService.captureSelections(user.id);
+      } catch (error) {
+        return reply.code(428).send({
+          error: error instanceof Error ? error.message : "analysis_provider_required",
+        });
+      }
+      if (!store.retry(id, selections))
         return reply.code(409).send({ error: "not_retryable" });
       events.publish("job", { id, status: "queued" });
       return { job: store.get(id) };
@@ -937,10 +938,9 @@ export function buildApp(
       const user = auth.user(request)!;
       return { apiKeys: store.listApiKeys(user.id) };
     });
-    protectedApi.get("/api/v1/ai-providers", async (request) => ({
-      providers: aiProviderService.list(auth.user(request)!.id),
-      configured: aiProviderService.configured(auth.user(request)!.id),
-    }));
+    protectedApi.get("/api/v1/ai-providers", async (request) =>
+      aiProviderService.settings(auth.user(request)!.id),
+    );
     protectedApi.put(
       "/api/v1/ai-providers/:provider",
       { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } },
@@ -954,12 +954,11 @@ export function buildApp(
         if (!params.success || !body.success)
           return reply.code(400).send({ error: "invalid_request" });
         try {
-          const providers = await aiProviderService.verifyAndSave(
+          return await aiProviderService.verifyAndSave(
             auth.user(request)!.id,
             params.data.provider,
             body.data.apiKey,
           );
-          return { providers, configured: true };
         } catch (error) {
           const code =
             error instanceof Error ? error.message : "provider_unavailable";
@@ -975,9 +974,37 @@ export function buildApp(
         }
       },
     );
-    protectedApi.delete("/api/v1/ai-providers", async (request) => ({
-      removed: aiProviderService.remove(auth.user(request)!.id),
-    }));
+    protectedApi.put("/api/v1/ai-settings", async (request, reply) => {
+      const body = z
+        .object({
+          transcription: z
+            .object({ provider: z.literal("openai"), model: z.string().min(1) })
+            .nullable()
+            .optional(),
+          analysis: z
+            .object({ provider: z.enum(aiProviderIds), model: z.string().min(1) })
+            .nullable()
+            .optional(),
+        })
+        .refine((value) => value.transcription !== undefined || value.analysis !== undefined)
+        .safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: "invalid_request" });
+      try {
+        return aiProviderService.saveSelections(auth.user(request)!.id, body.data);
+      } catch (error) {
+        return reply.code(409).send({
+          error: error instanceof Error ? error.message : "invalid_selection",
+        });
+      }
+    });
+    protectedApi.delete(
+      "/api/v1/ai-providers/:provider",
+      async (request, reply) => {
+        const params = z.object({ provider: z.enum(aiProviderIds) }).safeParse(request.params);
+        if (!params.success) return reply.code(400).send({ error: "invalid_request" });
+        return aiProviderService.remove(auth.user(request)!.id, params.data.provider);
+      },
+    );
     protectedApi.get("/api/v1/library-exports", async (request) => ({
       exports: store.listKnowledgeExports(auth.user(request)!.id, "full"),
     }));
@@ -1226,8 +1253,8 @@ export function buildApp(
       { config: { rateLimit: { max: 30, timeWindow: "1 hour" } } },
       async (request, reply) => {
         const user = auth.user(request)!;
-        if (!aiProviderService.configured(user.id))
-          return reply.code(428).send({ error: "ai_provider_required" });
+        if (!aiProviderService.settings(user.id).readiness.ask)
+          return reply.code(428).send({ error: "analysis_provider_required" });
         const { id } = z
           .object({ id: z.string().uuid() })
           .parse(request.params);
@@ -1307,8 +1334,8 @@ export function buildApp(
       { config: { rateLimit: { max: 30, timeWindow: "1 hour" } } },
       async (request, reply) => {
         const user = auth.user(request)!;
-        if (!aiProviderService.configured(user.id))
-          return reply.code(428).send({ error: "ai_provider_required" });
+        if (!aiProviderService.settings(user.id).readiness.ask)
+          return reply.code(428).send({ error: "analysis_provider_required" });
         const { id, messageId } = z
           .object({ id: z.string().uuid(), messageId: z.string().uuid() })
           .parse(request.params);

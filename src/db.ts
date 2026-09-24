@@ -73,6 +73,18 @@ export type AccountRecord = {
   createdAt: string;
 };
 
+export type AiProviderId = "openai" | "cerebras";
+
+export type AiTaskSelections = {
+  transcriptionProvider: AiProviderId | null;
+  transcriptionModel: string | null;
+  analysisProvider: AiProviderId | null;
+  analysisModel: string | null;
+  updatedAt: string | null;
+};
+
+export type AiTaskSelectionInput = Omit<AiTaskSelections, "updatedAt">;
+
 export class JobStore {
   readonly database: Database.Database;
   constructor(filename: string) {
@@ -100,6 +112,10 @@ export class JobStore {
     normalizedUrl: string;
     sourceHash: string;
     aiProvider?: "openai" | "cerebras" | null;
+    transcriptionProvider?: AiProviderId | null;
+    transcriptionModel?: string | null;
+    analysisProvider?: AiProviderId | null;
+    analysisModel?: string | null;
     userNote?: string | undefined;
   }) {
     const existing = this.getByHash(input.ownerUserId, input.sourceHash);
@@ -108,7 +124,7 @@ export class JobStore {
     const id = randomUUID();
     this.database
       .prepare(
-        `INSERT INTO jobs(id,owner_user_id,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at,ai_provider) VALUES(?,?,?,?,?,?,'queued',0,NULL,NULL,?,?,?,?)`,
+        `INSERT INTO jobs(id,owner_user_id,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at,ai_provider,transcription_provider,transcription_model,analysis_provider,analysis_model) VALUES(?,?,?,?,?,?,'queued',0,NULL,NULL,?,?,?,?,?,?,?,?)`,
       )
       .run(
         id,
@@ -120,7 +136,11 @@ export class JobStore {
         now,
         now,
         now,
-        input.aiProvider ?? null,
+        input.analysisProvider ?? input.aiProvider ?? null,
+        input.transcriptionProvider ?? null,
+        input.transcriptionModel ?? null,
+        input.analysisProvider ?? input.aiProvider ?? null,
+        input.analysisModel ?? null,
       );
     this.addEvent(id, "queued", "Capture accepted");
     return { job: this.get(id) as JobRecord, created: true };
@@ -249,15 +269,36 @@ export class JobStore {
       `${failure.title}: ${failure.message}`.slice(0, 500),
     );
   }
-  retry(id: string, aiProvider?: "openai" | "cerebras" | null) {
+  retry(
+    id: string,
+    selections?: AiTaskSelectionInput | AiProviderId | null,
+  ) {
     const job = this.get(id);
     if (!job || job.status !== "failed") return false;
     const now = new Date().toISOString();
+    const snapshot =
+      typeof selections === "string"
+        ? { analysisProvider: selections }
+        : selections;
     this.database
       .prepare(
-        "UPDATE jobs SET status='queued',attempts=0,error=NULL,error_code=NULL,error_detail=NULL,next_attempt_at=?,updated_at=?,ai_provider=COALESCE(?,ai_provider) WHERE id=?",
+        `UPDATE jobs SET status='queued',attempts=0,error=NULL,error_code=NULL,error_detail=NULL,next_attempt_at=?,updated_at=?,
+         ai_provider=COALESCE(?,ai_provider),transcription_provider=COALESCE(?,transcription_provider),transcription_model=COALESCE(?,transcription_model),analysis_provider=COALESCE(?,analysis_provider),analysis_model=COALESCE(?,analysis_model) WHERE id=?`,
       )
-      .run(now, now, aiProvider ?? null, id);
+      .run(
+        now,
+        now,
+        snapshot?.analysisProvider ?? null,
+        snapshot && "transcriptionProvider" in snapshot
+          ? snapshot.transcriptionProvider
+          : null,
+        snapshot && "transcriptionModel" in snapshot
+          ? snapshot.transcriptionModel
+          : null,
+        snapshot?.analysisProvider ?? null,
+        snapshot && "analysisModel" in snapshot ? snapshot.analysisModel : null,
+        id,
+      );
     this.addEvent(id, "queued", "Manual retry requested");
     return true;
   }
@@ -2432,14 +2473,29 @@ export class JobStore {
       .run(errorCode, new Date().toISOString(), userId, platform);
   }
 
-  aiProviderConnection(userId: string) {
+  aiProviderConnections(userId: string) {
     return this.database
       .prepare(
-        "SELECT provider,status,key_hint AS keyHint,verified_at AS verifiedAt,updated_at AS updatedAt FROM ai_provider_connections WHERE user_id=?",
+        "SELECT provider,status,key_hint AS keyHint,verified_at AS verifiedAt,updated_at AS updatedAt FROM ai_provider_connections WHERE user_id=? ORDER BY provider",
       )
-      .get(userId) as
+      .all(userId) as Array<{
+        provider: AiProviderId;
+        status: string;
+        keyHint: string;
+        verifiedAt: string;
+        updatedAt: string;
+      }>;
+  }
+  aiProviderConnection(userId: string, provider?: AiProviderId) {
+    return this.database
+      .prepare(
+        `SELECT provider,status,key_hint AS keyHint,verified_at AS verifiedAt,updated_at AS updatedAt
+         FROM ai_provider_connections WHERE user_id=? ${provider ? "AND provider=?" : ""}
+         ORDER BY updated_at DESC LIMIT 1`,
+      )
+      .get(...(provider ? [userId, provider] : [userId])) as
       | {
-          provider: string;
+          provider: AiProviderId;
           status: string;
           keyHint: string;
           verifiedAt: string;
@@ -2447,13 +2503,14 @@ export class JobStore {
         }
       | undefined;
   }
-  aiProviderConnectionSecret(userId: string) {
+  aiProviderConnectionSecret(userId: string, provider?: AiProviderId) {
     return this.database
       .prepare(
-        "SELECT provider,status,encrypted_payload AS encryptedPayload FROM ai_provider_connections WHERE user_id=?",
+        `SELECT provider,status,encrypted_payload AS encryptedPayload FROM ai_provider_connections
+         WHERE user_id=? ${provider ? "AND provider=?" : ""} ORDER BY updated_at DESC LIMIT 1`,
       )
-      .get(userId) as
-      | { provider: string; status: string; encryptedPayload: string }
+      .get(...(provider ? [userId, provider] : [userId])) as
+      | { provider: AiProviderId; status: string; encryptedPayload: string }
       | undefined;
   }
   saveAiProviderConnection(
@@ -2467,15 +2524,17 @@ export class JobStore {
       .prepare(
         `INSERT INTO ai_provider_connections(user_id,provider,encrypted_payload,status,key_hint,verified_at,created_at,updated_at)
        VALUES(?,?,?,'verified',?,?,?,?)
-       ON CONFLICT(user_id) DO UPDATE SET provider=excluded.provider,encrypted_payload=excluded.encrypted_payload,status='verified',key_hint=excluded.key_hint,verified_at=excluded.verified_at,updated_at=excluded.updated_at`,
+       ON CONFLICT(user_id,provider) DO UPDATE SET encrypted_payload=excluded.encrypted_payload,status='verified',key_hint=excluded.key_hint,verified_at=excluded.verified_at,updated_at=excluded.updated_at`,
       )
       .run(userId, provider, encryptedPayload, keyHint, now, now, now);
   }
-  deleteAiProviderConnection(userId: string) {
+  deleteAiProviderConnection(userId: string, provider?: AiProviderId) {
     return (
       this.database
-        .prepare("DELETE FROM ai_provider_connections WHERE user_id=?")
-        .run(userId).changes > 0
+        .prepare(
+          `DELETE FROM ai_provider_connections WHERE user_id=? ${provider ? "AND provider=?" : ""}`,
+        )
+        .run(...(provider ? [userId, provider] : [userId])).changes > 0
     );
   }
   markAiProviderAttention(userId: string, provider: string) {
@@ -2484,6 +2543,45 @@ export class JobStore {
         "UPDATE ai_provider_connections SET status='needs_attention',updated_at=? WHERE user_id=? AND provider=?",
       )
       .run(new Date().toISOString(), userId, provider);
+  }
+
+  aiTaskSelections(userId: string): AiTaskSelections {
+    const row = this.database
+      .prepare(
+        `SELECT transcription_provider AS transcriptionProvider,transcription_model AS transcriptionModel,
+                analysis_provider AS analysisProvider,analysis_model AS analysisModel,updated_at AS updatedAt
+         FROM ai_task_selections WHERE user_id=?`,
+      )
+      .get(userId) as AiTaskSelections | undefined;
+    return (
+      row ?? {
+        transcriptionProvider: null,
+        transcriptionModel: null,
+        analysisProvider: null,
+        analysisModel: null,
+        updatedAt: null,
+      }
+    );
+  }
+
+  saveAiTaskSelections(userId: string, input: AiTaskSelectionInput) {
+    const now = new Date().toISOString();
+    this.database
+      .prepare(
+        `INSERT INTO ai_task_selections(user_id,transcription_provider,transcription_model,analysis_provider,analysis_model,updated_at)
+         VALUES(?,?,?,?,?,?)
+         ON CONFLICT(user_id) DO UPDATE SET transcription_provider=excluded.transcription_provider,transcription_model=excluded.transcription_model,
+           analysis_provider=excluded.analysis_provider,analysis_model=excluded.analysis_model,updated_at=excluded.updated_at`,
+      )
+      .run(
+        userId,
+        input.transcriptionProvider,
+        input.transcriptionModel,
+        input.analysisProvider,
+        input.analysisModel,
+        now,
+      );
+    return this.aiTaskSelections(userId);
   }
 
   private migrate() {
@@ -2526,6 +2624,25 @@ export class JobStore {
     CREATE TABLE IF NOT EXISTS platform_connections(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,platform TEXT NOT NULL CHECK(platform IN ('facebook','instagram')),encrypted_payload TEXT NOT NULL,status TEXT NOT NULL,cookie_count INTEGER NOT NULL,last_validated_at TEXT,last_used_at TEXT,last_error_code TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(user_id,platform));
     CREATE TABLE IF NOT EXISTS ai_provider_connections(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('openai','cerebras')),encrypted_payload TEXT NOT NULL,status TEXT NOT NULL,key_hint TEXT NOT NULL,verified_at TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
   `);
+    this.migrateAiProviderConnections();
+    this.database.exec(`
+      CREATE TABLE IF NOT EXISTS ai_task_selections(
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        transcription_provider TEXT CHECK(transcription_provider IN ('openai','cerebras')),
+        transcription_model TEXT,
+        analysis_provider TEXT CHECK(analysis_provider IN ('openai','cerebras')),
+        analysis_model TEXT,
+        updated_at TEXT NOT NULL
+      );
+      INSERT OR IGNORE INTO ai_task_selections(user_id,transcription_provider,transcription_model,analysis_provider,analysis_model,updated_at)
+      SELECT user_id,
+             CASE WHEN provider='openai' AND status='verified' THEN 'openai' ELSE NULL END,
+             NULL,
+             CASE WHEN status='verified' THEN provider ELSE NULL END,
+             NULL,
+             updated_at
+      FROM ai_provider_connections;
+    `);
     const exportColumns = (
       this.database
         .prepare("PRAGMA table_info(knowledge_exports)")
@@ -2555,6 +2672,24 @@ export class JobStore {
       this.database.exec(
         "ALTER TABLE jobs ADD COLUMN ai_provider TEXT CHECK(ai_provider IN ('openai','cerebras'))",
       );
+    if (!columns.includes("transcription_provider"))
+      this.database.exec(
+        "ALTER TABLE jobs ADD COLUMN transcription_provider TEXT CHECK(transcription_provider IN ('openai','cerebras'))",
+      );
+    if (!columns.includes("transcription_model"))
+      this.database.exec("ALTER TABLE jobs ADD COLUMN transcription_model TEXT");
+    if (!columns.includes("analysis_provider"))
+      this.database.exec(
+        "ALTER TABLE jobs ADD COLUMN analysis_provider TEXT CHECK(analysis_provider IN ('openai','cerebras'))",
+      );
+    if (!columns.includes("analysis_model"))
+      this.database.exec("ALTER TABLE jobs ADD COLUMN analysis_model TEXT");
+    this.database.exec(`
+      UPDATE jobs SET analysis_provider=ai_provider
+      WHERE analysis_provider IS NULL AND ai_provider IS NOT NULL;
+      UPDATE jobs SET transcription_provider='openai'
+      WHERE transcription_provider IS NULL AND ai_provider='openai';
+    `);
     const userColumns = (
       this.database.prepare("PRAGMA table_info(users)").all() as Array<{
         name: string;
@@ -2652,6 +2787,44 @@ export class JobStore {
         AND EXISTS (SELECT 1 FROM captures WHERE captures.note_path LIKE '%' || jobs.result_note_path)
     `);
   }
+  private migrateAiProviderConnections() {
+    const primaryKey = (
+      this.database.prepare("PRAGMA table_info(ai_provider_connections)").all() as Array<{
+        name: string;
+        pk: number;
+      }>
+    )
+      .filter((column) => column.pk > 0)
+      .sort((a, b) => a.pk - b.pk)
+      .map((column) => column.name);
+    if (
+      primaryKey.length === 2 &&
+      primaryKey[0] === "user_id" &&
+      primaryKey[1] === "provider"
+    )
+      return;
+    this.database.transaction(() => {
+      this.database.exec(`
+        CREATE TABLE ai_provider_connections_v2(
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          provider TEXT NOT NULL CHECK(provider IN ('openai','cerebras')),
+          encrypted_payload TEXT NOT NULL,
+          status TEXT NOT NULL,
+          key_hint TEXT NOT NULL,
+          verified_at TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(user_id,provider)
+        );
+        INSERT OR IGNORE INTO ai_provider_connections_v2
+          (user_id,provider,encrypted_payload,status,key_hint,verified_at,created_at,updated_at)
+        SELECT user_id,provider,encrypted_payload,status,key_hint,verified_at,created_at,updated_at
+        FROM ai_provider_connections;
+        DROP TABLE ai_provider_connections;
+        ALTER TABLE ai_provider_connections_v2 RENAME TO ai_provider_connections;
+      `);
+    })();
+  }
   private migrateOwnership() {
     const columns = (
       this.database.prepare("PRAGMA table_info(jobs)").all() as Array<{
@@ -2677,11 +2850,11 @@ export class JobStore {
     try {
       this.database.transaction(() => {
         this.database.exec(
-          `CREATE TABLE jobs_owned(id TEXT PRIMARY KEY,owner_user_id TEXT NOT NULL REFERENCES users(id),source_url TEXT NOT NULL,normalized_url TEXT NOT NULL,source_hash TEXT NOT NULL,user_note TEXT,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,error TEXT,result_note_path TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,next_attempt_at TEXT NOT NULL,error_code TEXT,error_detail TEXT,display_title TEXT,ai_provider TEXT CHECK(ai_provider IN ('openai','cerebras')),UNIQUE(owner_user_id,source_hash));`,
+          `CREATE TABLE jobs_owned(id TEXT PRIMARY KEY,owner_user_id TEXT NOT NULL REFERENCES users(id),source_url TEXT NOT NULL,normalized_url TEXT NOT NULL,source_hash TEXT NOT NULL,user_note TEXT,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,error TEXT,result_note_path TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,next_attempt_at TEXT NOT NULL,error_code TEXT,error_detail TEXT,display_title TEXT,ai_provider TEXT CHECK(ai_provider IN ('openai','cerebras')),transcription_provider TEXT CHECK(transcription_provider IN ('openai','cerebras')),transcription_model TEXT,analysis_provider TEXT CHECK(analysis_provider IN ('openai','cerebras')),analysis_model TEXT,UNIQUE(owner_user_id,source_hash));`,
         );
         this.database
           .prepare(
-            `INSERT INTO jobs_owned SELECT id,?,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at,error_code,error_detail,display_title,ai_provider FROM jobs`,
+            `INSERT INTO jobs_owned SELECT id,?,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at,error_code,error_detail,display_title,ai_provider,transcription_provider,transcription_model,analysis_provider,analysis_model FROM jobs`,
           )
           .run(owner?.id ?? "");
         this.database.exec(
@@ -2723,6 +2896,13 @@ export class JobStore {
       updatedAt: String(row.updated_at),
       nextAttemptAt: String(row.next_attempt_at),
       aiProvider: (row.ai_provider as JobRecord["aiProvider"]) ?? null,
+      transcriptionProvider:
+        (row.transcription_provider as JobRecord["transcriptionProvider"]) ??
+        null,
+      transcriptionModel: (row.transcription_model as string | null) ?? null,
+      analysisProvider:
+        (row.analysis_provider as JobRecord["analysisProvider"]) ?? null,
+      analysisModel: (row.analysis_model as string | null) ?? null,
     };
   }
   private mapAsset(row: Row): AssetRecord {

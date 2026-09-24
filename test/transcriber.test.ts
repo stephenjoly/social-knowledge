@@ -4,7 +4,6 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type OpenAI from "openai";
 import { Transcriber } from "../src/transcriber.js";
-import { testConfig } from "./helpers.js";
 
 describe("Transcriber", () => {
   const roots: string[] = [];
@@ -31,37 +30,17 @@ describe("Transcriber", () => {
       },
     }) as unknown as OpenAI;
 
-  it("uses the user's verified OpenAI client for OpenAI-backed jobs", async () => {
-    const defaultCreate = vi.fn();
+  it("uses the user's verified OpenAI client and snapshotted model", async () => {
     const userCreate = vi.fn();
     const userClient = vi.fn(() => client(" user transcript ", userCreate));
-    const transcriber = new Transcriber(
-      client("default transcript", defaultCreate),
-      testConfig("/tmp/transcriber-user"),
-      userClient,
-    );
+    const transcriber = new Transcriber(userClient);
 
     await expect(
-      transcriber.transcribe(await audioFixture(), "user-1", "openai"),
+      transcriber.transcribe(await audioFixture(), "user-1", "whisper-test"),
     ).resolves.toBe("user transcript");
     expect(userClient).toHaveBeenCalledWith("user-1");
-    expect(userCreate).toHaveBeenCalledOnce();
-    expect(defaultCreate).not.toHaveBeenCalled();
-  });
-
-  it("keeps the server transcription client for Cerebras-backed jobs", async () => {
-    const defaultCreate = vi.fn();
-    const userClient = vi.fn();
-    const transcriber = new Transcriber(
-      client(" server transcript ", defaultCreate),
-      testConfig("/tmp/transcriber-server"),
-      userClient,
+    expect(userCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "whisper-test", response_format: "text" }),
     );
-
-    await expect(
-      transcriber.transcribe(await audioFixture(), "user-1", "cerebras"),
-    ).resolves.toBe("server transcript");
-    expect(defaultCreate).toHaveBeenCalledOnce();
-    expect(userClient).not.toHaveBeenCalled();
   });
 });

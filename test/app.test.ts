@@ -69,13 +69,19 @@ describe("API", () => {
       payload: { url: "https://fb.watch/example" },
     });
     expect(missingProvider.statusCode).toBe(428);
-    expect(missingProvider.json().error).toBe("ai_provider_required");
+    expect(missingProvider.json().error).toBe("transcription_required");
     store.saveAiProviderConnection(
       store.defaultUserId()!,
       "openai",
       "test",
       "test…key",
     );
+    store.saveAiTaskSelections(store.defaultUserId()!, {
+      transcriptionProvider: "openai",
+      transcriptionModel: config.transcriptionModel,
+      analysisProvider: "openai",
+      analysisModel: config.analysisModel,
+    });
 
     const accepted = await app.inject({
       method: "POST",
@@ -196,7 +202,19 @@ describe("API", () => {
     });
     expect(aiConnection.statusCode).toBe(200);
     expect(aiConnection.body).not.toContain("csk-test-secret-1234");
-    expect(aiConnection.json().configured).toBe(true);
+    expect(aiConnection.json().readiness.ask).toBe(true);
+    store.saveAiProviderConnection(
+      setup.json().user.id,
+      "openai",
+      "test-openai-encrypted-payload",
+      "test…key",
+    );
+    store.saveAiTaskSelections(setup.json().user.id, {
+      transcriptionProvider: "openai",
+      transcriptionModel: config.transcriptionModel,
+      analysisProvider: "cerebras",
+      analysisModel: config.cerebrasAnalysisModel,
+    });
 
     const cookieExport =
       "# Netscape HTTP Cookie File\n.instagram.com\tTRUE\t/\tTRUE\t1999999999\tsessionid\tvery-private-session\n.facebook.com\tTRUE\t/\tTRUE\t1999999999\tc_user\tother-platform\n";
@@ -816,6 +834,12 @@ describe("API", () => {
     const store = new JobStore(config.databasePath);
     const user = store.createUser("demo", "unused-test-hash");
     store.saveAiProviderConnection(user.id, "openai", "test", "test…key");
+    store.saveAiTaskSelections(user.id, {
+      transcriptionProvider: "openai",
+      transcriptionModel: config.transcriptionModel,
+      analysisProvider: "openai",
+      analysisModel: config.analysisModel,
+    });
     const session = "stream-test-session";
     store.createSession(
       user.id,
