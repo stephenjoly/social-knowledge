@@ -49,7 +49,11 @@ const worker = new JobWorker(
     store,
     downloader: new MediaDownloader(config, platformConnections),
     processor: new MediaProcessor(),
-    transcriber: new Transcriber(openai, config),
+    transcriber: new Transcriber(
+      openai,
+      config,
+      (userId) => aiProviders.client(userId, "openai").client,
+    ),
     translator: new Translator(generationClient, config),
     titleGenerator: new TitleGenerator(generationClient, config),
     analyzer: new Analyzer(generationClient, config),
