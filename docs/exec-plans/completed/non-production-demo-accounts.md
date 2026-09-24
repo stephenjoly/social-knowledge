@@ -1,8 +1,9 @@
 # Non-production demo accounts
 
-Status: active
+Status: completed
 Owner: Codex
 Started: 2026-09-24
+Completed: 2026-09-24
 
 ## Context
 Staging keeps its own persistent data, while each PR preview has an isolated disposable database. Both need predictable synthetic logins without sharing storage or weakening production defaults.
@@ -20,17 +21,17 @@ Add an explicit non-production demo mode that reconciles a member and administra
 Add typed demo configuration, an idempotent startup reconciler, a public endpoint available only in demo mode, and login-screen account cards. Cover configuration, persistence, API exposure, and login behavior.
 
 ## Progress
-- [ ] Add configuration and deterministic account reconciliation.
-- [ ] Add login-screen shortcuts and API.
-- [ ] Add tests and deployment documentation.
-- [ ] Verify, commit, push, and deploy through `staging`.
+- [x] Add configuration and deterministic account reconciliation.
+- [x] Add login-screen shortcuts and API.
+- [x] Add tests and deployment documentation.
+- [x] Verify, commit, push, and deploy through `staging`.
 
 ## Decisions
 - 2026-09-24: Use explicit `DEMO_ACCOUNTS_ENABLED`; never infer safety from hostnames or `NODE_ENV`.
 - 2026-09-24: Use fixed synthetic credentials only after explicit enablement so previews can inherit one staging setting without shared persistence.
 
 ## Verification
-Run focused auth/config/database tests, `npm run check`, and validate the deployed staging login page.
+`npm run check` passed with 95 tests passing and 3 skipped. PR #21 merged to `staging` at `16db663`; Dokploy staging and preview environments were configured with `DEMO_ACCOUNTS_ENABLED=true`. Public staging health, credential advertisement, and both member/admin logins returned HTTP 200.
 
 ## Risks and recovery
 Demo credentials are intentionally public and must never be enabled in production. Disable the flag and restart to remove credential advertising; seeded synthetic accounts can then be removed separately if desired.
