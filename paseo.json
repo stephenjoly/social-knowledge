@@ -1,0 +1,36 @@
+{
+  "worktree": {
+    "setup": [
+      "npm ci",
+      "npm run build"
+    ],
+    "servicePorts": {
+      "range": "41000-41019"
+    }
+  },
+  "scripts": {
+    "App": {
+      "type": "service",
+      "command": "PORT=\"$PASEO_PORT\" APP_URL=\"$PASEO_SERVICE_APP_URL\" npm start"
+    },
+    "Check": {
+      "type": "command",
+      "command": "npm run check"
+    },
+    "Tests": {
+      "type": "command",
+      "command": "npm test"
+    }
+  },
+  "metadataGeneration": {
+    "branchName": {
+      "instructions": "Prefix task branches with codex/. Use a concise kebab-case name describing the task. Start new task branches from the current origin/staging branch."
+    },
+    "commitMessage": {
+      "instructions": "Use concise Conventional Commit messages with an appropriate scope. Keep commits task-scoped and exclude unrelated files, secrets, generated outputs, databases, media, vault contents, tokens, and private exports."
+    },
+    "pullRequest": {
+      "instructions": "Target staging. Lead with a concise summary and include validation results in a Test plan section. Link the corresponding ticket when one exists. Keep incomplete work in draft. For UI fixes, do not mark the PR ready until the deployed preview is verified and screenshot evidence is attached to the ticket."
+    }
+  }
+}
