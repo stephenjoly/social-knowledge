@@ -2,6 +2,8 @@
 
 Updated 2026-09-24 from the product owner's walkthrough and the prior roadmap. Horizons show planning intent, not delivery commitments. This is the single product priority list; implementation plans belong in `docs/exec-plans/active/`. Current shipped behavior is described in `docs/product.md` and `README.md`.
 
+[Open the filterable roadmap dashboard](roadmap-dashboard.html) for a reviewable view of the 16 items below.
+
 ## What the feedback says
 
 | Area | Keep | Improve or add |
