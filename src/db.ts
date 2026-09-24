@@ -1077,6 +1077,21 @@ export class JobStore {
       );
     return { id, username: username.toLowerCase(), role };
   }
+  upsertDemoUser(
+    username: string,
+    passwordHash: string,
+    role: "member" | "admin",
+  ) {
+    const normalizedUsername = username.toLowerCase();
+    const existing = this.getUserByUsername(normalizedUsername);
+    if (existing) {
+      this.database
+        .prepare("UPDATE users SET password_hash=?,role=? WHERE id=?")
+        .run(passwordHash, role, existing.id);
+      return { id: existing.id, username: normalizedUsername, role };
+    }
+    return this.createUser(normalizedUsername, passwordHash, role);
+  }
   createInitialUser(username: string, passwordHash: string) {
     const normalizedUsername = username.toLowerCase();
     const create = this.database.transaction(() => {

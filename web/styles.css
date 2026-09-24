@@ -1627,6 +1627,58 @@ textarea {
   margin-top: 2px;
   flex: 0 0 auto;
 }
+
+.demo-accounts {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid #34433f;
+  border-radius: 0.75rem;
+  background: rgba(198, 250, 68, 0.06);
+}
+
+.demo-accounts h2 {
+  margin: 0 0 0.75rem;
+  font: 700 0.9rem/1.2 inherit;
+}
+
+.demo-accounts article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem;
+  border: 1px solid #34433f;
+  border-radius: 0.6rem;
+  background: #131a18;
+}
+
+.demo-accounts article + article {
+  margin-top: 0.6rem;
+}
+
+.demo-accounts article div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.demo-accounts article span,
+.demo-accounts article code,
+.demo-accounts small {
+  font-size: 0.76rem;
+}
+
+.demo-accounts > small {
+  display: block;
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 520px) {
+  .demo-accounts article {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
 .onboarding-card select {
   width: 100%;
 }

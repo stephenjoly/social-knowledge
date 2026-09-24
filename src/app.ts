@@ -365,6 +365,18 @@ export function buildApp(
       return reply.code(201).send({ user });
     },
   );
+  app.get("/api/auth/demo-accounts", async (_request, reply) => {
+    if (!config.demoAccounts.length)
+      return reply.code(404).send({ error: "not_found" });
+    reply.header("Cache-Control", "no-store");
+    return {
+      accounts: config.demoAccounts.map(({ username, password, role }) => ({
+        username,
+        password,
+        role,
+      })),
+    };
+  });
   app.post(
     "/api/auth/invitations/inspect",
     {

@@ -16,4 +16,6 @@ After the archive is claimed, only administrators can create accounts through 24
 
 Store `API_TOKEN`, the OpenAI key, social-media cookie files, runtime databases, media, exports, invitation links, and knowledge-vault content outside Git. `API_TOKEN` remains for legacy Shortcut capture and an encryption-compatibility fallback; it is no longer a setup or browser-login credential. The checked-in `.gitignore` excludes the standard local paths, but operators are responsible for validating custom deployment paths.
 
+`DEMO_ACCOUNTS_ENABLED` intentionally publishes synthetic login credentials through the login page. It is disabled by default and must be enabled only for isolated preview or staging Applications containing no real user information. Preview databases are disposable and isolated from one another; they do not share accounts or archive data even when they inherit the same demo credentials.
+
 Public GitHub Pages documentation is separate from the running application and does not require making the application publicly reachable.

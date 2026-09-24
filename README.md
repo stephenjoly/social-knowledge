@@ -65,6 +65,12 @@ npm run test:e2e
 
 Set a long random `API_TOKEN`, provide `OPENAI_API_KEY`, and use disposable local directories for `VAULT_DIR` and `MEDIA_DIR` until the configuration has been validated. Keep a fresh local or preview deployment off public networks until its first administrator has registered.
 
+### Non-production demo accounts
+
+Staging and pull-request previews can show one-click synthetic member and administrator accounts on the login page. Set `DEMO_ACCOUNTS_ENABLED=true` only on the non-production Dokploy Application. The default public credentials are `demo-member` / `DemoMember123!` and `demo-admin` / `DemoAdmin123!`; they can be changed with the corresponding `DEMO_MEMBER_*` and `DEMO_ADMIN_*` variables.
+
+The application creates missing demo users and reconciles their passwords and roles at every startup. Staging keeps these users in its dedicated volume. Each preview has a separate disposable database, so previews do not share users or data; they merely recreate the same credentials from inherited environment settings. Never enable demo accounts or store real information in them in production.
+
 Capture failures are stored as a stable category, friendly recovery guidance, and a separate bounded technical diagnostic. Activity keeps the diagnostic collapsed by default so normal users see what happened and what to do rather than raw downloader output.
 
 Language preferences live under Settings. Each user can select a default language and independently enable or disable translation of foreign-language captures. Both the original and translated transcript remain visible and searchable.

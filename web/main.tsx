@@ -501,6 +501,11 @@ type InvitationDetails = {
   role: "admin" | "member";
   expiresAt: string;
 };
+type DemoAccount = {
+  username: string;
+  password: string;
+  role: "admin" | "member";
+};
 
 async function api<T>(path: string, options: RequestInit = {}) {
   const response = await fetch(path, {
@@ -658,6 +663,7 @@ function Auth({
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [demoAccounts, setDemoAccounts] = useState<DemoAccount[]>([]);
   const [invite, setInvite] = useState<InvitationDetails | null>(null);
   const [loadingInvite, setLoadingInvite] = useState(Boolean(inviteToken));
   useEffect(() => {
@@ -670,6 +676,12 @@ function Auth({
       .catch(() => setError("This invitation is no longer valid. Ask an administrator for a new link."))
       .finally(() => setLoadingInvite(false));
   }, [inviteToken]);
+  useEffect(() => {
+    if (setup || inviteToken) return;
+    void api<{ accounts: DemoAccount[] }>("/api/auth/demo-accounts")
+      .then((result) => setDemoAccounts(result.accounts))
+      .catch(() => setDemoAccounts([]));
+  }, [setup, inviteToken]);
   if (setup || (inviteToken && invite))
     return (
       <RegistrationForm
@@ -683,18 +695,24 @@ function Auth({
     return <main className="auth"><p>Checking invitation…</p></main>;
   if (inviteToken && error)
     return <main className="auth"><section className="auth-card"><h1>Invitation unavailable</h1><p className="error" role="alert">{error}</p></section></main>;
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  async function login(loginUsername: string, loginPassword: string) {
     setError("");
     try {
       await api("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({
+          username: loginUsername,
+          password: loginPassword,
+        }),
       });
       onDone(false);
     } catch (e) {
       setError(e instanceof Error ? "Incorrect username or password." : "Unable to sign in.");
     }
+  }
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await login(username, password);
   }
   return (
     <main className="auth">
@@ -720,6 +738,28 @@ function Auth({
           <button>Continue</button>
           {error && <p className="error" role="alert">{error}</p>}
         </form>
+        {!!demoAccounts.length && (
+          <section className="demo-accounts" aria-labelledby="demo-accounts-title">
+            <h2 id="demo-accounts-title">Test accounts</h2>
+            {demoAccounts.map((account) => (
+              <article key={account.username}>
+                <div>
+                  <strong>{account.role === "admin" ? "Demo administrator" : "Demo member"}</strong>
+                  <span>{account.username}</span>
+                  <code>{account.password}</code>
+                </div>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => void login(account.username, account.password)}
+                >
+                  Use account
+                </button>
+              </article>
+            ))}
+            <small>Synthetic test accounts only. Never store real information here.</small>
+          </section>
+        )}
       </section>
     </main>
   );
