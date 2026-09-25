@@ -13,7 +13,9 @@ async function signIn(page: Page) {
   await page.getByLabel("Username").fill(username!);
   await page.getByLabel("Password").fill(password!);
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByRole("button", { name: "inbox" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Inbox", exact: true }),
+  ).toBeVisible();
 }
 
 test("shows account-wide analytics independently from filters and at mobile width", async ({

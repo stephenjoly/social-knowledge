@@ -13,7 +13,9 @@ let store: JobStore;
 let app: ReturnType<typeof buildApp>;
 
 test.beforeAll(async () => {
-  root = await mkdtemp(path.join(os.tmpdir(), "social-knowledge-e2e-onboarding-"));
+  root = await mkdtemp(
+    path.join(os.tmpdir(), "social-knowledge-e2e-onboarding-"),
+  );
   await mkdir(path.join(root, "data"));
   const config = testConfig(root);
   config.appUrl = `http://127.0.0.1:${port}`;
@@ -35,10 +37,14 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   const baseUrl = `http://127.0.0.1:${port}`;
   await page.goto(baseUrl);
   await page.getByLabel("Username").fill("first-admin");
-  await page.getByLabel("Password", { exact: true }).fill("a-strong-admin-password");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("a-strong-admin-password");
   await page.getByLabel("Confirm password").fill("a-strong-admin-password");
   await page
-    .getByText("I understand this is an administrator account and can manage access to this archive.")
+    .getByText(
+      "I understand this is an administrator account and can manage access to this archive.",
+    )
     .click();
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(
@@ -47,10 +53,16 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   await page.getByRole("button", { name: "Set up later" }).click();
 
   await page.goto(`${baseUrl}/?tab=settings`);
-  await expect(page.getByRole("heading", { name: "People and access" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "People and access" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Create invitation" }).click();
-  await expect(page.getByText("Member invitation created. It expires in 24 hours.")).toBeVisible();
-  const invitationUrl = await page.getByLabel("New invitation link").inputValue();
+  await expect(
+    page.getByText("Member invitation created. It expires in 24 hours."),
+  ).toBeVisible();
+  const invitationUrl = await page
+    .getByLabel("New invitation link")
+    .inputValue();
   expect(invitationUrl).toContain("#invite=");
 
   const invitedContext = await browser.newContext();
@@ -71,6 +83,72 @@ test("claims a fresh archive without a setup token and onboards an invited membe
     invitedPage.getByRole("heading", { name: "Transcribe your captures" }),
   ).toBeVisible();
   await invitedPage.getByRole("button", { name: "Set up later" }).click();
-  await expect(invitedPage.getByRole("button", { name: "Settings" })).toBeVisible();
+  await expect(
+    invitedPage.getByRole("button", { name: "Settings" }),
+  ).toBeVisible();
+  await invitedPage.setViewportSize({ width: 390, height: 844 });
+  for (const label of [
+    "Inbox",
+    "Activity",
+    "Knowledge base",
+    "Ask",
+    "Settings",
+  ])
+    await expect(
+      invitedPage.getByRole("button", { name: label, exact: true }),
+    ).toBeVisible();
+  await expect(
+    invitedPage.getByRole("button", { name: "Capture a post", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      invitedPage.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    )
+    .toBe(true);
+  await invitedPage
+    .getByRole("button", { name: "Activity", exact: true })
+    .click();
+  await expect(
+    invitedPage.getByRole("heading", { name: "Activity" }),
+  ).toBeVisible();
+  await invitedPage
+    .getByRole("button", { name: "Knowledge base", exact: true })
+    .click();
+  await expect(
+    invitedPage.getByRole("heading", { name: "Library" }),
+  ).toBeVisible();
+  await invitedPage.getByRole("button", { name: "Ask", exact: true }).click();
+  await expect(
+    invitedPage.getByRole("heading", { name: "Ask AI" }),
+  ).toBeVisible();
+  await invitedPage
+    .getByRole("button", { name: "Settings", exact: true })
+    .click();
+  await expect(
+    invitedPage.getByRole("heading", { name: "Settings" }),
+  ).toBeVisible();
+  await invitedPage
+    .getByRole("button", { name: "Capture a post", exact: true })
+    .click();
+  await expect(
+    invitedPage.getByRole("heading", { name: "Save a social post" }),
+  ).toBeVisible();
+  await invitedPage.getByRole("button", { name: "Inbox", exact: true }).click();
+  await expect(
+    invitedPage.getByRole("heading", { name: "Ideas worth keeping." }),
+  ).toBeVisible();
+  await invitedPage.getByRole("button", { name: "Open account menu" }).click();
+  const accountMenu = invitedPage.getByRole("dialog");
+  await expect(
+    accountMenu.getByRole("button", { name: "Sign out" }),
+  ).toBeVisible();
+  await accountMenu.getByRole("button", { name: "Sign out" }).click();
+  await expect(
+    invitedPage.getByRole("heading", { name: "Invitation unavailable" }),
+  ).toBeVisible();
   await invitedContext.close();
 });

@@ -27,15 +27,23 @@ test.beforeAll(async () => {
     init?: RequestInit,
   ) => {
     const url = input instanceof Request ? input.url : String(input);
-    if (url === "https://api.cerebras.ai/v1/models" || url === "https://api.openai.com/v1/models")
-      return new Response(JSON.stringify({ data: [
-        { id: "qwen-3.8-27b" },
-        { id: config.analysisModel },
-        { id: config.transcriptionModel },
-      ] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
+    if (
+      url === "https://api.cerebras.ai/v1/models" ||
+      url === "https://api.openai.com/v1/models"
+    )
+      return new Response(
+        JSON.stringify({
+          data: [
+            { id: "qwen-3.8-27b" },
+            { id: config.analysisModel },
+            { id: config.transcriptionModel },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
     return originalFetch(input, init);
   }) as typeof fetch;
   app = buildApp(config, store, new EventHub());
@@ -56,7 +64,9 @@ test("configures transcription and analysis independently and disconnects safely
   await page.getByLabel("Username").fill("qa-user");
   await page.getByLabel("Password").fill("a-strong-qa-password");
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("button", { name: "capture" }).click();
+  await page
+    .getByRole("button", { name: "Capture a post", exact: true })
+    .click();
   await page
     .getByLabel("Facebook or Instagram URL")
     .fill("https://www.instagram.com/reel/qa-test/");
@@ -84,8 +94,12 @@ test("configures transcription and analysis independently and disconnects safely
 
   await page.getByRole("button", { name: "Disconnect OpenAI" }).click();
   await expect(
-    page.getByText("OpenAI disconnected. Any task that used it now needs a provider."),
+    page.getByText(
+      "OpenAI disconnected. Any task that used it now needs a provider.",
+    ),
   ).toBeVisible();
-  await expect(page.getByText("Capture needs transcription and analysis")).toBeVisible();
+  await expect(
+    page.getByText("Capture needs transcription and analysis"),
+  ).toBeVisible();
   await expect(page.getByText("Ask is ready.")).toBeVisible();
 });

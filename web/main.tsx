@@ -11,14 +11,23 @@ import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  Activity,
   ChevronRight,
   FileQuestion,
   Folder,
   FolderOpen,
   House,
+  Inbox,
+  LibraryBig,
+  LogOut,
+  Menu,
+  MessageSquare,
+  Plus,
   Search,
   SlidersHorizontal,
+  Settings as SettingsIcon,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import {
@@ -499,6 +508,52 @@ type AccountUser = {
   role: string;
   createdAt?: string;
 };
+
+type AppTab = "inbox" | "library" | "ask" | "activity" | "capture" | "settings";
+
+const appNavigation: Array<{
+  tab: Exclude<AppTab, "capture">;
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { tab: "inbox", label: "Inbox", icon: Inbox },
+  { tab: "activity", label: "Activity", icon: Activity },
+  { tab: "library", label: "Knowledge base", icon: LibraryBig },
+  { tab: "ask", label: "Ask", icon: MessageSquare },
+  { tab: "settings", label: "Settings", icon: SettingsIcon },
+];
+
+function AppNavigation({
+  tab,
+  activeCount,
+  onNavigate,
+}: {
+  tab: AppTab;
+  activeCount: number;
+  onNavigate: (nextTab: AppTab) => void;
+}) {
+  return (
+    <nav className="app-nav" aria-label="Primary navigation">
+      {appNavigation.map(({ tab: nextTab, label, icon: Icon }) => (
+        <button
+          type="button"
+          className={tab === nextTab ? "active" : ""}
+          aria-current={tab === nextTab ? "page" : undefined}
+          onClick={() => onNavigate(nextTab)}
+          key={nextTab}
+        >
+          <Icon className="app-nav-icon" aria-hidden="true" />
+          <span>{label}</span>
+          {nextTab === "activity" && activeCount > 0 && (
+            <span className="app-nav-badge" aria-hidden="true">
+              {activeCount}
+            </span>
+          )}
+        </button>
+      ))}
+    </nav>
+  );
+}
 type Invitation = {
   id: string;
   role: "admin" | "member";
@@ -566,7 +621,9 @@ function RegistrationForm({
       return;
     }
     if (isAdministrator && !acknowledged) {
-      setError("Confirm that you understand this account has administrator access.");
+      setError(
+        "Confirm that you understand this account has administrator access.",
+      );
       return;
     }
     try {
@@ -649,12 +706,17 @@ function RegistrationForm({
                   checked={acknowledged}
                   onChange={(event) => setAcknowledged(event.target.checked)}
                 />
-                I understand this is an administrator account and can manage access to this archive.
+                I understand this is an administrator account and can manage
+                access to this archive.
               </span>
             </label>
           )}
           <button>Create account</button>
-          {error && <p className="error" role="alert">{error}</p>}
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
         </form>
       </section>
     </main>
@@ -678,12 +740,19 @@ function Auth({
   const [loadingInvite, setLoadingInvite] = useState(Boolean(inviteToken));
   useEffect(() => {
     if (!inviteToken) return;
-    void api<{ invitation: InvitationDetails }>("/api/auth/invitations/inspect", {
-      method: "POST",
-      body: JSON.stringify({ token: inviteToken }),
-    })
+    void api<{ invitation: InvitationDetails }>(
+      "/api/auth/invitations/inspect",
+      {
+        method: "POST",
+        body: JSON.stringify({ token: inviteToken }),
+      },
+    )
       .then((result) => setInvite(result.invitation))
-      .catch(() => setError("This invitation is no longer valid. Ask an administrator for a new link."))
+      .catch(() =>
+        setError(
+          "This invitation is no longer valid. Ask an administrator for a new link.",
+        ),
+      )
       .finally(() => setLoadingInvite(false));
   }, [inviteToken]);
   useEffect(() => {
@@ -702,9 +771,22 @@ function Auth({
       />
     );
   if (inviteToken && loadingInvite)
-    return <main className="auth"><p>Checking invitation…</p></main>;
+    return (
+      <main className="auth">
+        <p>Checking invitation…</p>
+      </main>
+    );
   if (inviteToken && error)
-    return <main className="auth"><section className="auth-card"><h1>Invitation unavailable</h1><p className="error" role="alert">{error}</p></section></main>;
+    return (
+      <main className="auth">
+        <section className="auth-card">
+          <h1>Invitation unavailable</h1>
+          <p className="error" role="alert">
+            {error}
+          </p>
+        </section>
+      </main>
+    );
   async function login(loginUsername: string, loginPassword: string) {
     setError("");
     try {
@@ -717,7 +799,11 @@ function Auth({
       });
       onDone(false);
     } catch (e) {
-      setError(e instanceof Error ? "Incorrect username or password." : "Unable to sign in.");
+      setError(
+        e instanceof Error
+          ? "Incorrect username or password."
+          : "Unable to sign in.",
+      );
     }
   }
   async function submit(event: FormEvent) {
@@ -733,7 +819,12 @@ function Auth({
         <form onSubmit={submit}>
           <label>
             Username
-            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              required
+            />
           </label>
           <label>
             Password
@@ -746,15 +837,26 @@ function Auth({
             />
           </label>
           <button>Continue</button>
-          {error && <p className="error" role="alert">{error}</p>}
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
         </form>
         {!!demoAccounts.length && (
-          <section className="demo-accounts" aria-labelledby="demo-accounts-title">
+          <section
+            className="demo-accounts"
+            aria-labelledby="demo-accounts-title"
+          >
             <h2 id="demo-accounts-title">Test accounts</h2>
             {demoAccounts.map((account) => (
               <article key={account.username}>
                 <div>
-                  <strong>{account.role === "admin" ? "Demo administrator" : "Demo member"}</strong>
+                  <strong>
+                    {account.role === "admin"
+                      ? "Demo administrator"
+                      : "Demo member"}
+                  </strong>
                   <span>{account.username}</span>
                   <code>{account.password}</code>
                 </div>
@@ -767,7 +869,9 @@ function Auth({
                 </button>
               </article>
             ))}
-            <small>Synthetic test accounts only. Never store real information here.</small>
+            <small>
+              Synthetic test accounts only. Never store real information here.
+            </small>
           </section>
         )}
       </section>
@@ -777,7 +881,9 @@ function Auth({
 
 function ProviderOnboarding({ onDone }: { onDone: () => void }) {
   const [state, setState] = useState<AiProviderState | null>(null);
-  const [step, setStep] = useState<"transcription" | "analysis">("transcription");
+  const [step, setStep] = useState<"transcription" | "analysis">(
+    "transcription",
+  );
   const [provider, setProvider] = useState<"openai" | "cerebras">("openai");
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState("");
@@ -788,8 +894,13 @@ function ProviderOnboarding({ onDone }: { onDone: () => void }) {
       if (result.selections.transcription) setStep("analysis");
     });
   }, []);
-  const selectedProvider = state?.providers.find((item) => item.id === provider);
-  async function choose(selection: "transcription" | "analysis", selected: AiSelection) {
+  const selectedProvider = state?.providers.find(
+    (item) => item.id === provider,
+  );
+  async function choose(
+    selection: "transcription" | "analysis",
+    selected: AiSelection,
+  ) {
     const result = await api<AiProviderState>("/api/v1/ai-settings", {
       method: "PUT",
       body: JSON.stringify({ [selection]: selected }),
@@ -801,48 +912,129 @@ function ProviderOnboarding({ onDone }: { onDone: () => void }) {
     <main className="auth">
       <section className="auth-card onboarding-card">
         <div className="mark">◉</div>
-        <p className="step-label">Step {step === "transcription" ? "1" : "2"} of 2</p>
-        <h1>{step === "transcription" ? "Transcribe your captures" : "Analyze your archive"}</h1>
-        <p>{step === "transcription" ? "Connect OpenAI to turn reel audio into searchable text." : "Choose the provider that summarizes captures and answers questions."} Keys are encrypted and verified before they are saved.</p>
-        <form onSubmit={async (event) => {
-          event.preventDefault();
-          setSubmitting(true);
-          setMessage("Testing the key with the provider…");
-          try {
-            let result = state!;
-            if (!selectedProvider?.connected) {
-              result = await api<AiProviderState>(`/api/v1/ai-providers/${provider}`, { method: "PUT", body: JSON.stringify({ apiKey }) });
-              setState(result);
+        <p className="step-label">
+          Step {step === "transcription" ? "1" : "2"} of 2
+        </p>
+        <h1>
+          {step === "transcription"
+            ? "Transcribe your captures"
+            : "Analyze your archive"}
+        </h1>
+        <p>
+          {step === "transcription"
+            ? "Connect OpenAI to turn reel audio into searchable text."
+            : "Choose the provider that summarizes captures and answers questions."}{" "}
+          Keys are encrypted and verified before they are saved.
+        </p>
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setSubmitting(true);
+            setMessage("Testing the key with the provider…");
+            try {
+              let result = state!;
+              if (!selectedProvider?.connected) {
+                result = await api<AiProviderState>(
+                  `/api/v1/ai-providers/${provider}`,
+                  { method: "PUT", body: JSON.stringify({ apiKey }) },
+                );
+                setState(result);
+              }
+              const definition = result.providers.find(
+                (item) => item.id === provider,
+              )!;
+              const model = definition.models[step][0];
+              if (!model) throw new Error("model_unavailable");
+              result = await choose(step, { provider, model });
+              setApiKey("");
+              if (step === "transcription") {
+                setStep("analysis");
+                setProvider(
+                  result.providers.find((item) => item.id === "openai")
+                    ?.connected
+                    ? "openai"
+                    : "cerebras",
+                );
+                setMessage(
+                  "Transcription is ready. Now choose how to analyze your archive.",
+                );
+              } else onDone();
+            } catch (error) {
+              setMessage(
+                (error as { body?: { error?: string } }).body?.error ===
+                  "invalid_api_key"
+                  ? "The provider rejected that API key. Check it and try again."
+                  : "The provider could not be reached. Try again shortly.",
+              );
+            } finally {
+              setSubmitting(false);
             }
-            const definition = result.providers.find((item) => item.id === provider)!;
-            const model = definition.models[step][0];
-            if (!model) throw new Error("model_unavailable");
-            result = await choose(step, { provider, model });
-            setApiKey("");
-            if (step === "transcription") {
-              setStep("analysis");
-              setProvider(result.providers.find((item) => item.id === "openai")?.connected ? "openai" : "cerebras");
-              setMessage("Transcription is ready. Now choose how to analyze your archive.");
-            } else onDone();
-          } catch (error) {
-            setMessage((error as { body?: { error?: string } }).body?.error === "invalid_api_key" ? "The provider rejected that API key. Check it and try again." : "The provider could not be reached. Try again shortly.");
-          } finally {
-            setSubmitting(false);
-          }
-        }}>
-          {step === "analysis" && <label>Analysis provider
-            <select value={provider} onChange={(event) => { setProvider(event.target.value as "openai" | "cerebras"); setApiKey(""); }}>
-              <option value="openai">OpenAI</option><option value="cerebras">Cerebras</option>
-            </select>
-          </label>}
-          {selectedProvider?.models[step][0] && <p className="model-choice"><span>{step === "transcription" ? "Transcription model" : "Analysis model"}</span><strong>{selectedProvider.models[step][0]}</strong></p>}
-          {selectedProvider?.connected ? <p className="connected-choice"><strong>{selectedProvider.name} connected</strong><span>{selectedProvider.keyHint} · no need to enter the key again</span></p> : <label>{provider === "cerebras" ? "Cerebras" : "OpenAI"} API key
-            <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" placeholder="Paste API key" required />
-          </label>}
-          <button disabled={submitting || !state}>{submitting ? "Verifying…" : step === "transcription" ? "Connect transcription" : "Use for analysis"}</button>
-          <button type="button" className="secondary-button" onClick={onDone}>Set up later</button>
-          <p className="settings-help">Capture needs transcription and analysis. Ask only needs analysis. You can finish either setup in Settings.</p>
-          {message && <p className="action-feedback" role="status">{message}</p>}
+          }}
+        >
+          {step === "analysis" && (
+            <label>
+              Analysis provider
+              <select
+                value={provider}
+                onChange={(event) => {
+                  setProvider(event.target.value as "openai" | "cerebras");
+                  setApiKey("");
+                }}
+              >
+                <option value="openai">OpenAI</option>
+                <option value="cerebras">Cerebras</option>
+              </select>
+            </label>
+          )}
+          {selectedProvider?.models[step][0] && (
+            <p className="model-choice">
+              <span>
+                {step === "transcription"
+                  ? "Transcription model"
+                  : "Analysis model"}
+              </span>
+              <strong>{selectedProvider.models[step][0]}</strong>
+            </p>
+          )}
+          {selectedProvider?.connected ? (
+            <p className="connected-choice">
+              <strong>{selectedProvider.name} connected</strong>
+              <span>
+                {selectedProvider.keyHint} · no need to enter the key again
+              </span>
+            </p>
+          ) : (
+            <label>
+              {provider === "cerebras" ? "Cerebras" : "OpenAI"} API key
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
+                autoComplete="off"
+                placeholder="Paste API key"
+                required
+              />
+            </label>
+          )}
+          <button disabled={submitting || !state}>
+            {submitting
+              ? "Verifying…"
+              : step === "transcription"
+                ? "Connect transcription"
+                : "Use for analysis"}
+          </button>
+          <button type="button" className="secondary-button" onClick={onDone}>
+            Set up later
+          </button>
+          <p className="settings-help">
+            Capture needs transcription and analysis. Ask only needs analysis.
+            You can finish either setup in Settings.
+          </p>
+          {message && (
+            <p className="action-feedback" role="status">
+              {message}
+            </p>
+          )}
         </form>
       </section>
     </main>
@@ -1042,7 +1234,8 @@ function AccessManagement() {
   const [users, setUsers] = useState<AccountUser[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [role, setRole] = useState<"member" | "admin">("member");
-  const [administratorAcknowledged, setAdministratorAcknowledged] = useState(false);
+  const [administratorAcknowledged, setAdministratorAcknowledged] =
+    useState(false);
   const [message, setMessage] = useState("");
   const [createdInvitationUrl, setCreatedInvitationUrl] = useState("");
   async function load() {
@@ -1053,11 +1246,15 @@ function AccessManagement() {
     setUsers(userResult.users);
     setInvitations(invitationResult.invitations);
   }
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+  }, []);
   const copyInvitation = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
-      setMessage("Invitation link copied. It is shown only when created or regenerated.");
+      setMessage(
+        "Invitation link copied. It is shown only when created or regenerated.",
+      );
     } catch {
       setMessage("Copy the invitation link from the field below.");
     }
@@ -1066,62 +1263,175 @@ function AccessManagement() {
     event.preventDefault();
     setMessage("");
     if (role === "admin" && !administratorAcknowledged) {
-      setMessage("Confirm administrator access before creating this invitation.");
+      setMessage(
+        "Confirm administrator access before creating this invitation.",
+      );
       return;
     }
     try {
-      const result = await api<{ invitation: Invitation; invitationUrl: string }>(
-        "/api/v1/admin/invitations",
-        { method: "POST", body: JSON.stringify({ role, administratorAcknowledged }) },
-      );
+      const result = await api<{
+        invitation: Invitation;
+        invitationUrl: string;
+      }>("/api/v1/admin/invitations", {
+        method: "POST",
+        body: JSON.stringify({ role, administratorAcknowledged }),
+      });
       setCreatedInvitationUrl(result.invitationUrl);
-      setMessage(`${role === "admin" ? "Administrator" : "Member"} invitation created. It expires in 24 hours.`);
+      setMessage(
+        `${role === "admin" ? "Administrator" : "Member"} invitation created. It expires in 24 hours.`,
+      );
       await load();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Invitation could not be created.");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Invitation could not be created.",
+      );
     }
   };
   return (
     <section className="settings-card access-management">
       <h2>People and access</h2>
-      <p className="settings-help">Administrators can invite people and manage invitations. Each person’s archive, connections, API keys, and exports remain private to their account.</p>
+      <p className="settings-help">
+        Administrators can invite people and manage invitations. Each person’s
+        archive, connections, API keys, and exports remain private to their
+        account.
+      </p>
       <form onSubmit={create}>
         <label>
           Invitation role
-          <select value={role} onChange={(event) => { setRole(event.target.value as "member" | "admin"); setAdministratorAcknowledged(false); }}>
+          <select
+            value={role}
+            onChange={(event) => {
+              setRole(event.target.value as "member" | "admin");
+              setAdministratorAcknowledged(false);
+            }}
+          >
             <option value="member">Member — private archive access</option>
             <option value="admin">Administrator — can manage access</option>
           </select>
         </label>
         {role === "admin" && (
           <label className="toggle-label">
-            <input type="checkbox" checked={administratorAcknowledged} onChange={(event) => setAdministratorAcknowledged(event.target.checked)} />
+            <input
+              type="checkbox"
+              checked={administratorAcknowledged}
+              onChange={(event) =>
+                setAdministratorAcknowledged(event.target.checked)
+              }
+            />
             I understand this invitation grants administrator access.
           </label>
         )}
         <button>Create invitation</button>
       </form>
-      {message && <p className="action-feedback" role="status">{message}</p>}
+      {message && (
+        <p className="action-feedback" role="status">
+          {message}
+        </p>
+      )}
       {createdInvitationUrl && (
         <div className="token-box invitation-link">
           <strong>Share this link securely</strong>
-          <input value={createdInvitationUrl} readOnly aria-label="New invitation link" />
-          <button type="button" onClick={() => void copyInvitation(createdInvitationUrl)}>Copy invitation</button>
+          <input
+            value={createdInvitationUrl}
+            readOnly
+            aria-label="New invitation link"
+          />
+          <button
+            type="button"
+            onClick={() => void copyInvitation(createdInvitationUrl)}
+          >
+            Copy invitation
+          </button>
         </div>
       )}
       <div className="access-list">
         <h3>Accounts</h3>
-        {users.map((user) => <article key={user.id}><div><strong>{user.username}</strong><small>{user.role === "admin" ? "Administrator" : "Member"}{user.createdAt ? ` · joined ${new Date(user.createdAt).toLocaleDateString()}` : ""}</small></div></article>)}
+        {users.map((user) => (
+          <article key={user.id}>
+            <div>
+              <strong>{user.username}</strong>
+              <small>
+                {user.role === "admin" ? "Administrator" : "Member"}
+                {user.createdAt
+                  ? ` · joined ${new Date(user.createdAt).toLocaleDateString()}`
+                  : ""}
+              </small>
+            </div>
+          </article>
+        ))}
         {!users.length && <p className="settings-help">Loading accounts…</p>}
       </div>
       <div className="access-list">
         <h3>Invitations</h3>
         {invitations.map((invitation) => {
-          const inactive = invitation.consumedAt || invitation.revokedAt || new Date(invitation.expiresAt).getTime() < Date.now();
-          const state = invitation.consumedAt ? "Used" : invitation.revokedAt ? "Revoked" : new Date(invitation.expiresAt).getTime() < Date.now() ? "Expired" : "Active";
-          return <article key={invitation.id}><div><strong>{invitation.role === "admin" ? "Administrator" : "Member"} invitation</strong><small>{state} · expires {new Date(invitation.expiresAt).toLocaleString()}</small></div><div className="access-actions">{!inactive && <button type="button" className="secondary-button" onClick={async () => { await api(`/api/v1/admin/invitations/${invitation.id}/revoke`, { method: "POST" }); setMessage("Invitation revoked."); await load(); }}>Revoke</button>}{!invitation.consumedAt && <button type="button" className="secondary-button" onClick={async () => { const result = await api<{ invitationUrl: string }>(`/api/v1/admin/invitations/${invitation.id}/regenerate`, { method: "POST" }); setCreatedInvitationUrl(result.invitationUrl); setMessage("New invitation link created. The previous link no longer works."); await load(); }}>Regenerate</button>}</div></article>;
+          const inactive =
+            invitation.consumedAt ||
+            invitation.revokedAt ||
+            new Date(invitation.expiresAt).getTime() < Date.now();
+          const state = invitation.consumedAt
+            ? "Used"
+            : invitation.revokedAt
+              ? "Revoked"
+              : new Date(invitation.expiresAt).getTime() < Date.now()
+                ? "Expired"
+                : "Active";
+          return (
+            <article key={invitation.id}>
+              <div>
+                <strong>
+                  {invitation.role === "admin" ? "Administrator" : "Member"}{" "}
+                  invitation
+                </strong>
+                <small>
+                  {state} · expires{" "}
+                  {new Date(invitation.expiresAt).toLocaleString()}
+                </small>
+              </div>
+              <div className="access-actions">
+                {!inactive && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={async () => {
+                      await api(
+                        `/api/v1/admin/invitations/${invitation.id}/revoke`,
+                        { method: "POST" },
+                      );
+                      setMessage("Invitation revoked.");
+                      await load();
+                    }}
+                  >
+                    Revoke
+                  </button>
+                )}
+                {!invitation.consumedAt && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={async () => {
+                      const result = await api<{ invitationUrl: string }>(
+                        `/api/v1/admin/invitations/${invitation.id}/regenerate`,
+                        { method: "POST" },
+                      );
+                      setCreatedInvitationUrl(result.invitationUrl);
+                      setMessage(
+                        "New invitation link created. The previous link no longer works.",
+                      );
+                      await load();
+                    }}
+                  >
+                    Regenerate
+                  </button>
+                )}
+              </div>
+            </article>
+          );
         })}
-        {!invitations.length && <p className="settings-help">No invitations yet.</p>}
+        {!invitations.length && (
+          <p className="settings-help">No invitations yet.</p>
+        )}
       </div>
     </section>
   );
@@ -1258,40 +1568,121 @@ function Settings({ user }: { user: AccountUser | null }) {
           encrypted at rest and never shown again.
         </p>
         <div className="ai-readiness" role="status">
-          <strong>{aiState?.readiness.capture ? "Capture ready" : "Capture needs transcription and analysis"}</strong>
-          <span>{aiState?.readiness.ask ? "Ask is ready." : "Ask needs an analysis provider."}</span>
+          <strong>
+            {aiState?.readiness.capture
+              ? "Capture ready"
+              : "Capture needs transcription and analysis"}
+          </strong>
+          <span>
+            {aiState?.readiness.ask
+              ? "Ask is ready."
+              : "Ask needs an analysis provider."}
+          </span>
         </div>
         <div className="ai-task-grid">
           {(["transcription", "analysis"] as const).map((task) => {
             const selection = aiState?.selections[task];
-            const options = (aiState?.providers ?? []).filter((item) => item.capabilities[task]);
-            return <article className="ai-task" key={task}>
-              <span className="step-label">{task === "transcription" ? "Step 1" : "Step 2"}</span>
-              <h3>{task === "transcription" ? "Transcription" : "Analysis & Ask"}</h3>
-              <p>{task === "transcription" ? "Turns audio into searchable text. OpenAI is currently required." : "Creates summaries, topics, vision insights, and answers."}</p>
-              <label>Provider
-                <select value={selection?.provider ?? ""} onChange={async (event) => {
-                  const provider = event.target.value as "openai" | "cerebras";
-                  const definition = options.find((item) => item.id === provider);
-                  if (!definition?.connected) { setSelectedAiProvider(provider); setProviderMessage(`Connect ${definition?.name ?? provider} below before selecting it for ${task}.`); return; }
-                  const model = definition.models[task][0];
-                  const result = await api<AiProviderState>("/api/v1/ai-settings", { method: "PUT", body: JSON.stringify({ [task]: { provider, model } }) });
-                  setAiState(result);
-                  setProviderMessage(`${task === "transcription" ? "Transcription" : "Analysis"} selection updated.`);
-                }}>
-                  <option value="" disabled>Choose provider</option>
-                  {options.map((item) => <option key={item.id} value={item.id}>{item.name}{item.connected ? " · connected" : " · connect first"}</option>)}
-                </select>
-              </label>
-              {selection && <label>Model
-                <select value={selection.model} onChange={async (event) => {
-                  const result = await api<AiProviderState>("/api/v1/ai-settings", { method: "PUT", body: JSON.stringify({ [task]: { provider: selection.provider, model: event.target.value } }) });
-                  setAiState(result);
-                  setProviderMessage(`${task === "transcription" ? "Transcription" : "Analysis"} model updated.`);
-                }}>{options.find((item) => item.id === selection.provider)?.models[task].map((model) => <option key={model}>{model}</option>)}</select>
-              </label>}
-              <strong className={selection ? "task-status ready" : "task-status"}>{selection ? `${options.find((item) => item.id === selection.provider)?.name} · ${selection.model}` : "Not configured"}</strong>
-            </article>;
+            const options = (aiState?.providers ?? []).filter(
+              (item) => item.capabilities[task],
+            );
+            return (
+              <article className="ai-task" key={task}>
+                <span className="step-label">
+                  {task === "transcription" ? "Step 1" : "Step 2"}
+                </span>
+                <h3>
+                  {task === "transcription"
+                    ? "Transcription"
+                    : "Analysis & Ask"}
+                </h3>
+                <p>
+                  {task === "transcription"
+                    ? "Turns audio into searchable text. OpenAI is currently required."
+                    : "Creates summaries, topics, vision insights, and answers."}
+                </p>
+                <label>
+                  Provider
+                  <select
+                    value={selection?.provider ?? ""}
+                    onChange={async (event) => {
+                      const provider = event.target.value as
+                        "openai" | "cerebras";
+                      const definition = options.find(
+                        (item) => item.id === provider,
+                      );
+                      if (!definition?.connected) {
+                        setSelectedAiProvider(provider);
+                        setProviderMessage(
+                          `Connect ${definition?.name ?? provider} below before selecting it for ${task}.`,
+                        );
+                        return;
+                      }
+                      const model = definition.models[task][0];
+                      const result = await api<AiProviderState>(
+                        "/api/v1/ai-settings",
+                        {
+                          method: "PUT",
+                          body: JSON.stringify({ [task]: { provider, model } }),
+                        },
+                      );
+                      setAiState(result);
+                      setProviderMessage(
+                        `${task === "transcription" ? "Transcription" : "Analysis"} selection updated.`,
+                      );
+                    }}
+                  >
+                    <option value="" disabled>
+                      Choose provider
+                    </option>
+                    {options.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                        {item.connected ? " · connected" : " · connect first"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {selection && (
+                  <label>
+                    Model
+                    <select
+                      value={selection.model}
+                      onChange={async (event) => {
+                        const result = await api<AiProviderState>(
+                          "/api/v1/ai-settings",
+                          {
+                            method: "PUT",
+                            body: JSON.stringify({
+                              [task]: {
+                                provider: selection.provider,
+                                model: event.target.value,
+                              },
+                            }),
+                          },
+                        );
+                        setAiState(result);
+                        setProviderMessage(
+                          `${task === "transcription" ? "Transcription" : "Analysis"} model updated.`,
+                        );
+                      }}
+                    >
+                      {options
+                        .find((item) => item.id === selection.provider)
+                        ?.models[task].map((model) => (
+                          <option key={model}>{model}</option>
+                        ))}
+                    </select>
+                  </label>
+                )}
+                <strong
+                  className={selection ? "task-status ready" : "task-status"}
+                >
+                  {selection
+                    ? `${options.find((item) => item.id === selection.provider)?.name} · ${selection.model}`
+                    : "Not configured"}
+                </strong>
+              </article>
+            );
           })}
         </div>
         <h3 className="provider-connections-title">Provider connections</h3>
@@ -1324,13 +1715,28 @@ function Settings({ user }: { user: AccountUser | null }) {
                 className="secondary-button"
                 onClick={() => setSelectedAiProvider(provider.id)}
               >
-                {provider.connected ? "Replace key" : `Connect ${provider.name}`}
+                {provider.connected
+                  ? "Replace key"
+                  : `Connect ${provider.name}`}
               </button>
-              {provider.connected && <button type="button" className="text-button danger-button" onClick={async () => {
-                const result = await api<AiProviderState>(`/api/v1/ai-providers/${provider.id}`, { method: "DELETE" });
-                setAiState(result);
-                setProviderMessage(`${provider.name} disconnected. Any task that used it now needs a provider.`);
-              }}>Disconnect {provider.name}</button>}
+              {provider.connected && (
+                <button
+                  type="button"
+                  className="text-button danger-button"
+                  onClick={async () => {
+                    const result = await api<AiProviderState>(
+                      `/api/v1/ai-providers/${provider.id}`,
+                      { method: "DELETE" },
+                    );
+                    setAiState(result);
+                    setProviderMessage(
+                      `${provider.name} disconnected. Any task that used it now needs a provider.`,
+                    );
+                  }}
+                >
+                  Disconnect {provider.name}
+                </button>
+              )}
             </article>
           ))}
         </div>
@@ -1340,13 +1746,18 @@ function Settings({ user }: { user: AccountUser | null }) {
             setVerifyingProvider(true);
             setProviderMessage("Testing the key with the provider…");
             try {
-              const result = await api<AiProviderState>(`/api/v1/ai-providers/${selectedAiProvider}`, {
-                method: "PUT",
-                body: JSON.stringify({ apiKey: providerApiKey }),
-              });
+              const result = await api<AiProviderState>(
+                `/api/v1/ai-providers/${selectedAiProvider}`,
+                {
+                  method: "PUT",
+                  body: JSON.stringify({ apiKey: providerApiKey }),
+                },
+              );
               setAiState(result);
               setProviderApiKey("");
-              setProviderMessage(`${selectedAiProvider === "cerebras" ? "Cerebras" : "OpenAI"} connected. Review the task selections above.`);
+              setProviderMessage(
+                `${selectedAiProvider === "cerebras" ? "Cerebras" : "OpenAI"} connected. Review the task selections above.`,
+              );
             } catch (error) {
               setProviderMessage(
                 (error as { body?: { error?: string } }).body?.error ===
@@ -2237,13 +2648,14 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
         new Error(
           problem.error === "conversation_busy"
             ? "This conversation is already answering in another tab."
-            : problem.error === "ai_provider_required" || problem.error === "analysis_provider_required"
+            : problem.error === "ai_provider_required" ||
+                problem.error === "analysis_provider_required"
               ? "Choose a connected analysis provider in Settings before using Ask AI."
-            : problem.error === "invalid_message"
-              ? "Enter a question between 1 and 2,000 characters."
-              : problem.error === "invalid_request_id"
-                ? "The request identifier was invalid. Please try again."
-                : "Ask AI could not start the answer.",
+              : problem.error === "invalid_message"
+                ? "Enter a question between 1 and 2,000 characters."
+                : problem.error === "invalid_request_id"
+                  ? "The request identifier was invalid. Please try again."
+                  : "Ask AI could not start the answer.",
         ),
         problem.assistantId ? { assistantId: problem.assistantId } : {},
       );
@@ -2699,9 +3111,7 @@ function App() {
     return token;
   });
   const initialTab = new URLSearchParams(window.location.search).get("tab");
-  const [tab, setTab] = useState<
-    "inbox" | "library" | "ask" | "activity" | "capture" | "settings"
-  >(
+  const [tab, setTab] = useState<AppTab>(
     initialTab === "library" ||
       initialTab === "ask" ||
       initialTab === "activity" ||
@@ -2746,6 +3156,7 @@ function App() {
     topic: "",
   });
   const [detail, setDetail] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [captureUrl, setCaptureUrl] = useState("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
@@ -2925,6 +3336,17 @@ function App() {
     }),
     [jobs],
   );
+  const activeJobCount = counts.active + counts.failed;
+  const profileInitial = user?.username.slice(0, 1).toUpperCase() || "S";
+  const navigateTo = (nextTab: AppTab) => {
+    setTab(nextTab);
+    setMobileMenuOpen(false);
+  };
+  const signOut = async () => {
+    await api("/api/auth/logout", { method: "POST" });
+    setUser(null);
+    setAuthState("login");
+  };
   if (authState === "loading")
     return (
       <main className="auth">
@@ -2978,7 +3400,11 @@ function App() {
       await load();
     } catch (e) {
       const errorCode = (e as { body?: { error?: string } }).body?.error;
-      const providerRequired = ["ai_provider_required", "analysis_provider_required", "transcription_required"].includes(errorCode ?? "");
+      const providerRequired = [
+        "ai_provider_required",
+        "analysis_provider_required",
+        "transcription_required",
+      ].includes(errorCode ?? "");
       setMessage(
         errorCode === "transcription_required"
           ? "Choose a connected OpenAI transcription model in Settings before capturing."
@@ -2986,9 +3412,9 @@ function App() {
             ? "Choose a connected analysis provider in Settings before capturing."
             : providerRequired
               ? "Finish AI processing setup before capturing."
-          : e instanceof Error
-            ? e.message
-            : "Submission failed",
+              : e instanceof Error
+                ? e.message
+                : "Submission failed",
       );
       setTab(providerRequired ? "settings" : "activity");
     } finally {
@@ -2996,453 +3422,517 @@ function App() {
     }
   }
   return (
-    <>
-      <header>
-        <div>
-          <span className="logo">◉</span>
-          <strong>Social Knowledge</strong>
+    <div className="app-frame">
+      <aside className="app-sidebar">
+        <div className="app-sidebar-brand">
+          <span className="app-wordmark">social knowledge</span>
+          <span className="app-workspace-label">Private archive</span>
         </div>
-        <nav>
-          {(
-            [
-              "inbox",
-              "library",
-              "ask",
-              "activity",
-              "capture",
-              "settings",
-            ] as const
-          ).map((x) => (
-            <button
-              className={tab === x ? "active" : ""}
-              onClick={() => setTab(x)}
-              key={x}
-            >
-              {x}
-              {x === "activity" && counts.active + counts.failed > 0
-                ? ` ${counts.active + counts.failed}`
-                : ""}
-            </button>
-          ))}
-        </nav>
-        <button
-          className="logout"
-          onClick={async () => {
-            await api("/api/auth/logout", { method: "POST" });
-            setUser(null);
-            setAuthState("login");
-          }}
-        >
-          Sign out
-        </button>
-      </header>
-      <main className="shell">
-        {tab === "inbox" && (
-          <>
-            <div className="hero">
-              <div>
-                <div className="eyebrow">Your private archive</div>
-                <h1>Ideas worth keeping.</h1>
-                <p>
-                  Search the durable knowledge extracted from every saved social
-                  post.
-                </p>
+        <AppNavigation
+          tab={tab}
+          activeCount={activeJobCount}
+          onNavigate={navigateTo}
+        />
+        <div className="app-profile">
+          <span className="app-avatar" aria-hidden="true">
+            {profileInitial}
+          </span>
+          <span className="app-profile-copy">
+            <strong>{user?.username || "Personal archive"}</strong>
+            <small>Personal workspace</small>
+          </span>
+          <button
+            type="button"
+            className="app-signout"
+            onClick={() => void signOut()}
+          >
+            <LogOut aria-hidden="true" />
+            <span>Sign out</span>
+          </button>
+        </div>
+      </aside>
+      <section className="app-workspace">
+        <header className="app-topbar">
+          <button
+            type="button"
+            className="app-menu-trigger"
+            aria-label="Open account menu"
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen(true)}
+          >
+            <Menu aria-hidden="true" />
+          </button>
+          <span className="app-mobile-wordmark">social knowledge</span>
+          <button
+            type="button"
+            className="app-capture"
+            aria-label="Capture a post"
+            onClick={() => navigateTo("capture")}
+          >
+            <Plus aria-hidden="true" />
+            <span>Capture</span>
+          </button>
+        </header>
+        <main className="shell">
+          {tab === "inbox" && (
+            <>
+              <div className="hero">
+                <div>
+                  <div className="eyebrow">Your private archive</div>
+                  <h1>Ideas worth keeping.</h1>
+                  <p>
+                    Search the durable knowledge extracted from every saved
+                    social post.
+                  </p>
+                </div>
               </div>
-            </div>
-            <section
-              className="inbox-analytics"
-              aria-label="Inbox summary"
-              aria-busy={loadingAnalytics}
-            >
-              {loadingAnalytics && !inboxAnalytics ? (
-                <>
-                  <div className="analytics-cards" aria-hidden="true">
-                    {[
-                      "Total captures",
-                      "Saved in 24 hours",
-                      "Failed imports",
-                    ].map((label) => (
-                      <div
-                        className="analytics-card analytics-skeleton"
-                        key={label}
-                      >
-                        <span>{label}</span>
-                        <strong />
-                      </div>
-                    ))}
-                  </div>
-                  <span className="sr-only">Loading inbox summary…</span>
-                </>
-              ) : inboxAnalytics ? (
-                <>
-                  <div className="analytics-cards">
-                    {(
-                      [
-                        ["Total captures", inboxAnalytics.totalCaptures],
-                        [
-                          "Saved in 24 hours",
-                          inboxAnalytics.capturesLast24Hours,
-                        ],
-                        ["Failed imports", inboxAnalytics.failedImports],
-                      ] as const
-                    ).map(([label, value]) => {
-                      const formatted = value.toLocaleString();
-                      return (
+              <section
+                className="inbox-analytics"
+                aria-label="Inbox summary"
+                aria-busy={loadingAnalytics}
+              >
+                {loadingAnalytics && !inboxAnalytics ? (
+                  <>
+                    <div className="analytics-cards" aria-hidden="true">
+                      {[
+                        "Total captures",
+                        "Saved in 24 hours",
+                        "Failed imports",
+                      ].map((label) => (
                         <div
-                          className="analytics-card"
+                          className="analytics-card analytics-skeleton"
                           key={label}
-                          role="group"
-                          aria-label={`${label}: ${formatted}`}
                         >
                           <span>{label}</span>
-                          <strong>{formatted}</strong>
+                          <strong />
                         </div>
-                      );
-                    })}
+                      ))}
+                    </div>
+                    <span className="sr-only">Loading inbox summary…</span>
+                  </>
+                ) : inboxAnalytics ? (
+                  <>
+                    <div className="analytics-cards">
+                      {(
+                        [
+                          ["Total captures", inboxAnalytics.totalCaptures],
+                          [
+                            "Saved in 24 hours",
+                            inboxAnalytics.capturesLast24Hours,
+                          ],
+                          ["Failed imports", inboxAnalytics.failedImports],
+                        ] as const
+                      ).map(([label, value]) => {
+                        const formatted = value.toLocaleString();
+                        return (
+                          <div
+                            className="analytics-card"
+                            key={label}
+                            role="group"
+                            aria-label={`${label}: ${formatted}`}
+                          >
+                            <span>{label}</span>
+                            <strong>{formatted}</strong>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {analyticsError && (
+                      <div className="analytics-feedback" role="alert">
+                        <span>
+                          {analyticsStale
+                            ? "Summary temporarily stale."
+                            : analyticsError}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={loadingAnalytics}
+                          onClick={() => void loadInboxAnalytics()}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="analytics-feedback" role="alert">
+                    <span>
+                      {analyticsError ?? "Inbox summary unavailable."}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={loadingAnalytics}
+                      onClick={() => void loadInboxAnalytics()}
+                    >
+                      Retry
+                    </button>
                   </div>
-                  {analyticsError && (
-                    <div className="analytics-feedback" role="alert">
-                      <span>
-                        {analyticsStale
-                          ? "Summary temporarily stale."
-                          : analyticsError}
-                      </span>
+                )}
+              </section>
+              <div className="inbox-filter-panel">
+                <div className="filter-toolbar">
+                  <label className="filter-search">
+                    <Search aria-hidden="true" />
+                    <span className="sr-only">Search your archive</span>
+                    <input
+                      placeholder="Search titles, transcripts, places…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                    {search && (
                       <button
                         type="button"
-                        disabled={loadingAnalytics}
-                        onClick={() => void loadInboxAnalytics()}
+                        aria-label="Clear search"
+                        onClick={() => setSearch("")}
                       >
-                        Retry
+                        <X aria-hidden="true" />
                       </button>
-                    </div>
+                    )}
+                  </label>
+                  <label className="platform-filter">
+                    <SlidersHorizontal aria-hidden="true" />
+                    <span className="sr-only">Filter by platform</span>
+                    <select
+                      value={platform}
+                      onChange={(e) => setPlatform(e.target.value)}
+                    >
+                      <option value="">All platforms</option>
+                      <option value="facebook">Facebook</option>
+                      <option value="instagram">Instagram</option>
+                    </select>
+                  </label>
+                  {hasInboxFilters && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="clear-filters"
+                      onClick={() => {
+                        setSearch("");
+                        setPlatform("");
+                        setCategory("");
+                        setTopic("");
+                      }}
+                    >
+                      <X aria-hidden="true" /> Clear
+                    </Button>
                   )}
-                </>
-              ) : (
-                <div className="analytics-feedback" role="alert">
-                  <span>{analyticsError ?? "Inbox summary unavailable."}</span>
+                </div>
+                {!!facets.categories.length && (
+                  <div className="filter-group">
+                    <span>Categories</span>
+                    <div className="filter-pills">
+                      <button
+                        type="button"
+                        className={!category ? "active" : ""}
+                        onClick={() => setCategory("")}
+                      >
+                        All
+                      </button>
+                      {facets.categories.map((facet) => (
+                        <button
+                          type="button"
+                          key={facet.id}
+                          className={category === facet.id ? "active" : ""}
+                          aria-pressed={category === facet.id}
+                          onClick={() =>
+                            setCategory((current) =>
+                              current === facet.id ? "" : facet.id,
+                            )
+                          }
+                        >
+                          {facet.label}
+                          <small>{facet.count}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {!!facets.topics.length && (
+                  <div className="filter-group secondary">
+                    <span>Topics</span>
+                    <div className="filter-pills">
+                      {facets.topics.map((facet) => (
+                        <button
+                          type="button"
+                          key={facet.label}
+                          className={topic === facet.label ? "active" : ""}
+                          aria-pressed={topic === facet.label}
+                          onClick={() =>
+                            setTopic((current) =>
+                              current === facet.label ? "" : facet.label,
+                            )
+                          }
+                        >
+                          {facet.label}
+                          <small>{facet.count}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {!loadingInbox && !inboxError && (
+                <p className="capture-count-context" aria-live="polite">
+                  {captures.length.toLocaleString()} captures loaded
+                </p>
+              )}
+              <div className="grid">
+                {captures.map((c) => (
+                  <CaptureCard capture={c} onOpen={setDetail} key={c.id} />
+                ))}
+              </div>
+              {inboxError && (
+                <div className="pagination-feedback" role="alert">
+                  <span>{inboxError}</span>
                   <button
                     type="button"
-                    disabled={loadingAnalytics}
-                    onClick={() => void loadInboxAnalytics()}
+                    onClick={() => void loadInboxPage(Boolean(nextCursor))}
+                    disabled={loadingInbox || loadingMore}
                   >
                     Retry
                   </button>
                 </div>
               )}
-            </section>
-            <div className="inbox-filter-panel">
-              <div className="filter-toolbar">
-                <label className="filter-search">
-                  <Search aria-hidden="true" />
-                  <span className="sr-only">Search your archive</span>
-                  <input
-                    placeholder="Search titles, transcripts, places…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                  {search && (
-                    <button
-                      type="button"
-                      aria-label="Clear search"
-                      onClick={() => setSearch("")}
-                    >
-                      <X aria-hidden="true" />
-                    </button>
-                  )}
-                </label>
-                <label className="platform-filter">
-                  <SlidersHorizontal aria-hidden="true" />
-                  <span className="sr-only">Filter by platform</span>
-                  <select
-                    value={platform}
-                    onChange={(e) => setPlatform(e.target.value)}
-                  >
-                    <option value="">All platforms</option>
-                    <option value="facebook">Facebook</option>
-                    <option value="instagram">Instagram</option>
-                  </select>
-                </label>
-                {hasInboxFilters && (
-                  <Button
+              {nextCursor && !inboxError && (
+                <div className="pagination-controls">
+                  <button
                     type="button"
-                    variant="ghost"
-                    className="clear-filters"
-                    onClick={() => {
-                      setSearch("");
-                      setPlatform("");
-                      setCategory("");
-                      setTopic("");
-                    }}
+                    className="load-more"
+                    onClick={() => void loadInboxPage(true)}
+                    disabled={loadingMore}
                   >
-                    <X aria-hidden="true" /> Clear
-                  </Button>
-                )}
-              </div>
-              {!!facets.categories.length && (
-                <div className="filter-group">
-                  <span>Categories</span>
-                  <div className="filter-pills">
-                    <button
-                      type="button"
-                      className={!category ? "active" : ""}
-                      onClick={() => setCategory("")}
-                    >
-                      All
-                    </button>
-                    {facets.categories.map((facet) => (
-                      <button
-                        type="button"
-                        key={facet.id}
-                        className={category === facet.id ? "active" : ""}
-                        aria-pressed={category === facet.id}
-                        onClick={() =>
-                          setCategory((current) =>
-                            current === facet.id ? "" : facet.id,
-                          )
-                        }
-                      >
-                        {facet.label}
-                        <small>{facet.count}</small>
-                      </button>
-                    ))}
-                  </div>
+                    {loadingMore ? "Loading more…" : "Load more"}
+                  </button>
                 </div>
               )}
-              {!!facets.topics.length && (
-                <div className="filter-group secondary">
-                  <span>Topics</span>
-                  <div className="filter-pills">
-                    {facets.topics.map((facet) => (
-                      <button
-                        type="button"
-                        key={facet.label}
-                        className={topic === facet.label ? "active" : ""}
-                        aria-pressed={topic === facet.label}
-                        onClick={() =>
-                          setTopic((current) =>
-                            current === facet.label ? "" : facet.label,
-                          )
-                        }
-                      >
-                        {facet.label}
-                        <small>{facet.count}</small>
-                      </button>
-                    ))}
-                  </div>
+              {!loadingInbox && !captures.length && (
+                <div className="empty">
+                  <h2>
+                    {hasInboxFilters
+                      ? "No matching captures"
+                      : "Your inbox is ready"}
+                  </h2>
+                  <p>
+                    {hasInboxFilters
+                      ? "Try removing a filter or using a broader keyword."
+                      : "Completed captures will appear here."}
+                  </p>
                 </div>
               )}
-            </div>
-            {!loadingInbox && !inboxError && (
-              <p className="capture-count-context" aria-live="polite">
-                {captures.length.toLocaleString()} captures loaded
-              </p>
-            )}
-            <div className="grid">
-              {captures.map((c) => (
-                <CaptureCard capture={c} onOpen={setDetail} key={c.id} />
-              ))}
-            </div>
-            {inboxError && (
-              <div className="pagination-feedback" role="alert">
-                <span>{inboxError}</span>
-                <button
-                  type="button"
-                  onClick={() => void loadInboxPage(Boolean(nextCursor))}
-                  disabled={loadingInbox || loadingMore}
-                >
-                  Retry
-                </button>
+            </>
+          )}
+          {tab === "activity" && (
+            <>
+              <div className="page-title">
+                <h1>Activity</h1>
+                <p>Live processing history and recoverable failures.</p>
               </div>
-            )}
-            {nextCursor && !inboxError && (
-              <div className="pagination-controls">
-                <button
-                  type="button"
-                  className="load-more"
-                  onClick={() => void loadInboxPage(true)}
-                  disabled={loadingMore}
-                >
-                  {loadingMore ? "Loading more…" : "Load more"}
-                </button>
-              </div>
-            )}
-            {!loadingInbox && !captures.length && (
-              <div className="empty">
-                <h2>
-                  {hasInboxFilters
-                    ? "No matching captures"
-                    : "Your inbox is ready"}
-                </h2>
-                <p>
-                  {hasInboxFilters
-                    ? "Try removing a filter or using a broader keyword."
-                    : "Completed captures will appear here."}
+              {message && (
+                <p className="action-feedback" role="status">
+                  {message}
                 </p>
-              </div>
-            )}
-          </>
-        )}
-        {tab === "activity" && (
-          <>
-            <div className="page-title">
-              <h1>Activity</h1>
-              <p>Live processing history and recoverable failures.</p>
-            </div>
-            {message && (
-              <p className="action-feedback" role="status">
-                {message}
-              </p>
-            )}
-            <div className="job-list">
-              {jobs.map((job) => (
-                <article
-                  key={job.id}
-                  className={highlightedJob === job.id ? "highlighted" : ""}
-                >
-                  <div>
-                    <div className="job-heading">
-                      <PlatformIcon url={job.normalizedUrl} />
-                      {job.status !== "complete" && (
-                        <span className={`status ${job.status}`}>
-                          {stageCopy[job.status] || job.status}
-                        </span>
-                      )}
-                      <strong>
-                        {job.displayTitle || sourceReference(job.normalizedUrl)}
-                      </strong>
-                    </div>
-                    <small>
-                      {sourceReference(job.normalizedUrl)} ·{" "}
-                      {new Date(job.createdAt).toLocaleString()} ·{" "}
-                      {job.attempts ? `attempt ${job.attempts}` : "not started"}
-                    </small>
-                    {job.status === "complete" ? (
-                      <div className="complete-summary" role="status">
-                        <span aria-hidden="true">✓</span>
-                        Complete
+              )}
+              <div className="job-list">
+                {jobs.map((job) => (
+                  <article
+                    key={job.id}
+                    className={highlightedJob === job.id ? "highlighted" : ""}
+                  >
+                    <div>
+                      <div className="job-heading">
+                        <PlatformIcon url={job.normalizedUrl} />
+                        {job.status !== "complete" && (
+                          <span className={`status ${job.status}`}>
+                            {stageCopy[job.status] || job.status}
+                          </span>
+                        )}
+                        <strong>
+                          {job.displayTitle ||
+                            sourceReference(job.normalizedUrl)}
+                        </strong>
                       </div>
-                    ) : (
-                      <div
-                        className="stage-breadcrumbs"
-                        aria-label={`Capture stage: ${stageCopy[job.status] || job.status}`}
-                      >
-                        {stages.slice(0, -1).map((stage, index) => {
-                          const current = stages.indexOf(job.status);
-                          const reached = job.reachedStages?.includes(stage);
-                          const state =
-                            current === index
-                              ? "current"
-                              : reached || current > index
-                                ? "reached"
-                                : "pending";
-                          return (
-                            <span
-                              className={state}
-                              key={stage}
-                              title={stageCopy[stage]}
-                            >
-                              {state === "reached" ? "✓" : index + 1}{" "}
-                              {stageCopy[stage]}
-                            </span>
-                          );
-                        })}
-                        <span
-                          className={`completion-chip ${job.status === "failed" ? "failed" : "pending"}`}
+                      <small>
+                        {sourceReference(job.normalizedUrl)} ·{" "}
+                        {new Date(job.createdAt).toLocaleString()} ·{" "}
+                        {job.attempts
+                          ? `attempt ${job.attempts}`
+                          : "not started"}
+                      </small>
+                      {job.status === "complete" ? (
+                        <div className="complete-summary" role="status">
+                          <span aria-hidden="true">✓</span>
+                          Complete
+                        </div>
+                      ) : (
+                        <div
+                          className="stage-breadcrumbs"
+                          aria-label={`Capture stage: ${stageCopy[job.status] || job.status}`}
                         >
-                          {job.status === "failed" ? "! Failed" : "8 Complete"}
-                        </span>
-                      </div>
-                    )}
-                    {job.status === "failed" &&
-                      (() => {
-                        const failure = failureFor(job);
-                        return (
-                          <div className="failure-card">
-                            <strong>{failure.title}</strong>
-                            <p>{failure.message}</p>
-                            {(job.errorDetail || job.error) && (
-                              <details>
-                                <summary>Technical diagnostic</summary>
-                                <code>{job.errorDetail || job.error}</code>
-                              </details>
-                            )}
-                          </div>
-                        );
-                      })()}
-                  </div>
-                  <div className="job-actions">
-                    <button
-                      className="info-button"
-                      aria-label={`View details for ${job.displayTitle || sourceLabel(job.normalizedUrl)}`}
-                      title="View processing details"
-                      onClick={async () =>
-                        setJobDetails(
-                          await api<JobDetails>(`/api/v1/jobs/${job.id}`),
-                        )
-                      }
-                    >
-                      i
-                    </button>
-                    {job.status === "failed" && (
-                      <button
-                        onClick={async () => {
-                          try {
-                            setMessage("Retrying capture…");
-                            await api(`/api/v1/jobs/${job.id}/retry`, {
-                              method: "POST",
-                            });
-                            setMessage("Capture re-queued successfully.");
-                            await load();
-                          } catch (error) {
-                            setMessage(
-                              error instanceof Error
-                                ? error.message
-                                : "Retry failed",
+                          {stages.slice(0, -1).map((stage, index) => {
+                            const current = stages.indexOf(job.status);
+                            const reached = job.reachedStages?.includes(stage);
+                            const state =
+                              current === index
+                                ? "current"
+                                : reached || current > index
+                                  ? "reached"
+                                  : "pending";
+                            return (
+                              <span
+                                className={state}
+                                key={stage}
+                                title={stageCopy[stage]}
+                              >
+                                {state === "reached" ? "✓" : index + 1}{" "}
+                                {stageCopy[stage]}
+                              </span>
                             );
-                          }
-                        }}
+                          })}
+                          <span
+                            className={`completion-chip ${job.status === "failed" ? "failed" : "pending"}`}
+                          >
+                            {job.status === "failed"
+                              ? "! Failed"
+                              : "8 Complete"}
+                          </span>
+                        </div>
+                      )}
+                      {job.status === "failed" &&
+                        (() => {
+                          const failure = failureFor(job);
+                          return (
+                            <div className="failure-card">
+                              <strong>{failure.title}</strong>
+                              <p>{failure.message}</p>
+                              {(job.errorDetail || job.error) && (
+                                <details>
+                                  <summary>Technical diagnostic</summary>
+                                  <code>{job.errorDetail || job.error}</code>
+                                </details>
+                              )}
+                            </div>
+                          );
+                        })()}
+                    </div>
+                    <div className="job-actions">
+                      <button
+                        className="info-button"
+                        aria-label={`View details for ${job.displayTitle || sourceLabel(job.normalizedUrl)}`}
+                        title="View processing details"
+                        onClick={async () =>
+                          setJobDetails(
+                            await api<JobDetails>(`/api/v1/jobs/${job.id}`),
+                          )
+                        }
                       >
-                        Retry
+                        i
                       </button>
-                    )}
-                  </div>
-                </article>
-              ))}
+                      {job.status === "failed" && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              setMessage("Retrying capture…");
+                              await api(`/api/v1/jobs/${job.id}/retry`, {
+                                method: "POST",
+                              });
+                              setMessage("Capture re-queued successfully.");
+                              await load();
+                            } catch (error) {
+                              setMessage(
+                                error instanceof Error
+                                  ? error.message
+                                  : "Retry failed",
+                              );
+                            }
+                          }}
+                        >
+                          Retry
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+          {tab === "library" && <Library onOpen={setDetail} />}
+          {tab === "ask" && <AskAI onOpen={setDetail} />}
+          {tab === "capture" && (
+            <div className="capture-panel">
+              <div className="eyebrow">Manual capture</div>
+              <h1>Save a social post</h1>
+              <form onSubmit={submit}>
+                <label>
+                  Facebook or Instagram URL
+                  <input
+                    type="url"
+                    required
+                    value={captureUrl}
+                    onChange={(e) => setCaptureUrl(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Why are you saving it?
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                  />
+                </label>
+                <button disabled={submitting}>
+                  {submitting ? "Submitting…" : "Capture"}
+                </button>
+                <p>{message}</p>
+              </form>
             </div>
-          </>
-        )}
-        {tab === "library" && <Library onOpen={setDetail} />}
-        {tab === "ask" && <AskAI onOpen={setDetail} />}
-        {tab === "capture" && (
-          <div className="capture-panel">
-            <div className="eyebrow">Manual capture</div>
-            <h1>Save a social post</h1>
-            <form onSubmit={submit}>
-              <label>
-                Facebook or Instagram URL
-                <input
-                  type="url"
-                  required
-                  value={captureUrl}
-                  onChange={(e) => setCaptureUrl(e.target.value)}
-                />
-              </label>
-              <label>
-                Why are you saving it?
-                <textarea
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                />
-              </label>
-              <button disabled={submitting}>
-                {submitting ? "Submitting…" : "Capture"}
+          )}
+          {tab === "settings" && <Settings user={user} />}
+        </main>
+      </section>
+      {mobileMenuOpen && (
+        <div
+          className="app-mobile-menu-scrim"
+          role="presentation"
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <section
+            className="app-mobile-menu"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="account-menu-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="app-mobile-menu-heading">
+              <div>
+                <span className="app-avatar" aria-hidden="true">
+                  {profileInitial}
+                </span>
+                <span>
+                  <strong id="account-menu-title">
+                    {user?.username || "Personal archive"}
+                  </strong>
+                  <small>Personal workspace</small>
+                </span>
+              </div>
+              <button
+                type="button"
+                className="app-mobile-menu-close"
+                aria-label="Close account menu"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <X aria-hidden="true" />
               </button>
-              <p>{message}</p>
-            </form>
-          </div>
-        )}
-        {tab === "settings" && <Settings user={user} />}
-      </main>
+            </div>
+            <button
+              type="button"
+              className="app-mobile-signout"
+              onClick={() => void signOut()}
+            >
+              <LogOut aria-hidden="true" />
+              Sign out
+            </button>
+          </section>
+        </div>
+      )}
       {detail && <Detail id={detail} onClose={() => setDetail(null)} />}
       {jobDetails && (
         <JobInfoModal
@@ -3450,7 +3940,7 @@ function App() {
           onClose={() => setJobDetails(null)}
         />
       )}
-    </>
+    </div>
   );
 }
 createRoot(document.getElementById("root")!).render(<App />);

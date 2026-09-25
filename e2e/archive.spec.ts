@@ -17,7 +17,9 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await page.getByLabel("Password").fill(password!);
   await page.getByRole("button", { name: "Continue" }).click();
 
-  await expect(page.getByRole("button", { name: "inbox" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Inbox", exact: true }),
+  ).toBeVisible();
   await expect(page.locator(".capture-card").first()).toBeVisible();
   const travelFilter = page
     .locator(".filter-group", { hasText: "Categories" })
@@ -34,7 +36,9 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(page.locator(".drawer .takeaways li").first()).toBeVisible();
   await page.locator(".close").click();
 
-  await page.getByRole("button", { name: "library" }).click();
+  await page
+    .getByRole("button", { name: "Knowledge base", exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Library" })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Expand Travel" }),
@@ -75,7 +79,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
       .getByRole("button", { name: "Open capture" }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "ask" }).click();
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Ask AI" })).toBeVisible();
   await page.getByRole("button", { name: "＋ New conversation" }).click();
   await expect(
@@ -107,7 +111,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(page.locator(".drawer")).toBeVisible();
   await page.locator(".close").click();
   await page.reload();
-  await page.getByRole("button", { name: "ask" }).click();
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
   await expect(
     page.locator(".chat-message.assistant .answer-sources button").first(),
   ).toBeVisible();
@@ -202,7 +206,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
     "Command failed with exit code",
   );
 
-  await page.getByRole("button", { name: "settings" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   const languageSelect = page.getByRole("combobox", {
     name: "Default language",
   });
@@ -215,7 +219,9 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await page.getByRole("button", { name: "Save language settings" }).click();
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "library" }).click();
+  await page
+    .getByRole("button", { name: "Knowledge base", exact: true })
+    .click();
   await expect(page.locator(".library-layout")).toBeVisible();
   await expect
     .poll(() =>
