@@ -88,7 +88,14 @@ test("configures transcription and analysis independently and disconnects safely
   await page.getByRole("button", { name: "Connect Cerebras" }).click();
   await page.getByLabel("Cerebras API key").fill("csk-browser-secret-1234");
   await page.getByRole("button", { name: "Verify and use" }).click();
-  await page.getByLabel("Provider").nth(1).selectOption("cerebras");
+  await expect(
+    page.getByText("Cerebras connected. Review the task selections above."),
+  ).toBeVisible();
+  await page
+    .locator(".ai-task")
+    .filter({ has: page.getByRole("heading", { name: "Analysis & Ask" }) })
+    .getByLabel("Provider")
+    .selectOption("cerebras");
   await expect(page.getByText("Analysis selection updated.")).toBeVisible();
   await expect(page.getByText(/Cerebras · qwen-3.8-27b/)).toBeVisible();
 
