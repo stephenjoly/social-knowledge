@@ -47,6 +47,7 @@ import {
 } from "./chat-stream";
 import "./styles.css";
 import "./activity-capture.css";
+import "./auth-redesign.css";
 
 type Asset = {
   id: string;
@@ -656,7 +657,7 @@ function RegistrationForm({
   return (
     <main className="auth">
       <section className="auth-card">
-        <div className="mark">◉</div>
+        <div className="auth-wordmark">social knowledge</div>
         <h1>{heading}</h1>
         <p>
           {setup
@@ -814,7 +815,7 @@ function Auth({
   return (
     <main className="auth">
       <section className="auth-card">
-        <div className="mark">◉</div>
+        <div className="auth-wordmark">social knowledge</div>
         <h1>Welcome back</h1>
         <p>Sign in to your Social Knowledge archive.</p>
         <form onSubmit={submit}>
@@ -912,7 +913,7 @@ function ProviderOnboarding({ onDone }: { onDone: () => void }) {
   return (
     <main className="auth">
       <section className="auth-card onboarding-card">
-        <div className="mark">◉</div>
+        <div className="auth-wordmark">social knowledge</div>
         <p className="step-label">
           Step {step === "transcription" ? "1" : "2"} of 2
         </p>
