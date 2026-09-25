@@ -86,11 +86,11 @@ Create a separate `codex/` branch and worktree from fresh `origin/staging`, sepa
 - [x] Owner authorized continuing with the full redesign after verifying current staging.
 - [x] Refresh staging/open-PR baseline and create implementation branch/worktrees.
 - [x] Implement foundation and shell.
-- [ ] Implement Inbox, Capture/Activity, Knowledge Base/Ask, and Settings plus unpictured surfaces.
+- [x] Implement Inbox, Capture/Activity, Knowledge Base/Ask, and Settings plus unpictured surfaces.
 - [ ] Complete integrated checks and preview acceptance.
 - [ ] Move this plan to `completed/` after UI acceptance.
 
-Current integration branch contains the shared shell, owner-scoped Inbox sorting and seven-day analytics, Activity, the responsive Capture dialog, and matching auth/onboarding styling. Three isolated Terra xhigh workers are building Inbox, Knowledge Base/Ask, and Settings. The latest integrated `npm run check` passes 105 tests; the focused onboarding browser journey passes. The provider-settings browser journey reaches the analysis-provider selection but fails to show the expected update; the Settings worker is investigating.
+The integration branch now contains the full light UI, owner-scoped Inbox sorting and category labels, seven-day analytics, Activity, the responsive Capture dialog, Knowledge Base, Ask, Settings, and matching auth/onboarding styling. All three Terra xhigh UI workers have finished. The provider-selection race found during Settings work is fixed. The latest integrated `npm run check` passes 105 tests; seven focused synthetic-data browser cases plus onboarding and provider-settings cases pass. Local desktop/mobile screenshots were compared with the pen.dev references. A disposable Dokploy preview and owner visual acceptance remain.
 
 ## Decisions
 

@@ -3,7 +3,12 @@
 }
 
 .inbox-hero {
+  position: relative;
   margin-bottom: 26px;
+}
+
+.inbox-mobile-capture {
+  display: none;
 }
 
 .inbox-hero h1 {
@@ -725,6 +730,33 @@
 
   .inbox-hero h1 {
     font-size: 28px;
+  }
+
+  .inbox-hero .eyebrow {
+    display: none;
+  }
+
+  .inbox-mobile-capture {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: inline-flex;
+    min-width: 112px;
+    height: 36px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 0;
+    border-radius: 6px;
+    background: #293a34;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .inbox-mobile-capture svg {
+    width: 14px;
+    height: 14px;
   }
 
   .inbox-page .inbox-analytics {

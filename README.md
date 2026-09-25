@@ -63,6 +63,8 @@ E2E_PASSWORD=your-test-password \
 npm run test:e2e
 ```
 
+The dashboard uses a desktop sidebar and mobile bottom navigation. Inbox has tile and table views, archive-wide sorting, and filters for search, platform, category, and topic. Capture opens a dialog on desktop or a mobile overlay; Activity separates failures, active processing, and completed jobs. Settings groups AI, connections, API keys, export/language, and account controls by topic. The app remembers the Inbox view on the current device.
+
 Set a long random `API_TOKEN` and use disposable local directories for `VAULT_DIR` and `MEDIA_DIR` until the configuration has been validated. Keep a fresh local or preview deployment off public networks until its first administrator has registered.
 
 ### Non-production demo accounts

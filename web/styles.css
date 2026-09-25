@@ -3009,7 +3009,7 @@ details {
     position: sticky;
     top: 0;
     display: grid;
-    grid-template-columns: 36px minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) 36px;
     gap: 10px;
     width: 100%;
     height: 70px;
@@ -3021,6 +3021,8 @@ details {
   }
 
   .app-menu-trigger {
+    grid-column: 2;
+    grid-row: 1;
     display: grid;
     width: 36px;
     height: 36px;
@@ -3039,6 +3041,8 @@ details {
 
   .app-mobile-wordmark {
     display: block;
+    grid-column: 1;
+    grid-row: 1;
     overflow: hidden;
     align-self: center;
     text-overflow: ellipsis;
@@ -3046,9 +3050,7 @@ details {
   }
 
   .app-capture {
-    min-height: 34px;
-    padding: 0 11px;
-    font-size: 12px;
+    display: none;
   }
 
   .app-capture svg {

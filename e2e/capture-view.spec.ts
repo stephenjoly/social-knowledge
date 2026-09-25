@@ -47,7 +47,9 @@ test("keeps invalid links in the capture dialog and confirms submission", async 
     .getByLabel("Post URL")
     .fill("https://www.instagram.com/reel/synthetic/");
   await dialog.getByRole("button", { name: "Capture post" }).click();
-  await expect(page.getByRole("dialog", { name: "Post submitted" })).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "Post submitted" }),
+  ).toBeVisible();
   await expect(page.getByRole("status")).toContainText(
     "Added to the processing queue.",
   );

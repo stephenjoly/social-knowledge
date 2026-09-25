@@ -576,6 +576,17 @@ type AccountUser = {
 
 type AppTab = "inbox" | "library" | "ask" | "activity" | "capture" | "settings";
 
+function tabFromLocation(): AppTab {
+  const value = new URLSearchParams(window.location.search).get("tab");
+  return value === "library" ||
+    value === "ask" ||
+    value === "activity" ||
+    value === "capture" ||
+    value === "settings"
+    ? value
+    : "inbox";
+}
+
 const appNavigation: Array<{
   tab: Exclude<AppTab, "capture">;
   label: string;
@@ -3981,16 +3992,7 @@ function App() {
       );
     return token;
   });
-  const initialTab = new URLSearchParams(window.location.search).get("tab");
-  const [tab, setTab] = useState<AppTab>(
-    initialTab === "library" ||
-      initialTab === "ask" ||
-      initialTab === "activity" ||
-      initialTab === "capture" ||
-      initialTab === "settings"
-      ? initialTab
-      : "inbox",
-  );
+  const [tab, setTab] = useState<AppTab>(tabFromLocation);
   const highlightedJob = new URLSearchParams(window.location.search).get("job");
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -4274,7 +4276,10 @@ function App() {
     }
   }
   const profileInitial = user?.username.slice(0, 1).toUpperCase() || "S";
-  const navigateTo = (nextTab: AppTab) => {
+  const navigateTo = (
+    nextTab: AppTab,
+    historyMode: "push" | "replace" = "push",
+  ) => {
     if (nextTab === "capture") {
       setMessage("");
       setCaptureError(false);
@@ -4282,11 +4287,37 @@ function App() {
     }
     setTab(nextTab);
     setMobileMenuOpen(false);
+    const nextUrl = new URL(window.location.href);
+    if (nextTab === "inbox") nextUrl.searchParams.delete("tab");
+    else nextUrl.searchParams.set("tab", nextTab);
+    const path = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
+    if (
+      path !==
+      `${window.location.pathname}${window.location.search}${window.location.hash}`
+    ) {
+      window.history[historyMode === "replace" ? "replaceState" : "pushState"](
+        window.history.state,
+        "",
+        path,
+      );
+    }
   };
+  useEffect(() => {
+    const restore = () => {
+      const nextTab = tabFromLocation();
+      if (nextTab === "capture") {
+        setCaptureSubmitted(false);
+        setMessage("");
+      }
+      setTab(nextTab);
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
   useEffect(() => {
     if (tab !== "capture") return;
     const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setTab("inbox");
+      if (event.key === "Escape") navigateTo("inbox", "replace");
     };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
@@ -4365,11 +4396,11 @@ function App() {
               ? "Finish AI processing setup before capturing."
               : errorCode === "invalid_url" || errorCode === "invalid_request"
                 ? "Enter a valid Facebook or Instagram post URL."
-              : e instanceof Error
-                ? e.message
-                : "Submission failed",
+                : e instanceof Error
+                  ? e.message
+                  : "Submission failed",
       );
-      if (providerRequired) setTab("settings");
+      if (providerRequired) navigateTo("settings", "replace");
     } finally {
       setSubmitting(false);
     }
@@ -4433,6 +4464,14 @@ function App() {
                 <div className="eyebrow">Your archive</div>
                 <h1 id="inbox-title">Inbox</h1>
                 <p>The posts you chose to keep, ready when you need them.</p>
+                <button
+                  type="button"
+                  className="inbox-mobile-capture"
+                  aria-label="Capture a post"
+                  onClick={() => navigateTo("capture")}
+                >
+                  <Plus aria-hidden="true" /> Capture
+                </button>
               </div>
               <section
                 className="inbox-analytics"
@@ -4986,52 +5025,100 @@ function App() {
           {tab === "library" && <Library onOpen={setDetail} />}
           {tab === "ask" && <AskAI onOpen={setDetail} />}
           {tab === "capture" && (
-            <div className="capture-overlay" role="presentation" onClick={() => navigateTo("inbox")}>
-            <section className="capture-panel" role="dialog" aria-modal="true" aria-labelledby="capture-title" onClick={(event) => event.stopPropagation()}>
-              <button type="button" className="capture-close" aria-label="Close capture" onClick={() => navigateTo("inbox")}>×</button>
-              <div className="capture-eyebrow">New capture</div>
-              <div className="capture-intro">
-                <h1 id="capture-title">{captureSubmitted ? "Post submitted" : "Capture a post"}</h1>
-                <p>{captureSubmitted ? "Your post is in the processing queue." : "Paste a post link to save it in your archive."}</p>
-              </div>
-              {captureSubmitted ? (
-                <div className="capture-success">
-                  <p role="status">{message}</p>
-                  <button type="button" onClick={() => navigateTo("activity")}>View activity</button>
-                </div>
-              ) : (
-              <form onSubmit={submit}>
-                <label>
-                  Post URL
-                  <input
-                    type="url"
-                    required
-                    value={captureUrl}
-                    onChange={(e) => setCaptureUrl(e.target.value)}
-                    placeholder="https://www.instagram.com/reel/..."
-                    autoFocus
-                  />
-                  <small>Supports public and connected-account posts.</small>
-                </label>
-                <label>
-                  <span>Why are you saving it? <span className="capture-optional">Optional</span></span>
-                  <textarea
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    placeholder="Add a note for your future self"
-                  />
-                </label>
-                <p className="capture-hint">We'll show progress in Activity.</p>
-                <div className="capture-actions">
-                  <button type="button" className="capture-cancel" onClick={() => navigateTo("inbox")}>Cancel</button>
-                <button disabled={submitting}>
-                  {submitting ? "Submitting…" : "Capture post"}
+            <div
+              className="capture-overlay"
+              role="presentation"
+              onClick={() => navigateTo("inbox", "replace")}
+            >
+              <section
+                className="capture-panel"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="capture-title"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="capture-close"
+                  aria-label="Close capture"
+                  onClick={() => navigateTo("inbox", "replace")}
+                >
+                  ×
                 </button>
+                <div className="capture-eyebrow">New capture</div>
+                <div className="capture-intro">
+                  <h1 id="capture-title">
+                    {captureSubmitted ? "Post submitted" : "Capture a post"}
+                  </h1>
+                  <p>
+                    {captureSubmitted
+                      ? "Your post is in the processing queue."
+                      : "Paste a post link to save it in your archive."}
+                  </p>
                 </div>
-                {message && <p className={`capture-feedback ${captureError ? "error" : ""}`} role={captureError ? "alert" : "status"}>{message}</p>}
-              </form>
-              )}
-            </section>
+                {captureSubmitted ? (
+                  <div className="capture-success">
+                    <p role="status">{message}</p>
+                    <button
+                      type="button"
+                      onClick={() => navigateTo("activity", "replace")}
+                    >
+                      View activity
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={submit}>
+                    <label>
+                      Post URL
+                      <input
+                        type="url"
+                        required
+                        value={captureUrl}
+                        onChange={(e) => setCaptureUrl(e.target.value)}
+                        placeholder="https://www.instagram.com/reel/..."
+                        autoFocus
+                      />
+                      <small>
+                        Supports public and connected-account posts.
+                      </small>
+                    </label>
+                    <label>
+                      <span>
+                        Why are you saving it?{" "}
+                        <span className="capture-optional">Optional</span>
+                      </span>
+                      <textarea
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        placeholder="Add a note for your future self"
+                      />
+                    </label>
+                    <p className="capture-hint">
+                      We'll show progress in Activity.
+                    </p>
+                    <div className="capture-actions">
+                      <button
+                        type="button"
+                        className="capture-cancel"
+                        onClick={() => navigateTo("inbox", "replace")}
+                      >
+                        Cancel
+                      </button>
+                      <button disabled={submitting}>
+                        {submitting ? "Submitting…" : "Capture post"}
+                      </button>
+                    </div>
+                    {message && (
+                      <p
+                        className={`capture-feedback ${captureError ? "error" : ""}`}
+                        role={captureError ? "alert" : "status"}
+                      >
+                        {message}
+                      </p>
+                    )}
+                  </form>
+                )}
+              </section>
             </div>
           )}
           {tab === "settings" && <Settings user={user} />}

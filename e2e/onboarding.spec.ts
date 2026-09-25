@@ -135,6 +135,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   await expect(
     invitedPage.getByRole("heading", { name: "Settings" }),
   ).toBeVisible();
+  await invitedPage.getByRole("button", { name: "Inbox", exact: true }).click();
   await invitedPage
     .getByRole("button", { name: "Capture a post", exact: true })
     .click();
