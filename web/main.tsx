@@ -3163,6 +3163,7 @@ function App() {
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [captureSubmitted, setCaptureSubmitted] = useState(false);
   const [jobDetails, setJobDetails] = useState<JobDetails | null>(null);
   async function check() {
     try {
@@ -3363,9 +3364,21 @@ function App() {
   }
   const profileInitial = user?.username.slice(0, 1).toUpperCase() || "S";
   const navigateTo = (nextTab: AppTab) => {
+    if (nextTab === "capture") {
+      setMessage("");
+      setCaptureSubmitted(false);
+    }
     setTab(nextTab);
     setMobileMenuOpen(false);
   };
+  useEffect(() => {
+    if (tab !== "capture") return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setTab("inbox");
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [tab]);
   const signOut = async () => {
     await api("/api/auth/logout", { method: "POST" });
     setUser(null);
@@ -3420,7 +3433,7 @@ function App() {
       );
       setCaptureUrl("");
       setNote("");
-      setTab("activity");
+      setCaptureSubmitted(true);
       await load();
     } catch (e) {
       const errorCode = (e as { body?: { error?: string } }).body?.error;
@@ -3440,7 +3453,7 @@ function App() {
                 ? e.message
                 : "Submission failed",
       );
-      setTab(providerRequired ? "settings" : "activity");
+      if (providerRequired) setTab("settings");
     } finally {
       setSubmitting(false);
     }
@@ -3498,7 +3511,7 @@ function App() {
           </button>
         </header>
         <main className="shell">
-          {tab === "inbox" && (
+          {(tab === "inbox" || tab === "capture") && (
             <>
               <div className="hero">
                 <div>
@@ -3807,11 +3820,20 @@ function App() {
           {tab === "library" && <Library onOpen={setDetail} />}
           {tab === "ask" && <AskAI onOpen={setDetail} />}
           {tab === "capture" && (
-            <div className="capture-panel">
+            <div className="capture-overlay" role="presentation" onClick={() => navigateTo("inbox")}>
+            <section className="capture-panel" role="dialog" aria-modal="true" aria-labelledby="capture-title" onClick={(event) => event.stopPropagation()}>
+              <button type="button" className="capture-close" aria-label="Close capture" onClick={() => navigateTo("inbox")}>×</button>
+              <div className="capture-eyebrow">New capture</div>
               <div className="capture-intro">
-                <h1>Capture a post</h1>
-                <p>Save an Instagram or Facebook post to your private knowledge base.</p>
+                <h1 id="capture-title">{captureSubmitted ? "Post submitted" : "Capture a post"}</h1>
+                <p>{captureSubmitted ? "Your post is in the processing queue." : "Paste a post link to save it in your archive."}</p>
               </div>
+              {captureSubmitted ? (
+                <div className="capture-success">
+                  <p role="status">{message}</p>
+                  <button type="button" onClick={() => navigateTo("activity")}>View activity</button>
+                </div>
+              ) : (
               <form onSubmit={submit}>
                 <label>
                   Post URL
@@ -3821,21 +3843,29 @@ function App() {
                     value={captureUrl}
                     onChange={(e) => setCaptureUrl(e.target.value)}
                     placeholder="https://www.instagram.com/reel/..."
+                    autoFocus
                   />
+                  <small>Supports public and connected-account posts.</small>
                 </label>
                 <label>
-                  Note <span className="capture-optional">Optional</span>
+                  Why are you saving it? <span className="capture-optional">Optional</span>
                   <textarea
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    placeholder="What makes this worth saving?"
+                    placeholder="Add a note for your future self"
                   />
                 </label>
+                <p className="capture-hint">We'll show progress in Activity.</p>
+                <div className="capture-actions">
+                  <button type="button" className="capture-cancel" onClick={() => navigateTo("inbox")}>Cancel</button>
                 <button disabled={submitting}>
-                  {submitting ? "Submitting…" : "Save post"}
+                  {submitting ? "Submitting…" : "Capture post"}
                 </button>
-                {message && <p role="status">{message}</p>}
+                </div>
+                {message && <p className="capture-feedback" role="status">{message}</p>}
               </form>
+              )}
+            </section>
             </div>
           )}
           {tab === "settings" && <Settings user={user} />}

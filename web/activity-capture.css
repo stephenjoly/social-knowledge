@@ -161,23 +161,56 @@
   background: #1b2924;
 }
 
+.capture-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(24 34 30 / 52%);
+}
+
 .capture-panel {
-  width: min(100%, 620px);
-  margin: 36px auto;
-  padding: 0 !important;
-  border: 0 !important;
-  background: none !important;
-  box-shadow: none !important;
+  position: relative;
+  width: min(100%, 560px);
+  max-height: min(90dvh, 760px);
+  margin: 0;
+  padding: 28px !important;
+  overflow-y: auto;
+  border: 1px solid #e4e4e7 !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  box-shadow: 0 22px 70px rgb(24 24 27 / 14%) !important;
+}
+
+.capture-close {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  border: 0;
+  background: transparent;
+  color: #71717a;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.capture-eyebrow {
+  margin-bottom: 14px;
+  color: #71717a;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
 }
 
 .capture-panel form {
   display: grid;
   gap: 24px;
-  margin-top: 32px;
-  padding: 28px;
-  border: 1px solid #e4e4e7;
-  border-radius: 8px;
-  background: #fff;
+  margin-top: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .capture-panel label {
@@ -186,6 +219,13 @@
   color: #27272a;
   font-size: 13px;
   font-weight: 500;
+}
+
+.capture-panel label small,
+.capture-hint {
+  color: #71717a;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .capture-panel input,
@@ -213,13 +253,46 @@
   color: #a1a1aa;
 }
 
-.capture-panel form > button {
-  width: fit-content;
-  min-width: 124px;
+.capture-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.capture-actions button,
+.capture-success button {
+  min-width: 140px;
+  min-height: 42px;
   border: 0;
   border-radius: 6px;
-  background: #18181b;
+  background: #293a34;
   color: #fff;
+  font-size: 13px;
+}
+
+.capture-actions .capture-cancel {
+  min-width: 70px;
+  background: transparent;
+  color: #52525b;
+}
+
+.capture-success {
+  display: grid;
+  justify-items: end;
+  gap: 36px;
+  margin-top: 34px;
+}
+
+.capture-success p,
+.capture-feedback {
+  justify-self: stretch;
+  margin: 0;
+  color: #52525b;
+  font-size: 13px;
+}
+
+.capture-hint {
+  margin: -8px 0 0;
 }
 
 .capture-optional {
@@ -257,10 +330,30 @@
   }
 
   .capture-panel {
-    margin: 26px auto;
+    width: 100%;
+    max-height: calc(100dvh - 120px);
+    margin: 0;
+    padding: 28px 20px 36px !important;
+  }
+
+  .capture-overlay {
+    padding: 12px 12px 72px;
   }
 
   .capture-panel form {
-    padding: 20px;
+    min-height: 370px;
+  }
+
+  .capture-actions {
+    margin-top: auto;
+  }
+
+  .capture-actions .capture-cancel {
+    display: none;
+  }
+
+  .capture-actions button,
+  .capture-success button {
+    width: 100%;
   }
 }

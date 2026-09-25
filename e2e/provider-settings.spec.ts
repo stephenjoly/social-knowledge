@@ -70,7 +70,7 @@ test("configures transcription and analysis independently and disconnects safely
   await page
     .getByLabel("Post URL")
     .fill("https://www.instagram.com/reel/qa-test/");
-  await page.getByRole("button", { name: "Save post", exact: true }).click();
+  await page.getByRole("button", { name: "Capture post", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
 
   await page.getByRole("button", { name: "Connect OpenAI" }).click();
