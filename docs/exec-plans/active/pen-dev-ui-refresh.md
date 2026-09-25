@@ -25,6 +25,7 @@ The backend already supports the core journeys. This branch keeps existing behav
 - `GET /api/v1/captures` currently provides newest-first cursor pagination. Add validated archive-wide sorting only for the designed choices, with stable cursors and owner scoping, so the table headings and sort control can be functional. Keep the existing default query and response behavior unchanged.
 - Implement the filter builder with existing search, platform, category, and topic filters only. Both tile and table views share filter state; filtering resets pagination as it does today.
 - The AI Settings UI uses the live OpenAI/Cerebras providers and model options from `/api/v1/ai-providers`. Replace Anthropic and example model names in frame 33 with actual options. Omit the thinking-level selector on this branch; its separate PR can add it to the redesigned page.
+- Mobile pen frames include a mock device status bar (`9:41`, signal, battery). Treat that as presentation context; do not render a fake operating-system status bar in the browser UI.
 - Keep all existing user journeys, status messages, source URLs, source attribution, ownership boundaries, credential masking, export behavior, and provider-required guidance intact. Remove old CSS/layout after each replacement is verified; avoid two competing visual systems in the final UI.
 
 ## Acceptance criteria
