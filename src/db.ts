@@ -535,7 +535,8 @@ export class JobStore {
            FROM category_roots
            JOIN library_nodes parent ON parent.id=category_roots.parent_id
          )
-         SELECT c.*,${sortValue} AS inbox_sort_value
+         SELECT c.*,category.label AS inbox_category_label,
+           ${sortValue} AS inbox_sort_value
          FROM captures c
          LEFT JOIN capture_library cl ON cl.capture_id=c.id
          LEFT JOIN (
@@ -546,11 +547,19 @@ export class JobStore {
       )
       .all(...params) as Row[];
     const hasMore = rows.length > query.limit;
-    const sliced = rows
-      .slice(0, query.limit)
-      .map((r) => this.mapCapture(r, false));
+    const slicedRows = rows.slice(0, query.limit);
+    const sliced = slicedRows.map((r) => this.mapCapture(r, false));
+    const categoryLabels = new Map(
+      slicedRows.map((row) => [
+        String(row.id),
+        row.inbox_category_label == null
+          ? null
+          : String(row.inbox_category_label),
+      ]),
+    );
     return {
       captures: sliced,
+      categoryLabels,
       nextCursor: hasMore
         ? isDefaultSort
           ? {

@@ -474,12 +474,29 @@ describe("capture pagination and count queries", () => {
       ";",
     )[0];
     const owner = store.getUserByUsername("api-owner")!;
-    addCapture(store, owner.id, "api-1", {
+    const categorized = addCapture(store, owner.id, "api-1", {
+      classify: true,
       createdAt: "2025-01-02T00:00:00.000Z",
     });
-    addCapture(store, owner.id, "api-2", {
+    const unclassified = addCapture(store, owner.id, "api-2", {
       createdAt: "2025-01-01T00:00:00.000Z",
     });
+    const other = store.createUser("api-category-other", "hash");
+    addCapture(store, other.id, "api-learning-root", {
+      classify: true,
+      classification: {
+        primaryDomain: "Learning",
+        country: null,
+        city: null,
+        subcategory: "Guides",
+        secondaryTopics: [],
+        confidence: 0.9,
+      },
+    });
+    const learning = store
+      .libraryTree()
+      .find((node) => node.kind === "domain" && node.label === "Learning")!;
+    store.moveCapture(categorized.id, learning.id);
 
     const first = await app.inject({
       method: "GET",
@@ -487,6 +504,9 @@ describe("capture pagination and count queries", () => {
       headers: { cookie: cookie! },
     });
     expect(first.statusCode).toBe(200);
+    expect(first.json().captures).toMatchObject([
+      { id: categorized.id, categoryLabel: "Learning" },
+    ]);
     expect(first.json().nextCursor).toEqual(expect.any(String));
     expect(first.json().nextCursor).not.toBe("2025-01-02T00:00:00.000Z");
     const second = await app.inject({
@@ -495,8 +515,12 @@ describe("capture pagination and count queries", () => {
       headers: { cookie: cookie! },
     });
     expect(second.statusCode).toBe(200);
-    expect(second.json().captures).toHaveLength(1);
-    expect(second.json().captures[0].id).not.toBe(first.json().captures[0].id);
+    expect(second.json().captures).toEqual([
+      expect.objectContaining({
+        id: unclassified.id,
+        categoryLabel: null,
+      }),
+    ]);
 
     const invalid = await app.inject({
       method: "GET",
@@ -554,7 +578,7 @@ describe("capture pagination and count queries", () => {
       url: "/api/v1/library/tree",
       headers: { cookie: cookie! },
     });
-    expect(tree.json().unclassifiedCount).toBe(2);
+    expect(tree.json().unclassifiedCount).toBe(1);
   });
 
   it("serves authenticated account-wide inbox analytics independently of capture queries", async () => {

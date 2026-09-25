@@ -1246,7 +1246,10 @@ export function buildApp(
         ...(q.topic ? { topic: q.topic } : {}),
       });
       return {
-        captures: page.captures,
+        captures: page.captures.map((capture) => ({
+          ...capture,
+          categoryLabel: page.categoryLabels.get(capture.id) ?? null,
+        })),
         nextCursor: page.nextCursor
           ? encodeCursor({
               ...page.nextCursor,
