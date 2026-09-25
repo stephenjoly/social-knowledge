@@ -1,6 +1,6 @@
 # Replace the dashboard UI with the pen.dev design
 
-Status: proposed; implementation awaits owner approval
+Status: in progress; draft PR #28 targets staging
 Owner: Stephen Joly / Codex foreman
 Started: 2026-09-24
 
@@ -84,11 +84,13 @@ Create a separate `codex/` branch and worktree from fresh `origin/staging`, sepa
 - [x] Inspect current React/API/test boundaries.
 - [x] Confirm owner scope: complete UI replacement; narrowly necessary backend support allowed; thinking levels separate.
 - [x] Owner authorized continuing with the full redesign after verifying current staging.
-- [ ] Refresh staging/open-PR baseline and create implementation branch/worktrees.
-- [ ] Implement foundation and shell.
+- [x] Refresh staging/open-PR baseline and create implementation branch/worktrees.
+- [x] Implement foundation and shell.
 - [ ] Implement Inbox, Capture/Activity, Knowledge Base/Ask, and Settings plus unpictured surfaces.
 - [ ] Complete integrated checks and preview acceptance.
 - [ ] Move this plan to `completed/` after UI acceptance.
+
+Current integration branch contains the shared shell, owner-scoped Inbox sorting and seven-day analytics, Activity, the responsive Capture dialog, and matching auth/onboarding styling. Three isolated Terra xhigh workers are building Inbox, Knowledge Base/Ask, and Settings. The latest integrated `npm run check` passes 105 tests; the focused onboarding browser journey passes. The provider-settings browser journey reaches the analysis-provider selection but fails to show the expected update; the Settings worker is investigating.
 
 ## Decisions
 
