@@ -8,11 +8,18 @@
 }
 
 .settings-heading {
+  position: static;
   display: flex;
+  width: auto;
+  height: auto;
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
   margin: 0 0 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
   outline: none;
 }
 
