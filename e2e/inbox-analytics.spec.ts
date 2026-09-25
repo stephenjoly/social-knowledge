@@ -27,9 +27,7 @@ test("shows account-wide analytics independently from filters and at mobile widt
   await expect(
     page.getByRole("group", { name: /Total captures:/ }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("group", { name: /Saved in 24 hours:/ }),
-  ).toBeVisible();
+  await expect(page.getByRole("group", { name: /Past 7 days:/ })).toBeVisible();
   await expect(
     page.getByRole("group", { name: /Failed imports:/ }),
   ).toBeVisible();
@@ -38,16 +36,14 @@ test("shows account-wide analytics independently from filters and at mobile widt
   );
   const initialValues = await cards.locator("strong").allTextContents();
 
-  const travelFilter = page
-    .locator(".filter-group", { hasText: "Categories" })
-    .getByRole("button", { name: /Travel/ });
-  if (await travelFilter.count()) {
-    await travelFilter.click();
-    await expect(travelFilter).toHaveAttribute("aria-pressed", "true");
-    expect(await cards.locator("strong").allTextContents()).toEqual(
-      initialValues,
-    );
-  }
+  await page.getByRole("button", { name: "+ Add filter" }).click();
+  const platformFilter = page.getByLabel("Platform");
+  await platformFilter.selectOption("instagram");
+  await expect(platformFilter).toHaveValue("instagram");
+  expect(await cards.locator("strong").allTextContents()).toEqual(
+    initialValues,
+  );
+  await page.getByRole("button", { name: "Close filters" }).click();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect
@@ -99,6 +95,7 @@ test("ignores an older analytics response that finishes last", async ({
         body: JSON.stringify({
           totalCaptures: 11,
           capturesLast24Hours: 2,
+          capturesLast7Days: 5,
           failedImports: 1,
           generatedAt: "2026-09-10T11:59:00.000Z",
         }),
@@ -112,6 +109,7 @@ test("ignores an older analytics response that finishes last", async ({
       body: JSON.stringify({
         totalCaptures: latest ? 13 : 12,
         capturesLast24Hours: latest ? 4 : 3,
+        capturesLast7Days: latest ? 7 : 6,
         failedImports: latest ? 0 : 1,
         generatedAt: latest
           ? "2026-09-10T12:01:00.000Z"
@@ -196,6 +194,7 @@ test("keeps last values on refresh failure and coalesces live refreshes", async 
         body: JSON.stringify({
           totalCaptures: 12,
           capturesLast24Hours: 3,
+          capturesLast7Days: 6,
           failedImports: 1,
           generatedAt: "2026-09-10T12:00:00.000Z",
         }),
@@ -211,6 +210,7 @@ test("keeps last values on refresh failure and coalesces live refreshes", async 
       body: JSON.stringify({
         totalCaptures: 13,
         capturesLast24Hours: 4,
+        capturesLast7Days: 7,
         failedImports: 0,
         generatedAt: "2026-09-10T12:01:00.000Z",
       }),

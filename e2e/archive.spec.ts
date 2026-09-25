@@ -21,13 +21,13 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
     page.getByRole("button", { name: "Inbox", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".capture-card").first()).toBeVisible();
-  const travelFilter = page
-    .locator(".filter-group", { hasText: "Categories" })
-    .getByRole("button", { name: /Travel/ });
-  await expect(travelFilter).toBeVisible();
-  await travelFilter.click();
-  await expect(travelFilter).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "Clear" }).click();
+  await page.getByRole("button", { name: "+ Add filter" }).click();
+  const platformFilter = page.getByLabel("Platform");
+  await expect(platformFilter).toBeVisible();
+  await platformFilter.selectOption("instagram");
+  await expect(platformFilter).toHaveValue("instagram");
+  await page.getByRole("button", { name: "Close filters" }).click();
+  await page.getByRole("button", { name: "Clear filters" }).click();
   await page.locator(".capture-card").first().click();
   await expect(page.locator(".drawer video")).toBeVisible();
   await expect(

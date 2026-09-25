@@ -24,7 +24,6 @@ import {
   MessageSquare,
   Plus,
   Search,
-  SlidersHorizontal,
   Settings as SettingsIcon,
   X,
   type LucideIcon,
@@ -46,6 +45,7 @@ import {
   type StreamState,
 } from "./chat-stream";
 import "./styles.css";
+import "./inbox.css";
 
 type Asset = {
   id: string;
@@ -147,9 +147,65 @@ type CaptureFacets = {
 type InboxAnalytics = {
   totalCaptures: number;
   capturesLast24Hours: number;
+  capturesLast7Days: number;
   failedImports: number;
   generatedAt: string;
 };
+type InboxView = "tiles" | "table";
+type InboxSortKey = "title" | "savedAt" | "source" | "category" | "topic";
+
+const inboxSortOptions: Array<{
+  key: InboxSortKey;
+  label: string;
+  ascending: string;
+  descending: string;
+}> = [
+  {
+    key: "savedAt",
+    label: "Saved date",
+    ascending: "Oldest first",
+    descending: "Newest first",
+  },
+  {
+    key: "title",
+    label: "Title",
+    ascending: "Title A–Z",
+    descending: "Title Z–A",
+  },
+  {
+    key: "source",
+    label: "Source",
+    ascending: "Source A–Z",
+    descending: "Source Z–A",
+  },
+  {
+    key: "category",
+    label: "Category",
+    ascending: "Category A–Z",
+    descending: "Category Z–A",
+  },
+  {
+    key: "topic",
+    label: "Topic",
+    ascending: "Topic A–Z",
+    descending: "Topic Z–A",
+  },
+];
+
+function captureSource(capture: Capture) {
+  const platform = capture.platform
+    ? `${capture.platform.slice(0, 1).toUpperCase()}${capture.platform.slice(1)}`
+    : "Unknown platform";
+  return capture.creator ? `${platform} · ${capture.creator}` : platform;
+}
+
+function formatCaptureDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
 type OAuthConnection = {
   clientId: string;
   name: string;
@@ -1044,36 +1100,148 @@ function ProviderOnboarding({ onDone }: { onDone: () => void }) {
 function CaptureCard({
   capture,
   onOpen,
+  categoryLabel,
 }: {
   capture: Capture;
   onOpen: (id: string) => void;
+  categoryLabel: string | null;
 }) {
+  const [imageFailed, setImageFailed] = useState(false);
   const thumb = capture.assets.find(
     (a) => a.kind === "thumbnail" || a.kind === "image",
   );
   return (
-    <button className="capture-card" onClick={() => onOpen(capture.id)}>
-      {thumb ? (
-        <img src={assetUrl(capture.id, thumb.id)} alt="" />
-      ) : (
-        <div className="placeholder">
-          {capture.platform.slice(0, 1).toUpperCase()}
-        </div>
-      )}
-      <div className="card-body">
-        <div className="eyebrow">
-          {capture.platform} ·{" "}
-          {new Date(capture.createdAt).toLocaleDateString()}
-        </div>
-        <h3>{capture.title}</h3>
-        <p>{capture.creator || "Unknown creator"}</p>
-        <div className="chips">
-          {capture.topics.slice(0, 3).map((topic) => (
-            <span key={topic}>{topic}</span>
+    <button
+      type="button"
+      className="capture-card inbox-tile"
+      onClick={() => onOpen(capture.id)}
+    >
+      <span className="inbox-tile-media">
+        {thumb && !imageFailed ? (
+          <img
+            src={assetUrl(capture.id, thumb.id)}
+            alt=""
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <span className="placeholder" aria-hidden="true">
+            {capture.platform.slice(0, 1).toUpperCase()}
+          </span>
+        )}
+      </span>
+      <span className="card-body">
+        <span className="inbox-tile-source">
+          <span>
+            <PlatformMark platform={capture.platform} />
+            {captureSource(capture)}
+          </span>
+          <time dateTime={capture.createdAt}>
+            {formatCaptureDate(capture.createdAt)}
+          </time>
+        </span>
+        <strong className="inbox-tile-title">{capture.title}</strong>
+        <span className="inbox-tile-summary">
+          {capture.synopsis || "No summary is available yet."}
+        </span>
+        <span className="inbox-tile-footer">
+          {categoryLabel && <span>Category: {categoryLabel}</span>}
+          {capture.topics.slice(0, 1).map((topic) => (
+            <span className="inbox-topic" key={topic}>
+              {topic}
+            </span>
           ))}
-        </div>
-      </div>
+          <span className="inbox-open-detail">
+            Open details <ChevronRight aria-hidden="true" />
+          </span>
+        </span>
+      </span>
     </button>
+  );
+}
+
+function CaptureTableRow({
+  capture,
+  onOpen,
+  categoryLabel,
+}: {
+  capture: Capture;
+  onOpen: (id: string) => void;
+  categoryLabel: string | null;
+}) {
+  return (
+    <tr>
+      <td>
+        <button
+          type="button"
+          className="inbox-table-title"
+          onClick={() => onOpen(capture.id)}
+        >
+          {capture.title}
+          <ChevronRight aria-hidden="true" />
+        </button>
+      </td>
+      <td>
+        <time dateTime={capture.createdAt}>
+          {formatCaptureDate(capture.createdAt)}
+        </time>
+      </td>
+      <td>{captureSource(capture)}</td>
+      <td>{categoryLabel || "—"}</td>
+      <td>{capture.topics[0] || "—"}</td>
+    </tr>
+  );
+}
+
+function CaptureMobileRow({
+  capture,
+  onOpen,
+  categoryLabel,
+}: {
+  capture: Capture;
+  onOpen: (id: string) => void;
+  categoryLabel: string | null;
+}) {
+  return (
+    <article className="inbox-mobile-row">
+      <button type="button" onClick={() => onOpen(capture.id)}>
+        <strong>
+          {capture.title}
+          <ChevronRight aria-hidden="true" />
+        </strong>
+        <span>
+          <b>Saved date</b>
+          <time dateTime={capture.createdAt}>
+            {formatCaptureDate(capture.createdAt)}
+          </time>
+        </span>
+        <span>
+          <b>Source</b>
+          {captureSource(capture)}
+        </span>
+        <span>
+          <b>Category</b>
+          {categoryLabel || "—"}
+        </span>
+        <span>
+          <b>Topic</b>
+          {capture.topics[0] || "—"}
+        </span>
+      </button>
+    </article>
+  );
+}
+
+function InboxLoadingCards() {
+  return (
+    <div className="inbox-loading-cards" aria-label="Loading captures">
+      {[1, 2, 3, 4].map((index) => (
+        <div className="inbox-loading-card" key={index} aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -3128,6 +3296,19 @@ function App() {
   const [platform, setPlatform] = useState("");
   const [category, setCategory] = useState("");
   const [topic, setTopic] = useState("");
+  const [inboxView, setInboxView] = useState<InboxView>(() => {
+    try {
+      return window.localStorage.getItem("social-knowledge:inbox-view") ===
+        "table"
+        ? "table"
+        : "tiles";
+    } catch {
+      return "tiles";
+    }
+  });
+  const [sort, setSort] = useState<InboxSortKey>("savedAt");
+  const [direction, setDirection] = useState<"asc" | "desc">("desc");
+  const [filterBuilderOpen, setFilterBuilderOpen] = useState(false);
   const [facets, setFacets] = useState<CaptureFacets>({
     categories: [],
     topics: [],
@@ -3155,6 +3336,10 @@ function App() {
     category: "",
     topic: "",
   });
+  const inboxPresentation = useRef<{
+    sort: InboxSortKey;
+    direction: "asc" | "desc";
+  }>({ sort: "savedAt", direction: "desc" });
   const [detail, setDetail] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [captureUrl, setCaptureUrl] = useState("");
@@ -3192,6 +3377,8 @@ function App() {
     if (filters.platform) query.set("platform", filters.platform);
     if (filters.category) query.set("nodeId", filters.category);
     if (filters.topic) query.set("topic", filters.topic);
+    query.set("sort", inboxPresentation.current.sort);
+    query.set("direction", inboxPresentation.current.direction);
     if (cursor) query.set("cursor", cursor);
     try {
       const page = await api<{
@@ -3278,8 +3465,16 @@ function App() {
       category,
       topic,
     };
+    inboxPresentation.current = { sort, direction };
     void loadInboxPage();
-  }, [authState, deferredSearch, platform, category, topic]);
+  }, [authState, deferredSearch, platform, category, topic, sort, direction]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("social-knowledge:inbox-view", inboxView);
+    } catch {
+      // Keep this preference optional when storage is unavailable.
+    }
+  }, [inboxView]);
   useEffect(() => {
     if (authState !== "ready") return;
     void loadSupportingData();
@@ -3328,6 +3523,18 @@ function App() {
     setAnalyticsStale(false);
   }, [authState]);
   const hasInboxFilters = Boolean(search || platform || category || topic);
+  const activeCategory =
+    facets.categories.find((facet) => facet.id === category)?.label ?? null;
+  const selectedSort = inboxSortOptions.find((option) => option.key === sort)!;
+  const sortValue = `${sort}:${direction}`;
+  const applySort = (nextSort: InboxSortKey) => {
+    if (nextSort === sort) {
+      setDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSort(nextSort);
+    setDirection(nextSort === "savedAt" ? "desc" : "asc");
+  };
   const counts = useMemo(
     () => ({
       active: jobs.filter((j) => !["complete", "failed"].includes(j.status))
@@ -3475,16 +3682,11 @@ function App() {
         </header>
         <main className="shell">
           {tab === "inbox" && (
-            <>
-              <div className="hero">
-                <div>
-                  <div className="eyebrow">Your private archive</div>
-                  <h1>Ideas worth keeping.</h1>
-                  <p>
-                    Search the durable knowledge extracted from every saved
-                    social post.
-                  </p>
-                </div>
+            <section className="inbox-page" aria-labelledby="inbox-title">
+              <div className="inbox-hero">
+                <div className="eyebrow">Your archive</div>
+                <h1 id="inbox-title">Inbox</h1>
+                <p>The posts you chose to keep, ready when you need them.</p>
               </div>
               <section
                 className="inbox-analytics"
@@ -3494,19 +3696,17 @@ function App() {
                 {loadingAnalytics && !inboxAnalytics ? (
                   <>
                     <div className="analytics-cards" aria-hidden="true">
-                      {[
-                        "Total captures",
-                        "Saved in 24 hours",
-                        "Failed imports",
-                      ].map((label) => (
-                        <div
-                          className="analytics-card analytics-skeleton"
-                          key={label}
-                        >
-                          <span>{label}</span>
-                          <strong />
-                        </div>
-                      ))}
+                      {["Total captures", "Past 7 days", "Failed imports"].map(
+                        (label) => (
+                          <div
+                            className="analytics-card analytics-skeleton"
+                            key={label}
+                          >
+                            <span>{label}</span>
+                            <strong />
+                          </div>
+                        ),
+                      )}
                     </div>
                     <span className="sr-only">Loading inbox summary…</span>
                   </>
@@ -3516,10 +3716,7 @@ function App() {
                       {(
                         [
                           ["Total captures", inboxAnalytics.totalCaptures],
-                          [
-                            "Saved in 24 hours",
-                            inboxAnalytics.capturesLast24Hours,
-                          ],
+                          ["Past 7 days", inboxAnalytics.capturesLast7Days],
                           ["Failed imports", inboxAnalytics.failedImports],
                         ] as const
                       ).map(([label, value]) => {
@@ -3569,43 +3766,230 @@ function App() {
                   </div>
                 )}
               </section>
-              <div className="inbox-filter-panel">
-                <div className="filter-toolbar">
-                  <label className="filter-search">
-                    <Search aria-hidden="true" />
-                    <span className="sr-only">Search your archive</span>
-                    <input
-                      placeholder="Search titles, transcripts, places…"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                    {search && (
+              <section
+                className="inbox-collection"
+                aria-labelledby="captures-heading"
+              >
+                <header className="inbox-collection-heading">
+                  <div>
+                    <h2 id="captures-heading">Captures</h2>
+                    <span>
+                      {(
+                        inboxAnalytics?.totalCaptures ?? captures.length
+                      ).toLocaleString()}{" "}
+                      saved
+                    </span>
+                  </div>
+                </header>
+                <div className="inbox-filter-panel">
+                  <div className="inbox-toolbar">
+                    <label className="filter-search">
+                      <Search aria-hidden="true" />
+                      <span className="sr-only">Search your archive</span>
+                      <input
+                        placeholder="Search titles, notes, or creators"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                      />
+                      {search && (
+                        <button
+                          type="button"
+                          aria-label="Clear search"
+                          onClick={() => setSearch("")}
+                        >
+                          <X aria-hidden="true" />
+                        </button>
+                      )}
+                    </label>
+                    <div className="inbox-toolbar-actions">
                       <button
                         type="button"
-                        aria-label="Clear search"
-                        onClick={() => setSearch("")}
+                        className="inbox-filter-trigger"
+                        aria-expanded={filterBuilderOpen}
+                        aria-controls="inbox-filter-builder"
+                        onClick={() => setFilterBuilderOpen(true)}
                       >
-                        <X aria-hidden="true" />
+                        + Add filter
+                      </button>
+                      <label className="inbox-sort-control">
+                        <span className="sr-only">Sort captures</span>
+                        <select
+                          aria-label="Sort captures"
+                          value={sortValue}
+                          onChange={(event) => {
+                            const [nextSort, nextDirection] =
+                              event.target.value.split(":") as [
+                                InboxSortKey,
+                                "asc" | "desc",
+                              ];
+                            setSort(nextSort);
+                            setDirection(nextDirection);
+                          }}
+                        >
+                          {inboxSortOptions.flatMap((option) => [
+                            <option
+                              key={`${option.key}:desc`}
+                              value={`${option.key}:desc`}
+                            >
+                              {option.descending}
+                            </option>,
+                            <option
+                              key={`${option.key}:asc`}
+                              value={`${option.key}:asc`}
+                            >
+                              {option.ascending}
+                            </option>,
+                          ])}
+                        </select>
+                      </label>
+                      <div
+                        className="inbox-view-toggle"
+                        role="group"
+                        aria-label="Capture view"
+                      >
+                        <button
+                          type="button"
+                          className={inboxView === "tiles" ? "active" : ""}
+                          aria-pressed={inboxView === "tiles"}
+                          onClick={() => setInboxView("tiles")}
+                        >
+                          <span aria-hidden="true">▦</span>
+                          <span>Tiles</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={inboxView === "table" ? "active" : ""}
+                          aria-pressed={inboxView === "table"}
+                          onClick={() => setInboxView("table")}
+                        >
+                          <span aria-hidden="true">☷</span>
+                          <span>Table</span>
+                        </button>
+                      </div>
+                    </div>
+                    {filterBuilderOpen && (
+                      <div
+                        className="inbox-filter-scrim"
+                        onMouseDown={(event) => {
+                          if (event.target === event.currentTarget)
+                            setFilterBuilderOpen(false);
+                        }}
+                      >
+                        <section
+                          className="inbox-filter-builder"
+                          id="inbox-filter-builder"
+                          role="dialog"
+                          aria-modal="true"
+                          aria-labelledby="inbox-filter-heading"
+                        >
+                          <header>
+                            <div>
+                              <span className="eyebrow">Filter captures</span>
+                              <h3 id="inbox-filter-heading">Add filter</h3>
+                            </div>
+                            <button
+                              type="button"
+                              aria-label="Close filters"
+                              onClick={() => setFilterBuilderOpen(false)}
+                            >
+                              <X aria-hidden="true" />
+                            </button>
+                          </header>
+                          <div className="inbox-filter-fields">
+                            <label>
+                              <span>Platform</span>
+                              <select
+                                value={platform}
+                                onChange={(event) =>
+                                  setPlatform(event.target.value)
+                                }
+                              >
+                                <option value="">Any platform</option>
+                                <option value="facebook">Facebook</option>
+                                <option value="instagram">Instagram</option>
+                              </select>
+                            </label>
+                            <label>
+                              <span>Category</span>
+                              <select
+                                value={category}
+                                onChange={(event) =>
+                                  setCategory(event.target.value)
+                                }
+                              >
+                                <option value="">Any category</option>
+                                {facets.categories.map((facet) => (
+                                  <option value={facet.id} key={facet.id}>
+                                    {facet.label} ({facet.count})
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              <span>Topic</span>
+                              <select
+                                value={topic}
+                                onChange={(event) =>
+                                  setTopic(event.target.value)
+                                }
+                              >
+                                <option value="">Any topic</option>
+                                {facets.topics.map((facet) => (
+                                  <option value={facet.label} key={facet.label}>
+                                    {facet.label} ({facet.count})
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                          {hasInboxFilters && (
+                            <button
+                              type="button"
+                              className="inbox-clear-builder"
+                              onClick={() => {
+                                setSearch("");
+                                setPlatform("");
+                                setCategory("");
+                                setTopic("");
+                              }}
+                            >
+                              Clear filters
+                            </button>
+                          )}
+                        </section>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {hasInboxFilters && (
+                  <div
+                    className="inbox-active-filters"
+                    aria-label="Active filters"
+                  >
+                    {platform && (
+                      <button type="button" onClick={() => setPlatform("")}>
+                        Platform: {platform.slice(0, 1).toUpperCase()}
+                        {platform.slice(1)} <X aria-hidden="true" />
                       </button>
                     )}
-                  </label>
-                  <label className="platform-filter">
-                    <SlidersHorizontal aria-hidden="true" />
-                    <span className="sr-only">Filter by platform</span>
-                    <select
-                      value={platform}
-                      onChange={(e) => setPlatform(e.target.value)}
-                    >
-                      <option value="">All platforms</option>
-                      <option value="facebook">Facebook</option>
-                      <option value="instagram">Instagram</option>
-                    </select>
-                  </label>
-                  {hasInboxFilters && (
-                    <Button
+                    {activeCategory && (
+                      <button type="button" onClick={() => setCategory("")}>
+                        Category: {activeCategory} <X aria-hidden="true" />
+                      </button>
+                    )}
+                    {topic && (
+                      <button type="button" onClick={() => setTopic("")}>
+                        Topic: {topic} <X aria-hidden="true" />
+                      </button>
+                    )}
+                    {search && (
+                      <button type="button" onClick={() => setSearch("")}>
+                        Search: {search} <X aria-hidden="true" />
+                      </button>
+                    )}
+                    <button
                       type="button"
-                      variant="ghost"
-                      className="clear-filters"
+                      className="inbox-clear-all"
                       onClick={() => {
                         setSearch("");
                         setPlatform("");
@@ -3613,113 +3997,147 @@ function App() {
                         setTopic("");
                       }}
                     >
-                      <X aria-hidden="true" /> Clear
-                    </Button>
-                  )}
-                </div>
-                {!!facets.categories.length && (
-                  <div className="filter-group">
-                    <span>Categories</span>
-                    <div className="filter-pills">
+                      Clear filters
+                    </button>
+                  </div>
+                )}
+                {!loadingInbox && !inboxError && (
+                  <p className="capture-count-context" aria-live="polite">
+                    {captures.length.toLocaleString()} capture
+                    {captures.length === 1 ? "" : "s"} loaded ·{" "}
+                    {selectedSort.label}{" "}
+                    {direction === "asc" ? "ascending" : "descending"}
+                  </p>
+                )}
+                {loadingInbox ? (
+                  <InboxLoadingCards />
+                ) : captures.length > 0 ? (
+                  inboxView === "tiles" ? (
+                    <div className="inbox-tile-grid">
+                      {captures.map((capture) => (
+                        <CaptureCard
+                          capture={capture}
+                          categoryLabel={activeCategory}
+                          onOpen={setDetail}
+                          key={capture.id}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="inbox-table-wrap">
+                        <table className="inbox-capture-table">
+                          <caption className="sr-only">
+                            Captures sorted by{" "}
+                            {selectedSort.label.toLowerCase()}. Select a title
+                            to open its details.
+                          </caption>
+                          <thead>
+                            <tr>
+                              {inboxSortOptions.map((option) => (
+                                <th scope="col" key={option.key}>
+                                  <button
+                                    type="button"
+                                    className={
+                                      sort === option.key ? "active" : ""
+                                    }
+                                    onClick={() => applySort(option.key)}
+                                  >
+                                    {option.label}
+                                    <span aria-hidden="true">
+                                      {sort === option.key
+                                        ? direction === "asc"
+                                          ? "↑"
+                                          : "↓"
+                                        : "↕"}
+                                    </span>
+                                  </button>
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {captures.map((capture) => (
+                              <CaptureTableRow
+                                capture={capture}
+                                categoryLabel={activeCategory}
+                                onOpen={setDetail}
+                                key={capture.id}
+                              />
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div
+                        className="inbox-mobile-rows"
+                        aria-label="Capture table rows"
+                      >
+                        {captures.map((capture) => (
+                          <CaptureMobileRow
+                            capture={capture}
+                            categoryLabel={activeCategory}
+                            onOpen={setDetail}
+                            key={capture.id}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )
+                ) : null}
+                {inboxError && (
+                  <div className="pagination-feedback" role="alert">
+                    <span>{inboxError}</span>
+                    <button
+                      type="button"
+                      onClick={() => void loadInboxPage(Boolean(nextCursor))}
+                      disabled={loadingInbox || loadingMore}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+                {nextCursor && !inboxError && (
+                  <div className="pagination-controls">
+                    <button
+                      type="button"
+                      className="load-more"
+                      onClick={() => void loadInboxPage(true)}
+                      disabled={loadingMore}
+                    >
+                      {loadingMore ? "Loading more…" : "Load more"}
+                    </button>
+                  </div>
+                )}
+                {!loadingInbox && !captures.length && (
+                  <div className="empty">
+                    <h2>
+                      {hasInboxFilters
+                        ? "No captures found"
+                        : "Your inbox is ready"}
+                    </h2>
+                    <p>
+                      {hasInboxFilters
+                        ? "Try another search or clear your filters."
+                        : "Completed captures will appear here."}
+                    </p>
+                    {hasInboxFilters && (
                       <button
                         type="button"
-                        className={!category ? "active" : ""}
-                        onClick={() => setCategory("")}
+                        className="inbox-empty-clear"
+                        onClick={() => {
+                          setSearch("");
+                          setPlatform("");
+                          setCategory("");
+                          setTopic("");
+                        }}
                       >
-                        All
+                        Clear filters
                       </button>
-                      {facets.categories.map((facet) => (
-                        <button
-                          type="button"
-                          key={facet.id}
-                          className={category === facet.id ? "active" : ""}
-                          aria-pressed={category === facet.id}
-                          onClick={() =>
-                            setCategory((current) =>
-                              current === facet.id ? "" : facet.id,
-                            )
-                          }
-                        >
-                          {facet.label}
-                          <small>{facet.count}</small>
-                        </button>
-                      ))}
-                    </div>
+                    )}
                   </div>
                 )}
-                {!!facets.topics.length && (
-                  <div className="filter-group secondary">
-                    <span>Topics</span>
-                    <div className="filter-pills">
-                      {facets.topics.map((facet) => (
-                        <button
-                          type="button"
-                          key={facet.label}
-                          className={topic === facet.label ? "active" : ""}
-                          aria-pressed={topic === facet.label}
-                          onClick={() =>
-                            setTopic((current) =>
-                              current === facet.label ? "" : facet.label,
-                            )
-                          }
-                        >
-                          {facet.label}
-                          <small>{facet.count}</small>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              {!loadingInbox && !inboxError && (
-                <p className="capture-count-context" aria-live="polite">
-                  {captures.length.toLocaleString()} captures loaded
-                </p>
-              )}
-              <div className="grid">
-                {captures.map((c) => (
-                  <CaptureCard capture={c} onOpen={setDetail} key={c.id} />
-                ))}
-              </div>
-              {inboxError && (
-                <div className="pagination-feedback" role="alert">
-                  <span>{inboxError}</span>
-                  <button
-                    type="button"
-                    onClick={() => void loadInboxPage(Boolean(nextCursor))}
-                    disabled={loadingInbox || loadingMore}
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-              {nextCursor && !inboxError && (
-                <div className="pagination-controls">
-                  <button
-                    type="button"
-                    className="load-more"
-                    onClick={() => void loadInboxPage(true)}
-                    disabled={loadingMore}
-                  >
-                    {loadingMore ? "Loading more…" : "Load more"}
-                  </button>
-                </div>
-              )}
-              {!loadingInbox && !captures.length && (
-                <div className="empty">
-                  <h2>
-                    {hasInboxFilters
-                      ? "No matching captures"
-                      : "Your inbox is ready"}
-                  </h2>
-                  <p>
-                    {hasInboxFilters
-                      ? "Try removing a filter or using a broader keyword."
-                      : "Completed captures will appear here."}
-                  </p>
-                </div>
-              )}
-            </>
+              </section>
+            </section>
           )}
           {tab === "activity" && (
             <>
