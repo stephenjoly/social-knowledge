@@ -5,6 +5,17 @@
   color: #18181b;
 }
 
+.activity-heading {
+  position: static;
+  display: block;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
 .activity-heading h1,
 .capture-intro h1 {
   margin: 0;
