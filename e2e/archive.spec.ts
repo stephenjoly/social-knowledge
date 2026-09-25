@@ -191,26 +191,24 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   ).toBeVisible({ timeout: 10000 });
 
   await page.getByRole("button", { name: /activity/i }).click();
-  await expect(page.locator(".job-list article").first()).toBeVisible();
+  await expect(page.locator(".activity-card").first()).toBeVisible();
   const completedJob = page
-    .locator(".job-list article:has(.complete-summary)")
+    .locator(".activity-group", { has: page.getByRole("heading", { name: "Completed history" }) })
+    .locator(".activity-card")
     .first();
-  await expect(completedJob.locator(".complete-summary")).toHaveText(
-    /Complete/,
-  );
-  await expect(completedJob.locator(".stage-breadcrumbs")).toHaveCount(0);
+  await expect(completedJob).toBeVisible();
   await expect(completedJob.locator(".platform-icon")).toBeVisible();
   await page
-    .locator(".job-list article")
+    .locator(".activity-card")
     .first()
-    .getByRole("button", { name: /view details/i })
+    .getByRole("button", { name: /details/i })
     .click();
   await expect(
     page.getByRole("dialog", { name: /processing details/i }),
   ).toBeVisible();
   await expect(page.locator(".event-log li").first()).toBeVisible();
   await page.getByRole("button", { name: "Close details" }).click();
-  await expect(page.locator(".job-list article").first()).not.toContainText(
+  await expect(page.locator(".activity-card").first()).not.toContainText(
     "Command failed with exit code",
   );
 
