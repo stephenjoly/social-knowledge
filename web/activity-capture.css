@@ -16,6 +16,15 @@
   backdrop-filter: none;
 }
 
+.activity-eyebrow {
+  display: block;
+  margin-bottom: 10px;
+  color: #71717a;
+  font-size: 11px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
 .activity-heading h1,
 .capture-intro h1 {
   margin: 0;
@@ -69,6 +78,13 @@
 .activity-list {
   display: grid;
   gap: 10px;
+}
+
+.activity-group:first-of-type {
+  padding: 18px;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #fff;
 }
 
 .activity-card {
@@ -308,6 +324,15 @@
   .activity-heading h1,
   .capture-intro h1 {
     font-size: 26px;
+  }
+
+  .activity-eyebrow {
+    display: none;
+  }
+
+  .activity-group:first-of-type {
+    padding: 0;
+    border: 0;
   }
 
   .activity-group {

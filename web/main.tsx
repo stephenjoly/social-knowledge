@@ -3761,8 +3761,9 @@ function App() {
           {tab === "activity" && (
             <div className="activity-view">
               <header className="activity-heading">
+                <span className="activity-eyebrow">Import status</span>
                 <h1>Activity</h1>
-                <p>Track captures and resolve issues.</p>
+                <p>Track captures and resolve anything that needs attention.</p>
               </header>
               {message && <p className="action-feedback" role="status">{message}</p>}
               {[
