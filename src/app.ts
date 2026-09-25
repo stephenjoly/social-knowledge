@@ -10,7 +10,12 @@ import Fastify from "fastify";
 import { z } from "zod";
 import { AuthService, SESSION_COOKIE } from "./auth.js";
 import type { AppConfig } from "./config.js";
-import type { JobStore } from "./db.js";
+import {
+  captureSortKeys,
+  defaultCaptureSort,
+  type CaptureCursor,
+  type JobStore,
+} from "./db.js";
 import type { EventHub } from "./events.js";
 import { normalizeSocialUrl } from "./url.js";
 import { LibraryPublisher } from "./library-publisher.js";
@@ -882,11 +887,18 @@ export function buildApp(
     protectedApi.get("/api/v1/inbox-analytics", async (request, reply) => {
       reply.header("Cache-Control", "no-store");
       const generatedAt = new Date().toISOString();
-      const cutoff = new Date(
+      const last24HoursCutoff = new Date(
         Date.parse(generatedAt) - 24 * 60 * 60 * 1000,
       ).toISOString();
+      const last7DaysCutoff = new Date(
+        Date.parse(generatedAt) - 7 * 24 * 60 * 60 * 1000,
+      ).toISOString();
       return {
-        ...store.inboxAnalytics(auth.user(request)!.id, cutoff),
+        ...store.inboxAnalytics(
+          auth.user(request)!.id,
+          last24HoursCutoff,
+          last7DaysCutoff,
+        ),
         generatedAt,
       };
     });
@@ -1180,6 +1192,10 @@ export function buildApp(
           sourceType: z.string().optional(),
           nodeId: z.string().uuid().optional(),
           topic: z.string().trim().max(100).optional(),
+          sort: z.enum(captureSortKeys).default(defaultCaptureSort.key),
+          direction: z
+            .enum(["asc", "desc"])
+            .default(defaultCaptureSort.direction),
         })
         .safeParse(request.query);
       if (!parsed.success) {
@@ -1190,18 +1206,39 @@ export function buildApp(
         });
       }
       const q = parsed.data;
-      let cursor: ReturnType<typeof decodeCursor>;
+      let cursor: CaptureCursor | undefined;
       try {
-        cursor = decodeCursor(q.cursor);
+        const decoded = decodeCursor(q.cursor);
+        if (decoded) {
+          const raw = decoded as unknown as Record<string, unknown>;
+          const isDefaultSort =
+            q.sort === defaultCaptureSort.key &&
+            q.direction === defaultCaptureSort.direction;
+          if (
+            isDefaultSort &&
+            raw.sort === undefined &&
+            raw.direction === undefined &&
+            raw.value === undefined
+          ) {
+            cursor = { createdAt: decoded.createdAt, id: decoded.id };
+          } else if (
+            raw.sort === q.sort &&
+            raw.direction === q.direction &&
+            (typeof raw.value === "string" || raw.value === null)
+          ) {
+            cursor = { value: raw.value, id: decoded.id };
+          } else {
+            throw new Error("invalid_capture_cursor");
+          }
+        }
       } catch {
         return reply.code(400).send({ error: "invalid_cursor" });
       }
       const page = store.listCaptures({
         userId: auth.user(request)!.id,
         limit: q.limit,
-        ...(cursor
-          ? { cursor: { createdAt: cursor.createdAt, id: cursor.id } }
-          : {}),
+        ...(cursor ? { cursor } : {}),
+        sort: { key: q.sort, direction: q.direction },
         ...(q.search ? { search: q.search } : {}),
         ...(q.platform ? { platform: q.platform } : {}),
         ...(q.sourceType ? { sourceType: q.sourceType } : {}),
@@ -1211,7 +1248,13 @@ export function buildApp(
       return {
         captures: page.captures,
         nextCursor: page.nextCursor
-          ? encodeCursor(page.nextCursor)
+          ? encodeCursor({
+              ...page.nextCursor,
+              createdAt: page.captures.at(-1)!.createdAt,
+              ...("value" in page.nextCursor
+                ? { sort: q.sort, direction: q.direction }
+                : {}),
+            })
           : null,
       };
     });

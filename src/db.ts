@@ -20,10 +20,34 @@ import {
 
 type Row = Record<string, unknown>;
 
-export type CaptureCursor = {
-  createdAt: string;
-  id: string;
+export const captureSortKeys = [
+  "title",
+  "savedAt",
+  "source",
+  "category",
+  "topic",
+] as const;
+
+export type CaptureSortKey = (typeof captureSortKeys)[number];
+export type CaptureSortDirection = "asc" | "desc";
+export type CaptureSort = {
+  key: CaptureSortKey;
+  direction: CaptureSortDirection;
 };
+
+export const defaultCaptureSort: CaptureSort = {
+  key: "savedAt",
+  direction: "desc",
+};
+
+/**
+ * The createdAt cursor is retained for the longstanding newest-first listing.
+ * Every other sort stores its normalized sort value and always breaks ties by
+ * capture id, so pages neither repeat nor skip equal values.
+ */
+export type CaptureCursor =
+  | { createdAt: string; id: string }
+  | { value: string | null; id: string };
 
 export type ThumbnailBackfillCandidate = {
   captureId: string;
@@ -39,6 +63,7 @@ export type ThumbnailBackfillIssue = {
 export type InboxAnalyticsCounts = {
   totalCaptures: number;
   capturesLast24Hours: number;
+  capturesLast7Days: number;
   failedImports: number;
 };
 
@@ -172,18 +197,31 @@ export class JobStore {
         .all(userId, limit) as Row[]
     ).map((row) => this.mapJob(row) as JobRecord);
   }
-  inboxAnalytics(ownerUserId: string, cutoffIso: string): InboxAnalyticsCounts {
+  inboxAnalytics(
+    ownerUserId: string,
+    last24HoursCutoffIso: string,
+    last7DaysCutoffIso: string,
+  ): InboxAnalyticsCounts {
     const row = this.database
       .prepare(
         `SELECT
            (SELECT COUNT(*) FROM captures WHERE owner_user_id=?) AS totalCaptures,
            (SELECT COUNT(*) FROM captures WHERE owner_user_id=? AND created_at>=?) AS capturesLast24Hours,
+           (SELECT COUNT(*) FROM captures WHERE owner_user_id=? AND created_at>=?) AS capturesLast7Days,
            (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND status='failed') AS failedImports`,
       )
-      .get(ownerUserId, ownerUserId, cutoffIso, ownerUserId) as Row;
+      .get(
+        ownerUserId,
+        ownerUserId,
+        last24HoursCutoffIso,
+        ownerUserId,
+        last7DaysCutoffIso,
+        ownerUserId,
+      ) as Row;
     return {
       totalCaptures: Number(row.totalCaptures ?? 0),
       capturesLast24Hours: Number(row.capturesLast24Hours ?? 0),
+      capturesLast7Days: Number(row.capturesLast7Days ?? 0),
       failedImports: Number(row.failedImports ?? 0),
     };
   }
@@ -400,12 +438,18 @@ export class JobStore {
     userId?: string;
     limit: number;
     cursor?: CaptureCursor;
+    sort?: CaptureSort;
     search?: string;
     platform?: string;
     sourceType?: string;
     nodeId?: string;
     topic?: string;
   }) {
+    const sort = query.sort ?? defaultCaptureSort;
+    const isDefaultSort =
+      sort.key === defaultCaptureSort.key &&
+      sort.direction === defaultCaptureSort.direction;
+    const sortValue = captureSortExpression(sort.key);
     const where: string[] = [];
     const params: unknown[] = [];
     if (query.userId) {
@@ -413,12 +457,38 @@ export class JobStore {
       params.push(query.userId);
     }
     if (query.cursor) {
-      where.push("(c.created_at < ? OR (c.created_at = ? AND c.id < ?))");
-      params.push(
-        query.cursor.createdAt,
-        query.cursor.createdAt,
-        query.cursor.id,
-      );
+      if ("createdAt" in query.cursor) {
+        if (!isDefaultSort) throw new Error("invalid_capture_cursor");
+        where.push("(c.created_at < ? OR (c.created_at = ? AND c.id < ?))");
+        params.push(
+          query.cursor.createdAt,
+          query.cursor.createdAt,
+          query.cursor.id,
+        );
+      } else if (sort.key === "savedAt") {
+        const comparison = sort.direction === "asc" ? ">" : "<";
+        where.push(
+          `(c.created_at ${comparison} ? OR (c.created_at = ? AND c.id < ?))`,
+        );
+        params.push(
+          query.cursor.value,
+          query.cursor.value,
+          query.cursor.id,
+        );
+      } else if (query.cursor.value === null) {
+        where.push(`(${sortValue} IS NULL AND c.id < ?)`);
+        params.push(query.cursor.id);
+      } else {
+        const comparison = sort.direction === "asc" ? ">" : "<";
+        where.push(
+          `(${sortValue} IS NULL OR ${sortValue} ${comparison} ? OR (${sortValue} = ? AND c.id < ?))`,
+        );
+        params.push(
+          query.cursor.value,
+          query.cursor.value,
+          query.cursor.id,
+        );
+      }
     }
     if (query.platform) {
       where.push("c.platform = ?");
@@ -452,9 +522,18 @@ export class JobStore {
       params.push(query.search.replace(/["']/g, " ").trim() + "*");
     }
     params.push(query.limit + 1);
+    const orderBy =
+      sort.key === "savedAt"
+        ? `c.created_at ${sort.direction.toUpperCase()},c.id DESC`
+        : `(${sortValue} IS NULL) ASC,${sortValue} ${sort.direction.toUpperCase()},c.id DESC`;
     const rows = this.database
       .prepare(
-        `SELECT c.* FROM captures c ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY c.created_at DESC,c.id DESC LIMIT ?`,
+        `SELECT c.*,${sortValue} AS inbox_sort_value
+         FROM captures c
+         LEFT JOIN capture_library cl ON cl.capture_id=c.id
+         LEFT JOIN library_nodes category ON category.id=cl.node_id
+         ${where.length ? "WHERE " + where.join(" AND ") : ""}
+         ORDER BY ${orderBy} LIMIT ?`,
       )
       .all(...params) as Row[];
     const hasMore = rows.length > query.limit;
@@ -464,10 +543,18 @@ export class JobStore {
     return {
       captures: sliced,
       nextCursor: hasMore
-        ? {
-            createdAt: String(rows[query.limit - 1]?.created_at),
-            id: String(rows[query.limit - 1]?.id),
-          }
+        ? isDefaultSort
+          ? {
+              createdAt: String(rows[query.limit - 1]?.created_at),
+              id: String(rows[query.limit - 1]?.id),
+            }
+          : {
+              value:
+                rows[query.limit - 1]?.inbox_sort_value === null
+                  ? null
+                  : String(rows[query.limit - 1]?.inbox_sort_value),
+              id: String(rows[query.limit - 1]?.id),
+            }
         : null,
     };
   }
@@ -2981,4 +3068,33 @@ function normalizePlace(value: string) {
     aliases[cleaned.toLowerCase()] ??
     cleaned.replace(/\b\p{L}/gu, (letter) => letter.toUpperCase())
   );
+}
+
+function captureSortExpression(key: CaptureSortKey) {
+  switch (key) {
+    case "title":
+      return "NULLIF(lower(trim(c.title)), '')";
+    case "savedAt":
+      return "c.created_at";
+    case "source":
+      return "NULLIF(lower(trim(c.platform)), '')";
+    case "category":
+      return "NULLIF(lower(trim(category.label)), '')";
+    case "topic":
+      return `(
+        SELECT MIN(lower(trim(CAST(topic.value AS TEXT))))
+        FROM json_each(
+          CASE
+            WHEN json_valid(c.analysis_json) THEN
+              CASE
+                WHEN json_type(c.analysis_json, '$.topics')='array'
+                THEN json_extract(c.analysis_json, '$.topics')
+                ELSE '[]'
+              END
+            ELSE '[]'
+          END
+        ) AS topic
+        WHERE topic.type='text' AND trim(CAST(topic.value AS TEXT))<>''
+      )`;
+  }
 }
