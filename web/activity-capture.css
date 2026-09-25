@@ -1,0 +1,255 @@
+.activity-view {
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 30px 4px 70px;
+  color: #18181b;
+}
+
+.activity-heading h1,
+.capture-intro h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+}
+
+.activity-heading p,
+.capture-intro p {
+  margin: 7px 0 0;
+  color: #71717a;
+  font-size: 14px;
+}
+
+.activity-group {
+  margin-top: 38px;
+}
+
+.activity-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.activity-group-heading h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.activity-failed-count {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #fdf0ed;
+  color: #a84435;
+  font-size: 12px;
+}
+
+.activity-empty {
+  margin: 0;
+  padding: 24px 16px;
+  border: 1px dashed #e4e4e7;
+  border-radius: 8px;
+  color: #71717a;
+  font-size: 13px;
+}
+
+.activity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.activity-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 110px;
+  padding: 19px 18px;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.activity-card.highlighted {
+  border-color: #a1a1aa;
+}
+
+.activity-card-main {
+  min-width: 0;
+}
+
+.activity-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.activity-card-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.activity-card-title .platform-icon {
+  flex: 0 0 auto;
+  transform: scale(.75);
+  transform-origin: center;
+}
+
+.activity-card-main p {
+  margin: 17px 0 0;
+  color: #71717a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.activity-card-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex: 0 0 auto;
+}
+
+.activity-card-actions button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.activity-details {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 0;
+  border: 0;
+  background: none;
+  color: #71717a;
+  font-size: 12px !important;
+}
+
+.activity-details svg {
+  width: 12px;
+  height: 12px;
+  transform: rotate(90deg);
+}
+
+.activity-retry {
+  min-width: 72px;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 6px;
+  background: #293a34;
+  color: #fff;
+  font-size: 12px !important;
+}
+
+.activity-retry:hover {
+  background: #1b2924;
+}
+
+.capture-panel {
+  width: min(100%, 620px);
+  margin: 36px auto;
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+}
+
+.capture-panel form {
+  display: grid;
+  gap: 24px;
+  margin-top: 32px;
+  padding: 28px;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.capture-panel label {
+  display: grid;
+  gap: 9px;
+  color: #27272a;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.capture-panel input,
+.capture-panel textarea {
+  width: 100%;
+  border: 1px solid #d4d4d8;
+  border-radius: 6px;
+  background: #fff;
+  color: #18181b;
+  font: inherit;
+  font-weight: 400;
+}
+
+.capture-panel input {
+  min-height: 42px;
+}
+
+.capture-panel textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.capture-panel input::placeholder,
+.capture-panel textarea::placeholder {
+  color: #a1a1aa;
+}
+
+.capture-panel form > button {
+  width: fit-content;
+  min-width: 124px;
+  border: 0;
+  border-radius: 6px;
+  background: #18181b;
+  color: #fff;
+}
+
+.capture-optional {
+  color: #a1a1aa;
+  font-weight: 400;
+}
+
+@media (max-width: 700px) {
+  .activity-view {
+    padding: 26px 0 90px;
+  }
+
+  .activity-heading h1,
+  .capture-intro h1 {
+    font-size: 26px;
+  }
+
+  .activity-group {
+    margin-top: 28px;
+  }
+
+  .activity-card {
+    display: grid;
+    min-height: 0;
+    gap: 16px;
+    padding: 16px 12px 10px;
+  }
+
+  .activity-card-main p {
+    margin-top: 17px;
+  }
+
+  .activity-card-actions {
+    justify-content: space-between;
+  }
+
+  .capture-panel {
+    margin: 26px auto;
+  }
+
+  .capture-panel form {
+    padding: 20px;
+  }
+}

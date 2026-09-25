@@ -46,6 +46,7 @@ import {
   type StreamState,
 } from "./chat-stream";
 import "./styles.css";
+import "./activity-capture.css";
 
 type Asset = {
   id: string;
@@ -3337,6 +3338,28 @@ function App() {
     [jobs],
   );
   const activeJobCount = counts.active + counts.failed;
+  const failedJobs = jobs.filter((job) => job.status === "failed");
+  const processingJobs = jobs.filter(
+    (job) => job.status !== "failed" && job.status !== "complete",
+  );
+  const completedJobs = jobs.filter((job) => job.status === "complete");
+  async function retryJob(job: Job) {
+    try {
+      setMessage("Retrying capture…");
+      await api(`/api/v1/jobs/${job.id}/retry`, { method: "POST" });
+      setMessage("Capture re-queued successfully.");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Retry failed");
+    }
+  }
+  async function showJobDetails(job: Job) {
+    try {
+      setJobDetails(await api<JobDetails>(`/api/v1/jobs/${job.id}`));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Details unavailable");
+    }
+  }
   const profileInitial = user?.username.slice(0, 1).toUpperCase() || "S";
   const navigateTo = (nextTab: AppTab) => {
     setTab(nextTab);
@@ -3722,166 +3745,95 @@ function App() {
             </>
           )}
           {tab === "activity" && (
-            <>
-              <div className="page-title">
+            <div className="activity-view">
+              <header className="activity-heading">
                 <h1>Activity</h1>
-                <p>Live processing history and recoverable failures.</p>
-              </div>
-              {message && (
-                <p className="action-feedback" role="status">
-                  {message}
-                </p>
-              )}
-              <div className="job-list">
-                {jobs.map((job) => (
-                  <article
-                    key={job.id}
-                    className={highlightedJob === job.id ? "highlighted" : ""}
-                  >
-                    <div>
-                      <div className="job-heading">
-                        <PlatformIcon url={job.normalizedUrl} />
-                        {job.status !== "complete" && (
-                          <span className={`status ${job.status}`}>
-                            {stageCopy[job.status] || job.status}
-                          </span>
-                        )}
-                        <strong>
-                          {job.displayTitle ||
-                            sourceReference(job.normalizedUrl)}
-                        </strong>
-                      </div>
-                      <small>
-                        {sourceReference(job.normalizedUrl)} ·{" "}
-                        {new Date(job.createdAt).toLocaleString()} ·{" "}
-                        {job.attempts
-                          ? `attempt ${job.attempts}`
-                          : "not started"}
-                      </small>
-                      {job.status === "complete" ? (
-                        <div className="complete-summary" role="status">
-                          <span aria-hidden="true">✓</span>
-                          Complete
-                        </div>
-                      ) : (
-                        <div
-                          className="stage-breadcrumbs"
-                          aria-label={`Capture stage: ${stageCopy[job.status] || job.status}`}
-                        >
-                          {stages.slice(0, -1).map((stage, index) => {
-                            const current = stages.indexOf(job.status);
-                            const reached = job.reachedStages?.includes(stage);
-                            const state =
-                              current === index
-                                ? "current"
-                                : reached || current > index
-                                  ? "reached"
-                                  : "pending";
-                            return (
-                              <span
-                                className={state}
-                                key={stage}
-                                title={stageCopy[stage]}
-                              >
-                                {state === "reached" ? "✓" : index + 1}{" "}
-                                {stageCopy[stage]}
-                              </span>
-                            );
-                          })}
-                          <span
-                            className={`completion-chip ${job.status === "failed" ? "failed" : "pending"}`}
-                          >
-                            {job.status === "failed"
-                              ? "! Failed"
-                              : "8 Complete"}
-                          </span>
-                        </div>
-                      )}
-                      {job.status === "failed" &&
-                        (() => {
-                          const failure = failureFor(job);
-                          return (
-                            <div className="failure-card">
-                              <strong>{failure.title}</strong>
-                              <p>{failure.message}</p>
-                              {(job.errorDetail || job.error) && (
-                                <details>
-                                  <summary>Technical diagnostic</summary>
-                                  <code>{job.errorDetail || job.error}</code>
-                                </details>
-                              )}
+                <p>Track captures and resolve issues.</p>
+              </header>
+              {message && <p className="action-feedback" role="status">{message}</p>}
+              {[
+                { title: "Needs attention", items: failedJobs, kind: "failed" },
+                { title: "Processing now", items: processingJobs, kind: "processing" },
+                { title: "Completed history", items: completedJobs, kind: "complete" },
+              ].map((group) => (
+                <section className="activity-group" key={group.kind}>
+                  <div className="activity-group-heading">
+                    <h2>{group.title}</h2>
+                    {group.kind === "failed" && group.items.length > 0 && (
+                      <span className="activity-failed-count">{group.items.length} failed</span>
+                    )}
+                  </div>
+                  {group.items.length === 0 ? (
+                    <p className="activity-empty">
+                      {group.kind === "failed" ? "Nothing needs attention." :
+                        group.kind === "processing" ? "No captures processing now." :
+                        "Completed captures will appear here."}
+                    </p>
+                  ) : (
+                    <div className="activity-list">
+                      {group.items.map((job) => (
+                        <article className={`activity-card ${highlightedJob === job.id ? "highlighted" : ""}`} key={job.id}>
+                          <div className="activity-card-main">
+                            <div className="activity-card-title">
+                              <PlatformIcon url={job.normalizedUrl} />
+                              <strong>{job.displayTitle || sourceReference(job.normalizedUrl)}</strong>
                             </div>
-                          );
-                        })()}
+                            {group.kind === "failed" ? (
+                              <p>{failureFor(job).message}</p>
+                            ) : group.kind === "processing" ? (
+                              <p>{stageCopy[job.status] || job.status}…</p>
+                            ) : (
+                              <p>Saved {new Date(job.createdAt).toLocaleDateString()} · Open details ↗</p>
+                            )}
+                          </div>
+                          <div className="activity-card-actions">
+                            <button type="button" className="activity-details" onClick={() => void showJobDetails(job)}>
+                              {group.kind === "failed" ? "Technical details" : "Open details"}
+                              <ChevronRight aria-hidden="true" />
+                            </button>
+                            {group.kind === "failed" && (
+                              <button type="button" className="activity-retry" onClick={() => void retryJob(job)}>Retry</button>
+                            )}
+                          </div>
+                        </article>
+                      ))}
                     </div>
-                    <div className="job-actions">
-                      <button
-                        className="info-button"
-                        aria-label={`View details for ${job.displayTitle || sourceLabel(job.normalizedUrl)}`}
-                        title="View processing details"
-                        onClick={async () =>
-                          setJobDetails(
-                            await api<JobDetails>(`/api/v1/jobs/${job.id}`),
-                          )
-                        }
-                      >
-                        i
-                      </button>
-                      {job.status === "failed" && (
-                        <button
-                          onClick={async () => {
-                            try {
-                              setMessage("Retrying capture…");
-                              await api(`/api/v1/jobs/${job.id}/retry`, {
-                                method: "POST",
-                              });
-                              setMessage("Capture re-queued successfully.");
-                              await load();
-                            } catch (error) {
-                              setMessage(
-                                error instanceof Error
-                                  ? error.message
-                                  : "Retry failed",
-                              );
-                            }
-                          }}
-                        >
-                          Retry
-                        </button>
-                      )}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </>
+                  )}
+                </section>
+              ))}
+            </div>
           )}
           {tab === "library" && <Library onOpen={setDetail} />}
           {tab === "ask" && <AskAI onOpen={setDetail} />}
           {tab === "capture" && (
             <div className="capture-panel">
-              <div className="eyebrow">Manual capture</div>
-              <h1>Save a social post</h1>
+              <div className="capture-intro">
+                <h1>Capture a post</h1>
+                <p>Save an Instagram or Facebook post to your private knowledge base.</p>
+              </div>
               <form onSubmit={submit}>
                 <label>
-                  Facebook or Instagram URL
+                  Post URL
                   <input
                     type="url"
                     required
                     value={captureUrl}
                     onChange={(e) => setCaptureUrl(e.target.value)}
+                    placeholder="https://www.instagram.com/reel/..."
                   />
                 </label>
                 <label>
-                  Why are you saving it?
+                  Note <span className="capture-optional">Optional</span>
                   <textarea
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
+                    placeholder="What makes this worth saving?"
                   />
                 </label>
                 <button disabled={submitting}>
-                  {submitting ? "Submitting…" : "Capture"}
+                  {submitting ? "Submitting…" : "Save post"}
                 </button>
-                <p>{message}</p>
+                {message && <p role="status">{message}</p>}
               </form>
             </div>
           )}
