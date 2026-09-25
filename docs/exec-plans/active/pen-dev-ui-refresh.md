@@ -21,7 +21,7 @@ The backend already supports the core journeys. This branch keeps existing behav
 
 ## Design-to-behavior rules
 
-- Use real totals, not the drawn `248`/`12`/`2`. Add a backward-compatible seven-day analytics field if the design retains “this week”; preserve the existing last-24-hours field and callers.
+- Use real totals, not the drawn `248`/`12`/`2`. Add a backward-compatible rolling seven-day analytics field, label it “Past 7 days,” and preserve the existing last-24-hours field and callers.
 - `GET /api/v1/captures` currently provides newest-first cursor pagination. Add validated archive-wide sorting only for the designed choices, with stable cursors and owner scoping, so the table headings and sort control can be functional. Keep the existing default query and response behavior unchanged.
 - Implement the filter builder with existing search, platform, category, and topic filters only. Both tile and table views share filter state; filtering resets pagination as it does today.
 - The AI Settings UI uses the live OpenAI/Cerebras providers and model options from `/api/v1/ai-providers`. Replace Anthropic and example model names in frame 33 with actual options. Omit the thinking-level selector on this branch; its separate PR can add it to the redesigned page.
