@@ -12,20 +12,26 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   Activity,
+  Bot,
   ChevronRight,
+  DatabaseBackup,
   FileQuestion,
   Folder,
   FolderOpen,
   House,
   Inbox,
+  KeyRound,
   LibraryBig,
+  Link2,
   LogOut,
   Menu,
   MessageSquare,
   Plus,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Settings as SettingsIcon,
+  UserRound,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -47,6 +53,7 @@ import {
 } from "./chat-stream";
 import "./styles.css";
 import "./activity-capture.css";
+import "./settings.css";
 
 type Asset = {
   id: string;
@@ -503,6 +510,8 @@ type AiProviderState = {
   };
   readiness: { capture: boolean; ask: boolean };
 };
+type SettingsTopic =
+  "overview" | "ai" | "connections" | "api" | "data" | "account" | "all";
 type AccountUser = {
   id: string;
   username: string;
@@ -1234,18 +1243,27 @@ function Detail({ id, onClose }: { id: string; onClose: () => void }) {
 function AccessManagement() {
   const [users, setUsers] = useState<AccountUser[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [role, setRole] = useState<"member" | "admin">("member");
   const [administratorAcknowledged, setAdministratorAcknowledged] =
     useState(false);
   const [message, setMessage] = useState("");
   const [createdInvitationUrl, setCreatedInvitationUrl] = useState("");
   async function load() {
-    const [userResult, invitationResult] = await Promise.all([
-      api<{ users: AccountUser[] }>("/api/v1/admin/users"),
-      api<{ invitations: Invitation[] }>("/api/v1/admin/invitations"),
-    ]);
-    setUsers(userResult.users);
-    setInvitations(invitationResult.invitations);
+    setLoadError("");
+    try {
+      const [userResult, invitationResult] = await Promise.all([
+        api<{ users: AccountUser[] }>("/api/v1/admin/users"),
+        api<{ invitations: Invitation[] }>("/api/v1/admin/invitations"),
+      ]);
+      setUsers(userResult.users);
+      setInvitations(invitationResult.invitations);
+    } catch {
+      setLoadError("People and invitations could not be loaded. Try again.");
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => {
     void load();
@@ -1331,6 +1349,14 @@ function AccessManagement() {
           {message}
         </p>
       )}
+      {loadError && (
+        <div className="settings-inline-error" role="alert">
+          <span>{loadError}</span>
+          <button type="button" onClick={() => void load()}>
+            Retry
+          </button>
+        </div>
+      )}
       {createdInvitationUrl && (
         <div className="token-box invitation-link">
           <strong>Share this link securely</strong>
@@ -1362,7 +1388,11 @@ function AccessManagement() {
             </div>
           </article>
         ))}
-        {!users.length && <p className="settings-help">Loading accounts…</p>}
+        {!users.length && !loadError && (
+          <p className="settings-help">
+            {loading ? "Loading accounts…" : "No accounts yet."}
+          </p>
+        )}
       </div>
       <div className="access-list">
         <h3>Invitations</h3>
@@ -1396,12 +1426,18 @@ function AccessManagement() {
                     type="button"
                     className="secondary-button"
                     onClick={async () => {
-                      await api(
-                        `/api/v1/admin/invitations/${invitation.id}/revoke`,
-                        { method: "POST" },
-                      );
-                      setMessage("Invitation revoked.");
-                      await load();
+                      try {
+                        await api(
+                          `/api/v1/admin/invitations/${invitation.id}/revoke`,
+                          { method: "POST" },
+                        );
+                        setMessage("Invitation revoked.");
+                        await load();
+                      } catch {
+                        setMessage(
+                          "Invitation could not be revoked. Try again.",
+                        );
+                      }
                     }}
                   >
                     Revoke
@@ -1412,15 +1448,21 @@ function AccessManagement() {
                     type="button"
                     className="secondary-button"
                     onClick={async () => {
-                      const result = await api<{ invitationUrl: string }>(
-                        `/api/v1/admin/invitations/${invitation.id}/regenerate`,
-                        { method: "POST" },
-                      );
-                      setCreatedInvitationUrl(result.invitationUrl);
-                      setMessage(
-                        "New invitation link created. The previous link no longer works.",
-                      );
-                      await load();
+                      try {
+                        const result = await api<{ invitationUrl: string }>(
+                          `/api/v1/admin/invitations/${invitation.id}/regenerate`,
+                          { method: "POST" },
+                        );
+                        setCreatedInvitationUrl(result.invitationUrl);
+                        setMessage(
+                          "New invitation link created. The previous link no longer works.",
+                        );
+                        await load();
+                      } catch {
+                        setMessage(
+                          "Invitation link could not be regenerated. Try again.",
+                        );
+                      }
                     }}
                   >
                     Regenerate
@@ -1430,8 +1472,10 @@ function AccessManagement() {
             </article>
           );
         })}
-        {!invitations.length && (
-          <p className="settings-help">No invitations yet.</p>
+        {!invitations.length && !loadError && (
+          <p className="settings-help">
+            {loading ? "Loading invitations…" : "No invitations yet."}
+          </p>
         )}
       </div>
     </section>
@@ -1439,6 +1483,9 @@ function AccessManagement() {
 }
 
 function Settings({ user }: { user: AccountUser | null }) {
+  const [topic, setTopic] = useState<SettingsTopic>("overview");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [name, setName] = useState("iPhone Shortcut");
   const [token, setToken] = useState("");
@@ -1456,45 +1503,60 @@ function Settings({ user }: { user: AccountUser | null }) {
   const [libraryExports, setLibraryExports] = useState<LibraryExport[]>([]);
   const [backupMessage, setBackupMessage] = useState("");
   const [aiState, setAiState] = useState<AiProviderState | null>(null);
+  const aiStateRef = useRef<AiProviderState | null>(null);
   const [selectedAiProvider, setSelectedAiProvider] = useState<
     "openai" | "cerebras"
   >("cerebras");
   const [providerApiKey, setProviderApiKey] = useState("");
   const [providerMessage, setProviderMessage] = useState("");
   const [verifyingProvider, setVerifyingProvider] = useState(false);
-  async function load() {
-    const [
-      keyResult,
-      preferenceResult,
-      connectionResult,
-      exportResult,
-      platformResult,
-      aiResult,
-    ] = await Promise.all([
-      api<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
-      api<{
-        preferences: { defaultLanguage: string; translateForeign: boolean };
-      }>("/api/v1/preferences"),
-      api<{ connections: OAuthConnection[]; mcpUrl: string }>(
-        "/api/v1/oauth/connections",
-      ),
-      api<{ exports: LibraryExport[] }>("/api/v1/library-exports"),
-      api<{ connections: PlatformConnection[] }>(
-        "/api/v1/platform-connections",
-      ),
-      api<AiProviderState>("/api/v1/ai-providers"),
-    ]);
-    setKeys(keyResult.apiKeys);
-    setDefaultLanguage(preferenceResult.preferences.defaultLanguage);
-    setTranslateForeign(preferenceResult.preferences.translateForeign);
-    setConnections(connectionResult.connections);
-    setMcpUrl(connectionResult.mcpUrl);
-    setLibraryExports(exportResult.exports);
-    setPlatformConnections(platformResult.connections);
-    setAiState(aiResult);
+  const applyAiState = (nextState: AiProviderState) => {
+    aiStateRef.current = nextState;
+    setAiState(nextState);
+  };
+  async function load(showLoading = false) {
+    if (showLoading) setLoading(true);
+    setLoadError("");
+    try {
+      const [
+        keyResult,
+        preferenceResult,
+        connectionResult,
+        exportResult,
+        platformResult,
+        aiResult,
+      ] = await Promise.all([
+        api<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
+        api<{
+          preferences: { defaultLanguage: string; translateForeign: boolean };
+        }>("/api/v1/preferences"),
+        api<{ connections: OAuthConnection[]; mcpUrl: string }>(
+          "/api/v1/oauth/connections",
+        ),
+        api<{ exports: LibraryExport[] }>("/api/v1/library-exports"),
+        api<{ connections: PlatformConnection[] }>(
+          "/api/v1/platform-connections",
+        ),
+        api<AiProviderState>("/api/v1/ai-providers"),
+      ]);
+      setKeys(keyResult.apiKeys);
+      setDefaultLanguage(preferenceResult.preferences.defaultLanguage);
+      setTranslateForeign(preferenceResult.preferences.translateForeign);
+      setConnections(connectionResult.connections);
+      setMcpUrl(connectionResult.mcpUrl);
+      setLibraryExports(exportResult.exports);
+      setPlatformConnections(platformResult.connections);
+      applyAiState(aiResult);
+    } catch {
+      setLoadError(
+        "Settings could not be loaded. Check your connection and try again.",
+      );
+    } finally {
+      if (showLoading) setLoading(false);
+    }
   }
   useEffect(() => {
-    void load();
+    void load(true);
   }, []);
   useEffect(() => {
     if (!libraryExports.some((item) => item.status === "pending")) {
@@ -1514,17 +1576,21 @@ function Settings({ user }: { user: AccountUser | null }) {
   }, [libraryExports]);
   async function create(event: FormEvent) {
     event.preventDefault();
-    const result = await api<{ token: string; apiKey: ApiKey }>(
-      "/api/v1/api-keys",
-      {
-        method: "POST",
-        body: JSON.stringify({ name }),
-      },
-    );
-    setToken(result.token);
-    setCreatedKeyId(result.apiKey.id);
-    setMessage("Copy this key now. It will not be shown again.");
-    await load();
+    try {
+      const result = await api<{ token: string; apiKey: ApiKey }>(
+        "/api/v1/api-keys",
+        {
+          method: "POST",
+          body: JSON.stringify({ name }),
+        },
+      );
+      setToken(result.token);
+      setCreatedKeyId(result.apiKey.id);
+      setMessage("Copy this key now. It will not be shown again.");
+      await load();
+    } catch {
+      setMessage("The API key could not be created. Try again.");
+    }
   }
   async function uploadPlatformCookies(
     platform: PlatformConnection["platform"],
@@ -1553,567 +1619,955 @@ function Settings({ user }: { user: AccountUser | null }) {
       );
     }
   }
+  async function saveTaskSelection(
+    task: "transcription" | "analysis",
+    provider: AiSelection["provider"],
+    model: string,
+  ) {
+    try {
+      const result = await api<AiProviderState>("/api/v1/ai-settings", {
+        method: "PUT",
+        body: JSON.stringify({ [task]: { provider, model } }),
+      });
+      applyAiState(result);
+      setProviderMessage(
+        `${task === "transcription" ? "Transcription" : "Analysis"} selection updated.`,
+      );
+    } catch {
+      setProviderMessage(
+        `The ${task === "transcription" ? "transcription" : "analysis"} selection could not be updated. Try again.`,
+      );
+    }
+  }
+  const topics: Array<{
+    id: SettingsTopic;
+    label: string;
+    description: string;
+    icon: LucideIcon;
+  }> = [
+    {
+      id: "overview",
+      label: "Overview",
+      description: "A clear view of your setup.",
+      icon: SettingsIcon,
+    },
+    {
+      id: "ai",
+      label: "AI",
+      description: "Providers and task models.",
+      icon: Bot,
+    },
+    {
+      id: "connections",
+      label: "Connections",
+      description: "Sources and social sessions.",
+      icon: Link2,
+    },
+    {
+      id: "api",
+      label: "API keys",
+      description: "Integration access.",
+      icon: KeyRound,
+    },
+    {
+      id: "data",
+      label: "Data & export",
+      description: "Language and portable archives.",
+      icon: DatabaseBackup,
+    },
+    {
+      id: "account",
+      label: "Account",
+      description: "Profile and access management.",
+      icon: UserRound,
+    },
+  ];
+  const connectedPlatforms = platformConnections.filter(
+    (connection) => connection.connected,
+  );
+  const openAi = aiState?.providers.find(
+    (provider) => provider.id === "openai",
+  );
+  const activeTopic = topics.find((item) => item.id === topic);
+  const showTopic = (value: SettingsTopic) =>
+    topic === value || topic === "all";
+  const selectTopic = (value: SettingsTopic) => {
+    setTopic(value);
+    window.requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>(".settings-heading")?.focus(),
+    );
+  };
   return (
-    <div className="settings">
-      <div className="page-title">
-        <h1>Settings</h1>
-        <p>
-          Choose how knowledge is processed and manage Shortcut and agent
-          access.
-        </p>
-      </div>
-      <section className="settings-card ai-provider-settings">
-        <h2>AI processing</h2>
-        <p className="settings-help">
-          Choose transcription and analysis separately. Provider keys are
-          encrypted at rest and never shown again.
-        </p>
-        <div className="ai-readiness" role="status">
-          <strong>
-            {aiState?.readiness.capture
-              ? "Capture ready"
-              : "Capture needs transcription and analysis"}
-          </strong>
-          <span>
-            {aiState?.readiness.ask
-              ? "Ask is ready."
-              : "Ask needs an analysis provider."}
-          </span>
-        </div>
-        <div className="ai-task-grid">
-          {(["transcription", "analysis"] as const).map((task) => {
-            const selection = aiState?.selections[task];
-            const options = (aiState?.providers ?? []).filter(
-              (item) => item.capabilities[task],
-            );
-            return (
-              <article className="ai-task" key={task}>
-                <span className="step-label">
-                  {task === "transcription" ? "Step 1" : "Step 2"}
-                </span>
-                <h3>
-                  {task === "transcription"
-                    ? "Transcription"
-                    : "Analysis & Ask"}
-                </h3>
-                <p>
-                  {task === "transcription"
-                    ? "Turns audio into searchable text. OpenAI is currently required."
-                    : "Creates summaries, topics, vision insights, and answers."}
-                </p>
-                <label>
-                  Provider
-                  <select
-                    value={selection?.provider ?? ""}
-                    onChange={async (event) => {
-                      const provider = event.target.value as
-                        "openai" | "cerebras";
-                      const definition = options.find(
-                        (item) => item.id === provider,
-                      );
-                      if (!definition?.connected) {
-                        setSelectedAiProvider(provider);
-                        setProviderMessage(
-                          `Connect ${definition?.name ?? provider} below before selecting it for ${task}.`,
-                        );
-                        return;
-                      }
-                      const model = definition.models[task][0];
-                      const result = await api<AiProviderState>(
-                        "/api/v1/ai-settings",
-                        {
-                          method: "PUT",
-                          body: JSON.stringify({ [task]: { provider, model } }),
-                        },
-                      );
-                      setAiState(result);
-                      setProviderMessage(
-                        `${task === "transcription" ? "Transcription" : "Analysis"} selection updated.`,
-                      );
-                    }}
-                  >
-                    <option value="" disabled>
-                      Choose provider
-                    </option>
-                    {options.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                        {item.connected ? " · connected" : " · connect first"}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {selection && (
-                  <label>
-                    Model
-                    <select
-                      value={selection.model}
-                      onChange={async (event) => {
-                        const result = await api<AiProviderState>(
-                          "/api/v1/ai-settings",
-                          {
-                            method: "PUT",
-                            body: JSON.stringify({
-                              [task]: {
-                                provider: selection.provider,
-                                model: event.target.value,
-                              },
-                            }),
-                          },
-                        );
-                        setAiState(result);
-                        setProviderMessage(
-                          `${task === "transcription" ? "Transcription" : "Analysis"} model updated.`,
-                        );
-                      }}
-                    >
-                      {options
-                        .find((item) => item.id === selection.provider)
-                        ?.models[task].map((model) => (
-                          <option key={model}>{model}</option>
-                        ))}
-                    </select>
-                  </label>
-                )}
-                <strong
-                  className={selection ? "task-status ready" : "task-status"}
-                >
-                  {selection
-                    ? `${options.find((item) => item.id === selection.provider)?.name} · ${selection.model}`
-                    : "Not configured"}
-                </strong>
-              </article>
-            );
-          })}
-        </div>
-        <h3 className="provider-connections-title">Provider connections</h3>
-        <div className="platform-connections">
-          {(aiState?.providers ?? []).map((provider) => (
-            <article key={provider.id}>
-              <div className="platform-connection-heading">
-                <div>
-                  <strong>{provider.name}</strong>
-                  <span
-                    className={`connection-state ${provider.connected ? "connected" : ""}`}
-                  >
-                    {provider.connected
-                      ? "Verified"
-                      : provider.status === "needs_attention"
-                        ? "Reconnect needed"
-                        : "Not connected"}
-                  </span>
-                </div>
-              </div>
-              <p>
-                {provider.connected
-                  ? `${provider.keyHint} · verified ${new Date(provider.verifiedAt!).toLocaleString()}`
-                  : provider.id === "cerebras"
-                    ? "Fast text generation through Cerebras Inference. Transcript, description, and comments are analyzed; sampled video frames are not sent."
-                    : "Required for transcription; also supports analysis and vision."}
-              </p>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => setSelectedAiProvider(provider.id)}
-              >
-                {provider.connected
-                  ? "Replace key"
-                  : `Connect ${provider.name}`}
-              </button>
-              {provider.connected && (
-                <button
-                  type="button"
-                  className="text-button danger-button"
-                  onClick={async () => {
-                    const result = await api<AiProviderState>(
-                      `/api/v1/ai-providers/${provider.id}`,
-                      { method: "DELETE" },
-                    );
-                    setAiState(result);
-                    setProviderMessage(
-                      `${provider.name} disconnected. Any task that used it now needs a provider.`,
-                    );
-                  }}
-                >
-                  Disconnect {provider.name}
-                </button>
-              )}
-            </article>
-          ))}
-        </div>
-        <form
-          onSubmit={async (event) => {
-            event.preventDefault();
-            setVerifyingProvider(true);
-            setProviderMessage("Testing the key with the provider…");
-            try {
-              const result = await api<AiProviderState>(
-                `/api/v1/ai-providers/${selectedAiProvider}`,
-                {
-                  method: "PUT",
-                  body: JSON.stringify({ apiKey: providerApiKey }),
-                },
-              );
-              setAiState(result);
-              setProviderApiKey("");
-              setProviderMessage(
-                `${selectedAiProvider === "cerebras" ? "Cerebras" : "OpenAI"} connected. Review the task selections above.`,
-              );
-            } catch (error) {
-              setProviderMessage(
-                (error as { body?: { error?: string } }).body?.error ===
-                  "invalid_api_key"
-                  ? "The provider rejected that API key. Check it and try again."
-                  : "The provider could not be reached. Try again shortly.",
-              );
-            } finally {
-              setVerifyingProvider(false);
-            }
-          }}
-        >
-          <label>
-            {selectedAiProvider === "cerebras" ? "Cerebras" : "OpenAI"} API key
-            <input
-              type="password"
-              value={providerApiKey}
-              onChange={(event) => setProviderApiKey(event.target.value)}
-              autoComplete="off"
-              required
-              placeholder="Paste API key"
-            />
-          </label>
-          <button disabled={verifyingProvider}>
-            {verifyingProvider ? "Verifying…" : "Verify and use"}
-          </button>
-        </form>
-        {providerMessage && (
-          <p className="action-feedback" role="status">
-            {providerMessage}
+    <div className="settings settings-workspace">
+      <header className="settings-heading" tabIndex={-1}>
+        <div>
+          <p className="settings-breadcrumb">
+            {topic === "overview"
+              ? "SETTINGS"
+              : `SETTINGS  /  ${activeTopic?.label ?? "ALL TOPICS"}`}
           </p>
+          <h1>
+            {topic === "overview"
+              ? "Settings"
+              : (activeTopic?.label ?? "All settings")}
+          </h1>
+          <p>
+            {topic === "overview"
+              ? "Manage your sources, AI, access, and archive."
+              : (activeTopic?.description ??
+                "Review every part of your workspace setup.")}
+          </p>
+        </div>
+        {topic !== "overview" && (
+          <button
+            className="settings-back"
+            type="button"
+            onClick={() => selectTopic("overview")}
+          >
+            Back to overview
+          </button>
         )}
-      </section>
-      {user?.role === "admin" && <AccessManagement />}
-      <section className="settings-card">
-        <h2>Facebook and Instagram</h2>
-        <p className="settings-help">
-          Connect your logged-in browser session so private or login-protected
-          posts can be captured. Export a Netscape-format{" "}
-          <code>cookies.txt</code> while signed in, then upload it here.
-          Passwords are never requested or stored.
-        </p>
-        <div className="platform-connections">
-          {platformConnections.map((connection) => {
-            const label =
-              connection.platform === "instagram" ? "Instagram" : "Facebook";
-            return (
-              <article key={connection.platform}>
-                <div className="platform-connection-heading">
-                  <PlatformIcon
-                    url={`https://www.${connection.platform}.com`}
-                  />
-                  <div>
-                    <strong>{label}</strong>
-                    <span className={`connection-state ${connection.status}`}>
-                      {connection.status === "connected"
-                        ? "Connected"
-                        : connection.status === "needs_attention"
-                          ? "Reconnect needed"
-                          : "Not connected"}
+      </header>
+      <div className="settings-layout">
+        <nav className="settings-topic-sidebar" aria-label="Settings topics">
+          <span className="settings-topic-label">Settings</span>
+          {topics.map(({ id, label, icon: Icon }) => (
+            <button
+              className={topic === id ? "active" : ""}
+              type="button"
+              aria-current={topic === id ? "page" : undefined}
+              onClick={() => selectTopic(id)}
+              key={id}
+            >
+              <Icon aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="settings-panels">
+          <nav className="settings-mobile-topics" aria-label="Settings topics">
+            <button
+              type="button"
+              className={topic === "overview" ? "active" : ""}
+              onClick={() => selectTopic("overview")}
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              className={topic === "ai" ? "active" : ""}
+              onClick={() => selectTopic("ai")}
+            >
+              AI
+            </button>
+            <label>
+              <span className="sr-only">More settings topics</span>
+              <select
+                aria-label="More settings topics"
+                value={topic === "overview" || topic === "ai" ? "" : topic}
+                onChange={(event) =>
+                  selectTopic(event.target.value as SettingsTopic)
+                }
+              >
+                <option value="">All topics</option>
+                <option value="connections">Connections</option>
+                <option value="api">API keys</option>
+                <option value="data">Data & export</option>
+                <option value="account">Account</option>
+                <option value="all">View all settings</option>
+              </select>
+            </label>
+          </nav>
+          {loading ? (
+            <section
+              className="settings-loading"
+              aria-live="polite"
+              aria-busy="true"
+            >
+              <span className="settings-loading-mark" aria-hidden="true" />
+              <div>
+                <strong>Loading settings</strong>
+                <p>Getting your private workspace ready.</p>
+              </div>
+            </section>
+          ) : loadError ? (
+            <section className="settings-load-error" role="alert">
+              <strong>Settings unavailable</strong>
+              <p>{loadError}</p>
+              <button type="button" onClick={() => void load(true)}>
+                Try again
+              </button>
+            </section>
+          ) : (
+            <>
+              {topic === "overview" && (
+                <section
+                  className="settings-overview"
+                  aria-labelledby="settings-essentials-heading"
+                >
+                  <div className="settings-overview-heading">
+                    <div>
+                      <p className="settings-section-kicker">ESSENTIALS</p>
+                      <h2 id="settings-essentials-heading">
+                        Start where it matters
+                      </h2>
+                    </div>
+                    {!openAi?.connected && (
+                      <button
+                        className="settings-quick-action"
+                        type="button"
+                        onClick={() => {
+                          setSelectedAiProvider("openai");
+                          selectTopic("ai");
+                        }}
+                      >
+                        Connect OpenAI
+                      </button>
+                    )}
+                  </div>
+                  <div className="settings-overview-list">
+                    {[
+                      {
+                        id: "connections" as const,
+                        icon: Link2,
+                        title: "Connections",
+                        detail: "Connect sources and see what is syncing.",
+                        status: `${connectedPlatforms.length} connected`,
+                      },
+                      {
+                        id: "ai" as const,
+                        icon: Bot,
+                        title: "AI",
+                        detail:
+                          "Choose providers for transcription and analysis.",
+                        status: aiState?.readiness.capture
+                          ? "Ready"
+                          : "Needs setup",
+                      },
+                      {
+                        id: "api" as const,
+                        icon: KeyRound,
+                        title: "API keys",
+                        detail: "Create and manage access for integrations.",
+                        status: keys.length
+                          ? `${keys.length} active`
+                          : "No keys",
+                      },
+                      {
+                        id: "data" as const,
+                        icon: DatabaseBackup,
+                        title: "Full archive export",
+                        detail:
+                          "Download your complete archive in a portable format.",
+                        status: libraryExports.some(
+                          (item) => item.status === "pending",
+                        )
+                          ? "Preparing"
+                          : "Available",
+                      },
+                    ].map(({ id, icon: Icon, title, detail, status }) => (
+                      <button
+                        className="settings-overview-row"
+                        type="button"
+                        onClick={() => selectTopic(id)}
+                        key={id}
+                      >
+                        <span
+                          className="settings-overview-icon"
+                          aria-hidden="true"
+                        >
+                          <Icon />
+                        </span>
+                        <span className="settings-overview-copy">
+                          <strong>{title}</strong>
+                          <small>{detail}</small>
+                        </span>
+                        <span className="settings-overview-status">
+                          {status}
+                        </span>
+                        <ChevronRight aria-hidden="true" />
+                      </button>
+                    ))}
+                  </div>
+                  <div className="settings-account-summary">
+                    <div>
+                      <span
+                        className="settings-overview-icon"
+                        aria-hidden="true"
+                      >
+                        <ShieldCheck />
+                      </span>
+                      <span>
+                        <strong>Account</strong>
+                        <small>
+                          {user?.role === "admin"
+                            ? "Profile, security, and people access."
+                            : "Your profile and private workspace preferences."}
+                        </small>
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => selectTopic("account")}
+                    >
+                      Manage account <ChevronRight aria-hidden="true" />
+                    </button>
+                  </div>
+                </section>
+              )}
+              {showTopic("ai") && (
+                <section className="settings-card ai-provider-settings">
+                  <div className="settings-card-heading">
+                    <span className="settings-section-kicker">
+                      1 · PROVIDER CONNECTIONS
+                    </span>
+                    <h2>AI processing</h2>
+                  </div>
+                  <p className="settings-help">
+                    Choose transcription and analysis separately. Provider keys
+                    are encrypted at rest and never shown again.
+                  </p>
+                  <div className="ai-readiness" role="status">
+                    <strong>
+                      {aiState?.readiness.capture
+                        ? "Capture ready"
+                        : "Capture needs transcription and analysis"}
+                    </strong>
+                    <span>
+                      {aiState?.readiness.ask
+                        ? "Ask is ready."
+                        : "Ask needs an analysis provider."}
                     </span>
                   </div>
-                </div>
-                <p>
-                  {connection.lastUsedAt
-                    ? `Last worked ${new Date(connection.lastUsedAt).toLocaleString()}`
-                    : connection.connected
-                      ? `${connection.cookieCount} platform cookies stored securely`
-                      : "Anonymous downloads will still be attempted."}
-                </p>
-                <div className="platform-connection-actions">
-                  <label className="button-like">
-                    {connection.connected
-                      ? "Replace cookies"
-                      : "Upload cookies"}
-                    <input
-                      type="file"
-                      accept=".txt,text/plain"
-                      onChange={async (event) => {
-                        const file = event.target.files?.[0];
-                        if (file)
-                          await uploadPlatformCookies(
-                            connection.platform,
-                            file,
-                          );
-                        event.target.value = "";
-                      }}
-                    />
-                  </label>
-                  {connection.connected && (
-                    <button
-                      className="secondary-button"
-                      onClick={async () => {
-                        await api(
-                          `/api/v1/platform-connections/${connection.platform}`,
-                          { method: "DELETE" },
+                  <div className="ai-task-grid">
+                    {(["transcription", "analysis"] as const).map((task) => {
+                      const selection = aiState?.selections[task];
+                      const options = (aiState?.providers ?? []).filter(
+                        (item) => item.capabilities[task],
+                      );
+                      return (
+                        <article className="ai-task" key={task}>
+                          <span className="step-label">
+                            {task === "transcription" ? "Step 1" : "Step 2"}
+                          </span>
+                          <h3>
+                            {task === "transcription"
+                              ? "Transcription"
+                              : "Analysis & Ask"}
+                          </h3>
+                          <p>
+                            {task === "transcription"
+                              ? "Turns audio into searchable text. OpenAI is currently required."
+                              : "Creates summaries, topics, vision insights, and answers."}
+                          </p>
+                          <label>
+                            Provider
+                            <select
+                              value={selection?.provider ?? ""}
+                              onChange={async (event) => {
+                                const provider = event.target.value as
+                                  "openai" | "cerebras";
+                                const currentOptions = (
+                                  aiStateRef.current?.providers ?? options
+                                ).filter((item) => item.capabilities[task]);
+                                const definition = currentOptions.find(
+                                  (item) => item.id === provider,
+                                );
+                                if (!definition?.connected) {
+                                  setSelectedAiProvider(provider);
+                                  setProviderMessage(
+                                    `Connect ${definition?.name ?? provider} below before selecting it for ${task}.`,
+                                  );
+                                  return;
+                                }
+                                const model = definition.models[task][0];
+                                if (!model) {
+                                  setProviderMessage(
+                                    `${definition.name} has no ${task} model available.`,
+                                  );
+                                  return;
+                                }
+                                await saveTaskSelection(task, provider, model);
+                              }}
+                            >
+                              <option value="" disabled>
+                                Choose provider
+                              </option>
+                              {options.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.name}
+                                  {item.connected
+                                    ? " · connected"
+                                    : " · connect first"}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {selection && (
+                            <label>
+                              Model
+                              <select
+                                value={selection.model}
+                                onChange={async (event) => {
+                                  await saveTaskSelection(
+                                    task,
+                                    selection.provider,
+                                    event.target.value,
+                                  );
+                                }}
+                              >
+                                {options
+                                  .find(
+                                    (item) => item.id === selection.provider,
+                                  )
+                                  ?.models[task].map((model) => (
+                                    <option key={model}>{model}</option>
+                                  ))}
+                              </select>
+                            </label>
+                          )}
+                          <strong
+                            className={
+                              selection ? "task-status ready" : "task-status"
+                            }
+                          >
+                            {selection
+                              ? `${options.find((item) => item.id === selection.provider)?.name} · ${selection.model}`
+                              : "Not configured"}
+                          </strong>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  <h3 className="provider-connections-title">
+                    Provider connections
+                  </h3>
+                  <div className="platform-connections">
+                    {(aiState?.providers ?? []).map((provider) => (
+                      <article
+                        className={
+                          provider.id === selectedAiProvider
+                            ? "selected-provider"
+                            : ""
+                        }
+                        key={provider.id}
+                      >
+                        <div className="platform-connection-heading">
+                          <div>
+                            <strong>{provider.name}</strong>
+                            <span
+                              className={`connection-state ${provider.connected ? "connected" : ""}`}
+                            >
+                              {provider.connected
+                                ? "Verified"
+                                : provider.status === "needs_attention"
+                                  ? "Reconnect needed"
+                                  : "Not connected"}
+                            </span>
+                          </div>
+                        </div>
+                        <p>
+                          {provider.connected
+                            ? `${provider.keyHint} · verified ${new Date(provider.verifiedAt!).toLocaleString()}`
+                            : provider.id === "cerebras"
+                              ? "Fast text generation through Cerebras Inference. Transcript, description, and comments are analyzed; sampled video frames are not sent."
+                              : "Required for transcription; also supports analysis and vision."}
+                        </p>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => setSelectedAiProvider(provider.id)}
+                        >
+                          {provider.connected
+                            ? "Replace key"
+                            : `Connect ${provider.name}`}
+                        </button>
+                        {provider.connected && (
+                          <button
+                            type="button"
+                            className="text-button danger-button"
+                            onClick={async () => {
+                              try {
+                                const result = await api<AiProviderState>(
+                                  `/api/v1/ai-providers/${provider.id}`,
+                                  { method: "DELETE" },
+                                );
+                                applyAiState(result);
+                                setProviderMessage(
+                                  `${provider.name} disconnected. Any task that used it now needs a provider.`,
+                                );
+                              } catch {
+                                setProviderMessage(
+                                  `${provider.name} could not be disconnected. Try again.`,
+                                );
+                              }
+                            }}
+                          >
+                            Disconnect {provider.name}
+                          </button>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                  <form
+                    className="settings-provider-form"
+                    onSubmit={async (event) => {
+                      event.preventDefault();
+                      setVerifyingProvider(true);
+                      setProviderMessage("Testing the key with the provider…");
+                      try {
+                        const result = await api<AiProviderState>(
+                          `/api/v1/ai-providers/${selectedAiProvider}`,
+                          {
+                            method: "PUT",
+                            body: JSON.stringify({ apiKey: providerApiKey }),
+                          },
                         );
-                        setPlatformMessage(`${label} disconnected.`);
-                        await load();
-                      }}
-                    >
-                      Disconnect
+                        applyAiState(result);
+                        setProviderApiKey("");
+                        setProviderMessage(
+                          `${selectedAiProvider === "cerebras" ? "Cerebras" : "OpenAI"} connected. Review the task selections above.`,
+                        );
+                      } catch (error) {
+                        setProviderMessage(
+                          (error as { body?: { error?: string } }).body
+                            ?.error === "invalid_api_key"
+                            ? "The provider rejected that API key. Check it and try again."
+                            : "The provider could not be reached. Try again shortly.",
+                        );
+                      } finally {
+                        setVerifyingProvider(false);
+                      }
+                    }}
+                  >
+                    <label>
+                      {selectedAiProvider === "cerebras"
+                        ? "Cerebras"
+                        : "OpenAI"}{" "}
+                      API key
+                      <input
+                        type="password"
+                        value={providerApiKey}
+                        onChange={(event) =>
+                          setProviderApiKey(event.target.value)
+                        }
+                        autoComplete="off"
+                        required
+                        placeholder="Paste API key"
+                      />
+                    </label>
+                    <button disabled={verifyingProvider}>
+                      {verifyingProvider ? "Verifying…" : "Verify and use"}
                     </button>
+                  </form>
+                  {providerMessage && (
+                    <p
+                      className="action-feedback"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      {providerMessage}
+                    </p>
                   )}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-        {platformMessage && (
-          <p className="action-feedback" role="status">
-            {platformMessage}
-          </p>
-        )}
-        <details className="api-examples cookie-help">
-          <summary>How to export browser cookies</summary>
-          <p>
-            Use a trusted cookies.txt exporter in your desktop browser while
-            logged into the selected platform. Social Knowledge discards every
-            cookie that does not belong to that platform before encrypting the
-            connection.
-          </p>
-        </details>
-      </section>
-      <section className="settings-card">
-        <h2>AI Connections</h2>
-        <p className="settings-help">
-          Connect ChatGPT, Codex, or another MCP client with read-only access to
-          your saved archive.
-        </p>
-        <label>
-          MCP server
-          <input readOnly value={mcpUrl} />
-        </label>
-        <details className="api-examples">
-          <summary>Codex configuration</summary>
-          <p>
-            Store your account key in <code>SOCIAL_KNOWLEDGE_API_KEY</code>,
-            then add:
-          </p>
-          <pre>{`[mcp_servers.social_knowledge]\nurl = "${mcpUrl}"\nbearer_token_env_var = "SOCIAL_KNOWLEDGE_API_KEY"`}</pre>
-        </details>
-        <div className="key-list">
-          {connections.map((connection) => (
-            <article key={connection.clientId}>
-              <div>
-                <strong>{connection.name}</strong>
-                <small>
-                  Read-only · connected{" "}
-                  {new Date(connection.authorizedAt).toLocaleDateString()} ·{" "}
-                  {connection.lastUsedAt
-                    ? `last used ${new Date(connection.lastUsedAt).toLocaleDateString()}`
-                    : "never used"}
-                </small>
-              </div>
-              <button
-                onClick={async () => {
-                  await api(
-                    `/api/v1/oauth/connections/${connection.clientId}`,
-                    { method: "DELETE" },
-                  );
-                  await load();
-                }}
-              >
-                Revoke
-              </button>
-            </article>
-          ))}
-          {!connections.length && <p>No OAuth applications connected yet.</p>}
-        </div>
-      </section>
-      <section className="settings-card">
-        <h2>Export library</h2>
-        <p className="settings-help">
-          Create a portable backup containing all of your capture metadata,
-          transcripts, comments, Markdown notes, images, audio, and videos.
-          Account credentials and server configuration are excluded.
-        </p>
-        <button
-          disabled={libraryExports.some((item) => item.status === "pending")}
-          onClick={async () => {
-            setBackupMessage("Preparing your backup…");
-            try {
-              await api("/api/v1/library-exports", { method: "POST" });
-              await load();
-            } catch (error) {
-              setBackupMessage(
-                error instanceof Error
-                  ? error.message
-                  : "Backup could not start.",
-              );
-            }
-          }}
-        >
-          {libraryExports.some((item) => item.status === "pending")
-            ? "Preparing backup…"
-            : "Create full backup"}
-        </button>
-        {backupMessage && <p className="action-feedback">{backupMessage}</p>}
-        <div className="key-list">
-          {libraryExports.map((item) => (
-            <article key={item.id}>
-              <div>
-                <strong>
-                  {item.status === "complete"
-                    ? `Backup ready · ${item.recordCount ?? 0} captures`
-                    : item.status === "pending"
-                      ? "Preparing backup"
-                      : "Backup failed"}
-                </strong>
-                <small>
-                  Created {new Date(item.createdAt).toLocaleString()} · expires{" "}
-                  {new Date(item.expiresAt).toLocaleString()}
-                </small>
-              </div>
-              {item.status === "complete" && (
-                <a
-                  className="backup-download"
-                  href={`/api/v1/library-exports/${item.id}/download`}
-                >
-                  Download
-                </a>
+                </section>
               )}
-            </article>
-          ))}
-        </div>
-        <p className="settings-help">
-          Backups contain private content and are available for 24 hours. Store
-          downloaded archives somewhere secure.
-        </p>
-      </section>
-      <section className="settings-card">
-        <h2>Language</h2>
-        <p className="settings-help">
-          New captures use these preferences. Original transcripts are always
-          preserved.
-        </p>
-        <form
-          onSubmit={async (event) => {
-            event.preventDefault();
-            const result = await api<{
-              preferences: {
-                defaultLanguage: string;
-                translateForeign: boolean;
-              };
-            }>("/api/v1/preferences", {
-              method: "PATCH",
-              body: JSON.stringify({ defaultLanguage, translateForeign }),
-            });
-            setDefaultLanguage(result.preferences.defaultLanguage);
-            setTranslateForeign(result.preferences.translateForeign);
-            setPreferenceMessage("Language preferences saved.");
-          }}
-        >
-          <label>
-            Default language
-            <select
-              value={defaultLanguage}
-              onChange={(event) => setDefaultLanguage(event.target.value)}
-            >
-              {[
-                "English",
-                "French",
-                "Portuguese",
-                "Spanish",
-                "German",
-                "Italian",
-                "Dutch",
-              ].map((language) => (
-                <option key={language}>{language}</option>
-              ))}
-            </select>
-          </label>
-          <label className="toggle-label">
-            <input
-              type="checkbox"
-              checked={translateForeign}
-              onChange={(event) => setTranslateForeign(event.target.checked)}
-            />
-            Translate foreign-language clips into my default language
-          </label>
-          <button>Save language settings</button>
-        </form>
-        {preferenceMessage && (
-          <p className="action-feedback">{preferenceMessage}</p>
-        )}
-      </section>
-      <section className="settings-card">
-        <h2>API keys</h2>
-        <p className="settings-help">
-          Each account key can submit captures and read, search, and export your
-          knowledge through the Agent API. It cannot manage your account or
-          settings.
-        </p>
-        <form onSubmit={create}>
-          <label>
-            Key name
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </label>
-          <button>Create API key</button>
-        </form>
-        {token && (
-          <div className="token-box">
-            <strong>{message}</strong>
-            <code>{token}</code>
-            <button
-              onClick={async () => {
-                await navigator.clipboard.writeText(token);
-                setMessage("Copied to clipboard.");
-              }}
-            >
-              Copy key
-            </button>
-          </div>
-        )}
-        <div className="key-list">
-          {keys.map((key) => (
-            <article key={key.id}>
-              <div>
-                <strong>{key.name}</strong>
-                <small>
-                  {key.prefix}… · created{" "}
-                  {new Date(key.createdAt).toLocaleDateString()} ·{" "}
-                  {key.lastUsedAt
-                    ? `last used ${new Date(key.lastUsedAt).toLocaleDateString()}`
-                    : "never used"}
-                </small>
-              </div>
-              <button
-                onClick={async () => {
-                  await api(`/api/v1/api-keys/${key.id}`, { method: "DELETE" });
-                  await load();
-                  if (createdKeyId === key.id) {
-                    setToken("");
-                    setCreatedKeyId(null);
-                  }
-                  setMessage(`${key.name} was revoked.`);
-                }}
-              >
-                Revoke
-              </button>
-            </article>
-          ))}
-          {!keys.length && <p>No account API keys yet.</p>}
-        </div>
-        <details className="api-examples">
-          <summary>Agent API examples</summary>
-          <p>
-            Replace <code>$SOCIAL_KNOWLEDGE_API_KEY</code> with an account key.
-          </p>
-          <pre>{`curl -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
+              {showTopic("connections") && (
+                <section className="settings-card settings-connections-card">
+                  <h2>Facebook and Instagram</h2>
+                  <p className="settings-help">
+                    Connect your logged-in browser session so private or
+                    login-protected posts can be captured. Export a
+                    Netscape-format <code>cookies.txt</code> while signed in,
+                    then upload it here. Passwords are never requested or
+                    stored.
+                  </p>
+                  <div className="platform-connections">
+                    {platformConnections.map((connection) => {
+                      const label =
+                        connection.platform === "instagram"
+                          ? "Instagram"
+                          : "Facebook";
+                      return (
+                        <article key={connection.platform}>
+                          <div className="platform-connection-heading">
+                            <PlatformIcon
+                              url={`https://www.${connection.platform}.com`}
+                            />
+                            <div>
+                              <strong>{label}</strong>
+                              <span
+                                className={`connection-state ${connection.status}`}
+                              >
+                                {connection.status === "connected"
+                                  ? "Connected"
+                                  : connection.status === "needs_attention"
+                                    ? "Reconnect needed"
+                                    : "Not connected"}
+                              </span>
+                            </div>
+                          </div>
+                          <p>
+                            {connection.lastUsedAt
+                              ? `Last worked ${new Date(connection.lastUsedAt).toLocaleString()}`
+                              : connection.connected
+                                ? `${connection.cookieCount} platform cookies stored securely`
+                                : "Anonymous downloads will still be attempted."}
+                          </p>
+                          <div className="platform-connection-actions">
+                            <label className="button-like">
+                              {connection.connected
+                                ? "Replace cookies"
+                                : "Upload cookies"}
+                              <input
+                                type="file"
+                                accept=".txt,text/plain"
+                                onChange={async (event) => {
+                                  const file = event.target.files?.[0];
+                                  if (file)
+                                    await uploadPlatformCookies(
+                                      connection.platform,
+                                      file,
+                                    );
+                                  event.target.value = "";
+                                }}
+                              />
+                            </label>
+                            {connection.connected && (
+                              <button
+                                className="secondary-button"
+                                onClick={async () => {
+                                  try {
+                                    await api(
+                                      `/api/v1/platform-connections/${connection.platform}`,
+                                      { method: "DELETE" },
+                                    );
+                                    setPlatformMessage(
+                                      `${label} disconnected.`,
+                                    );
+                                    await load();
+                                  } catch {
+                                    setPlatformMessage(
+                                      `${label} could not be disconnected. Try again.`,
+                                    );
+                                  }
+                                }}
+                              >
+                                Disconnect
+                              </button>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  {platformMessage && (
+                    <p className="action-feedback" role="status">
+                      {platformMessage}
+                    </p>
+                  )}
+                  <details className="api-examples cookie-help">
+                    <summary>How to export browser cookies</summary>
+                    <p>
+                      Use a trusted cookies.txt exporter in your desktop browser
+                      while logged into the selected platform. Social Knowledge
+                      discards every cookie that does not belong to that
+                      platform before encrypting the connection.
+                    </p>
+                  </details>
+                </section>
+              )}
+              {showTopic("api") && (
+                <section className="settings-card settings-agent-connections-card">
+                  <h2>AI Connections</h2>
+                  <p className="settings-help">
+                    Connect ChatGPT, Codex, or another MCP client with read-only
+                    access to your saved archive.
+                  </p>
+                  <label>
+                    MCP server
+                    <input readOnly value={mcpUrl} />
+                  </label>
+                  <details className="api-examples">
+                    <summary>Codex configuration</summary>
+                    <p>
+                      Store your account key in{" "}
+                      <code>SOCIAL_KNOWLEDGE_API_KEY</code>, then add:
+                    </p>
+                    <pre>{`[mcp_servers.social_knowledge]\nurl = "${mcpUrl}"\nbearer_token_env_var = "SOCIAL_KNOWLEDGE_API_KEY"`}</pre>
+                  </details>
+                  <div className="key-list">
+                    {connections.map((connection) => (
+                      <article key={connection.clientId}>
+                        <div>
+                          <strong>{connection.name}</strong>
+                          <small>
+                            Read-only · connected{" "}
+                            {new Date(
+                              connection.authorizedAt,
+                            ).toLocaleDateString()}{" "}
+                            ·{" "}
+                            {connection.lastUsedAt
+                              ? `last used ${new Date(connection.lastUsedAt).toLocaleDateString()}`
+                              : "never used"}
+                          </small>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api(
+                                `/api/v1/oauth/connections/${connection.clientId}`,
+                                { method: "DELETE" },
+                              );
+                              await load();
+                            } catch {
+                              setMessage(
+                                "That AI connection could not be revoked. Try again.",
+                              );
+                            }
+                          }}
+                        >
+                          Revoke
+                        </button>
+                      </article>
+                    ))}
+                    {!connections.length && (
+                      <p>No OAuth applications connected yet.</p>
+                    )}
+                  </div>
+                  {message && !token && (
+                    <p className="action-feedback" role="status">
+                      {message}
+                    </p>
+                  )}
+                </section>
+              )}
+              {showTopic("data") && (
+                <section className="settings-card settings-export-card">
+                  <h2>Export library</h2>
+                  <p className="settings-help">
+                    Create a portable backup containing all of your capture
+                    metadata, transcripts, comments, Markdown notes, images,
+                    audio, and videos. Account credentials and server
+                    configuration are excluded.
+                  </p>
+                  <button
+                    disabled={libraryExports.some(
+                      (item) => item.status === "pending",
+                    )}
+                    onClick={async () => {
+                      setBackupMessage("Preparing your backup…");
+                      try {
+                        await api("/api/v1/library-exports", {
+                          method: "POST",
+                        });
+                        await load();
+                      } catch (error) {
+                        setBackupMessage(
+                          error instanceof Error
+                            ? error.message
+                            : "Backup could not start.",
+                        );
+                      }
+                    }}
+                  >
+                    {libraryExports.some((item) => item.status === "pending")
+                      ? "Preparing backup…"
+                      : "Create full backup"}
+                  </button>
+                  {backupMessage && (
+                    <p className="action-feedback">{backupMessage}</p>
+                  )}
+                  <div className="key-list">
+                    {libraryExports.map((item) => (
+                      <article key={item.id}>
+                        <div>
+                          <strong>
+                            {item.status === "complete"
+                              ? `Backup ready · ${item.recordCount ?? 0} captures`
+                              : item.status === "pending"
+                                ? "Preparing backup"
+                                : "Backup failed"}
+                          </strong>
+                          <small>
+                            Created {new Date(item.createdAt).toLocaleString()}{" "}
+                            · expires{" "}
+                            {new Date(item.expiresAt).toLocaleString()}
+                          </small>
+                        </div>
+                        {item.status === "complete" && (
+                          <a
+                            className="backup-download"
+                            href={`/api/v1/library-exports/${item.id}/download`}
+                          >
+                            Download
+                          </a>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                  <p className="settings-help">
+                    Backups contain private content and are available for 24
+                    hours. Store downloaded archives somewhere secure.
+                  </p>
+                </section>
+              )}
+              {showTopic("data") && (
+                <section className="settings-card settings-language-card">
+                  <h2>Language</h2>
+                  <p className="settings-help">
+                    New captures use these preferences. Original transcripts are
+                    always preserved.
+                  </p>
+                  <form
+                    className="settings-language-form"
+                    onSubmit={async (event) => {
+                      event.preventDefault();
+                      try {
+                        const result = await api<{
+                          preferences: {
+                            defaultLanguage: string;
+                            translateForeign: boolean;
+                          };
+                        }>("/api/v1/preferences", {
+                          method: "PATCH",
+                          body: JSON.stringify({
+                            defaultLanguage,
+                            translateForeign,
+                          }),
+                        });
+                        setDefaultLanguage(result.preferences.defaultLanguage);
+                        setTranslateForeign(
+                          result.preferences.translateForeign,
+                        );
+                        setPreferenceMessage("Language preferences saved.");
+                      } catch {
+                        setPreferenceMessage(
+                          "Language preferences could not be saved. Try again.",
+                        );
+                      }
+                    }}
+                  >
+                    <label>
+                      Default language
+                      <select
+                        value={defaultLanguage}
+                        onChange={(event) =>
+                          setDefaultLanguage(event.target.value)
+                        }
+                      >
+                        {[
+                          "English",
+                          "French",
+                          "Portuguese",
+                          "Spanish",
+                          "German",
+                          "Italian",
+                          "Dutch",
+                        ].map((language) => (
+                          <option key={language}>{language}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="toggle-label">
+                      <input
+                        type="checkbox"
+                        checked={translateForeign}
+                        onChange={(event) =>
+                          setTranslateForeign(event.target.checked)
+                        }
+                      />
+                      Translate foreign-language clips into my default language
+                    </label>
+                    <button>Save language settings</button>
+                  </form>
+                  {preferenceMessage && (
+                    <p className="action-feedback">{preferenceMessage}</p>
+                  )}
+                </section>
+              )}
+              {showTopic("api") && (
+                <section className="settings-card settings-api-keys-card">
+                  <h2>API keys</h2>
+                  <p className="settings-help">
+                    Each account key can submit captures and read, search, and
+                    export your knowledge through the Agent API. It cannot
+                    manage your account or settings.
+                  </p>
+                  <form className="settings-key-form" onSubmit={create}>
+                    <label>
+                      Key name
+                      <input
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                      />
+                    </label>
+                    <button>Create API key</button>
+                  </form>
+                  {token && (
+                    <div className="token-box">
+                      <strong>{message}</strong>
+                      <code>{token}</code>
+                      <button
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(token);
+                          setMessage("Copied to clipboard.");
+                        }}
+                      >
+                        Copy key
+                      </button>
+                    </div>
+                  )}
+                  {message && !token && (
+                    <p className="action-feedback" role="status">
+                      {message}
+                    </p>
+                  )}
+                  <div className="key-list">
+                    {keys.map((key) => (
+                      <article key={key.id}>
+                        <div>
+                          <strong>{key.name}</strong>
+                          <small>
+                            {key.prefix}… · created{" "}
+                            {new Date(key.createdAt).toLocaleDateString()} ·{" "}
+                            {key.lastUsedAt
+                              ? `last used ${new Date(key.lastUsedAt).toLocaleDateString()}`
+                              : "never used"}
+                          </small>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api(`/api/v1/api-keys/${key.id}`, {
+                                method: "DELETE",
+                              });
+                              await load();
+                              if (createdKeyId === key.id) {
+                                setToken("");
+                                setCreatedKeyId(null);
+                              }
+                              setMessage(`${key.name} was revoked.`);
+                            } catch {
+                              setMessage(
+                                `${key.name} could not be revoked. Try again.`,
+                              );
+                            }
+                          }}
+                        >
+                          Revoke
+                        </button>
+                      </article>
+                    ))}
+                    {!keys.length && <p>No account API keys yet.</p>}
+                  </div>
+                  <details className="api-examples">
+                    <summary>Agent API examples</summary>
+                    <p>
+                      Replace <code>$SOCIAL_KNOWLEDGE_API_KEY</code> with an
+                      account key.
+                    </p>
+                    <pre>{`curl -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
   "${window.location.origin}/api/v1/knowledge/search?q=lisbon%20restaurants"
 
 curl -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
@@ -2122,13 +2576,55 @@ curl -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
 curl -X POST -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
   -H "Content-Type: application/json" -d '{"include":["transcript","comments"]}' \\
   "${window.location.origin}/api/v1/knowledge/exports"`}</pre>
-          <p>
-            <a href="/openapi.json" target="_blank" rel="noreferrer">
-              OpenAPI 3.1 specification ↗
-            </a>
-          </p>
-        </details>
-      </section>
+                    <p>
+                      <a href="/openapi.json" target="_blank" rel="noreferrer">
+                        OpenAPI 3.1 specification ↗
+                      </a>
+                    </p>
+                  </details>
+                </section>
+              )}
+              {showTopic("account") && (
+                <>
+                  <section className="settings-card settings-account-card">
+                    <div className="settings-card-heading">
+                      <span className="settings-section-kicker">
+                        PROFILE & SECURITY
+                      </span>
+                      <h2>Account</h2>
+                    </div>
+                    <p className="settings-help">
+                      Your archive, API keys, connections, and exports remain
+                      private to your account.
+                    </p>
+                    <dl className="settings-account-facts">
+                      <div>
+                        <dt>Workspace</dt>
+                        <dd>{user?.username || "Personal workspace"}</dd>
+                      </div>
+                      <div>
+                        <dt>Role</dt>
+                        <dd>
+                          {user?.role === "admin" ? "Administrator" : "Member"}
+                        </dd>
+                      </div>
+                      {user?.createdAt && (
+                        <div>
+                          <dt>Member since</dt>
+                          <dd>
+                            {new Date(user.createdAt).toLocaleDateString()}
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
+                  </section>
+                  {user?.role === "admin" && <AccessManagement />}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -3357,7 +3853,9 @@ function App() {
     try {
       setJobDetails(await api<JobDetails>(`/api/v1/jobs/${job.id}`));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Details unavailable");
+      setMessage(
+        error instanceof Error ? error.message : "Details unavailable",
+      );
     }
   }
   const profileInitial = user?.username.slice(0, 1).toUpperCase() || "S";
@@ -3750,49 +4248,87 @@ function App() {
                 <h1>Activity</h1>
                 <p>Track captures and resolve issues.</p>
               </header>
-              {message && <p className="action-feedback" role="status">{message}</p>}
+              {message && (
+                <p className="action-feedback" role="status">
+                  {message}
+                </p>
+              )}
               {[
                 { title: "Needs attention", items: failedJobs, kind: "failed" },
-                { title: "Processing now", items: processingJobs, kind: "processing" },
-                { title: "Completed history", items: completedJobs, kind: "complete" },
+                {
+                  title: "Processing now",
+                  items: processingJobs,
+                  kind: "processing",
+                },
+                {
+                  title: "Completed history",
+                  items: completedJobs,
+                  kind: "complete",
+                },
               ].map((group) => (
                 <section className="activity-group" key={group.kind}>
                   <div className="activity-group-heading">
                     <h2>{group.title}</h2>
                     {group.kind === "failed" && group.items.length > 0 && (
-                      <span className="activity-failed-count">{group.items.length} failed</span>
+                      <span className="activity-failed-count">
+                        {group.items.length} failed
+                      </span>
                     )}
                   </div>
                   {group.items.length === 0 ? (
                     <p className="activity-empty">
-                      {group.kind === "failed" ? "Nothing needs attention." :
-                        group.kind === "processing" ? "No captures processing now." :
-                        "Completed captures will appear here."}
+                      {group.kind === "failed"
+                        ? "Nothing needs attention."
+                        : group.kind === "processing"
+                          ? "No captures processing now."
+                          : "Completed captures will appear here."}
                     </p>
                   ) : (
                     <div className="activity-list">
                       {group.items.map((job) => (
-                        <article className={`activity-card ${highlightedJob === job.id ? "highlighted" : ""}`} key={job.id}>
+                        <article
+                          className={`activity-card ${highlightedJob === job.id ? "highlighted" : ""}`}
+                          key={job.id}
+                        >
                           <div className="activity-card-main">
                             <div className="activity-card-title">
                               <PlatformIcon url={job.normalizedUrl} />
-                              <strong>{job.displayTitle || sourceReference(job.normalizedUrl)}</strong>
+                              <strong>
+                                {job.displayTitle ||
+                                  sourceReference(job.normalizedUrl)}
+                              </strong>
                             </div>
                             {group.kind === "failed" ? (
                               <p>{failureFor(job).message}</p>
                             ) : group.kind === "processing" ? (
                               <p>{stageCopy[job.status] || job.status}…</p>
                             ) : (
-                              <p>Saved {new Date(job.createdAt).toLocaleDateString()} · Open details ↗</p>
+                              <p>
+                                Saved{" "}
+                                {new Date(job.createdAt).toLocaleDateString()} ·
+                                Open details ↗
+                              </p>
                             )}
                           </div>
                           <div className="activity-card-actions">
-                            <button type="button" className="activity-details" onClick={() => void showJobDetails(job)}>
-                              {group.kind === "failed" ? "Technical details" : "Open details"}
+                            <button
+                              type="button"
+                              className="activity-details"
+                              onClick={() => void showJobDetails(job)}
+                            >
+                              {group.kind === "failed"
+                                ? "Technical details"
+                                : "Open details"}
                               <ChevronRight aria-hidden="true" />
                             </button>
                             {group.kind === "failed" && (
-                              <button type="button" className="activity-retry" onClick={() => void retryJob(job)}>Retry</button>
+                              <button
+                                type="button"
+                                className="activity-retry"
+                                onClick={() => void retryJob(job)}
+                              >
+                                Retry
+                              </button>
                             )}
                           </div>
                         </article>
@@ -3809,7 +4345,10 @@ function App() {
             <div className="capture-panel">
               <div className="capture-intro">
                 <h1>Capture a post</h1>
-                <p>Save an Instagram or Facebook post to your private knowledge base.</p>
+                <p>
+                  Save an Instagram or Facebook post to your private knowledge
+                  base.
+                </p>
               </div>
               <form onSubmit={submit}>
                 <label>

@@ -207,6 +207,9 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   );
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Data & export", exact: true })
+    .click();
   const languageSelect = page.getByRole("combobox", {
     name: "Default language",
   });
