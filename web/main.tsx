@@ -467,11 +467,6 @@ function JobInfoModal({
             <code>{job.errorDetail || job.error}</code>
           </details>
         )}
-        {job.resultNotePath && (
-          <small className="note-result">
-            Archive note: {job.resultNotePath}
-          </small>
-        )}
       </section>
     </div>
   );
