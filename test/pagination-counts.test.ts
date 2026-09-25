@@ -168,15 +168,38 @@ describe("capture pagination and count queries", () => {
       createdAt,
     });
     store.database
-      .prepare("UPDATE captures SET platform='' WHERE id=?")
+      .prepare("UPDATE captures SET platform='',creator=NULL WHERE id=?")
       .run(empty.id);
     addCapture(store, other.id, "sort-other", {
       title: "Before every owner result",
       platform: "facebook",
       topics: ["aaa"],
       classify: true,
+      classification: {
+        primaryDomain: "Learning",
+        country: null,
+        city: null,
+        subcategory: "Guides",
+        secondaryTopics: [],
+        confidence: 0.9,
+      },
       createdAt,
     });
+    const learning = store
+      .libraryTree()
+      .find((node) => node.kind === "domain" && node.label === "Learning")!;
+    store.moveCapture(sameTopic.id, learning.id);
+    const sourceOrder = [travel, sameTopic].sort((left, right) =>
+      right.id.localeCompare(left.id),
+    );
+    const sourceLast = sourceOrder[0]!;
+    const sourceFirst = sourceOrder[1]!;
+    store.database
+      .prepare("UPDATE captures SET creator='Zulu creator' WHERE id=?")
+      .run(sourceLast.id);
+    store.database
+      .prepare("UPDATE captures SET creator='Alpha creator' WHERE id=?")
+      .run(sourceFirst.id);
 
     const pages = (sort: { key: "title" | "savedAt" | "source" | "category" | "topic"; direction: "asc" | "desc" }, platform?: string) => {
       const ids: string[] = [];
@@ -213,17 +236,15 @@ describe("capture pagination and count queries", () => {
         .sort((left, right) => right.localeCompare(left)),
     );
     expect(pages({ key: "source", direction: "asc" })).toEqual([
-      ...[travel.id, sameTopic.id].sort((left, right) =>
-        right.localeCompare(left),
-      ),
+      sourceFirst.id,
+      sourceLast.id,
       technology.id,
       empty.id,
     ]);
     expect(pages({ key: "category", direction: "asc" })).toEqual([
-      ...[travel.id, sameTopic.id].sort((left, right) =>
-        right.localeCompare(left),
-      ),
+      sameTopic.id,
       technology.id,
+      travel.id,
       empty.id,
     ]);
     expect(pages({ key: "topic", direction: "asc" })).toEqual([

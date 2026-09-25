@@ -528,10 +528,19 @@ export class JobStore {
         : `(${sortValue} IS NULL) ASC,${sortValue} ${sort.direction.toUpperCase()},c.id DESC`;
     const rows = this.database
       .prepare(
-        `SELECT c.*,${sortValue} AS inbox_sort_value
+        `WITH RECURSIVE category_roots(node_id,parent_id,label) AS (
+           SELECT id,parent_id,label FROM library_nodes
+           UNION ALL
+           SELECT category_roots.node_id,parent.parent_id,parent.label
+           FROM category_roots
+           JOIN library_nodes parent ON parent.id=category_roots.parent_id
+         )
+         SELECT c.*,${sortValue} AS inbox_sort_value
          FROM captures c
          LEFT JOIN capture_library cl ON cl.capture_id=c.id
-         LEFT JOIN library_nodes category ON category.id=cl.node_id
+         LEFT JOIN (
+           SELECT node_id,label FROM category_roots WHERE parent_id IS NULL
+         ) category ON category.node_id=cl.node_id
          ${where.length ? "WHERE " + where.join(" AND ") : ""}
          ORDER BY ${orderBy} LIMIT ?`,
       )
@@ -3077,7 +3086,13 @@ function captureSortExpression(key: CaptureSortKey) {
     case "savedAt":
       return "c.created_at";
     case "source":
-      return "NULLIF(lower(trim(c.platform)), '')";
+      return `CASE
+        WHEN NULLIF(trim(c.platform), '') IS NULL THEN NULL
+        ELSE lower(trim(c.platform)) || CASE
+          WHEN NULLIF(trim(c.creator), '') IS NULL THEN ''
+          ELSE ' · ' || lower(trim(c.creator))
+        END
+      END`;
     case "category":
       return "NULLIF(lower(trim(category.label)), '')";
     case "topic":
