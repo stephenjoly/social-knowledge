@@ -68,9 +68,9 @@ test("configures transcription and analysis independently and disconnects safely
     .getByRole("button", { name: "Capture a post", exact: true })
     .click();
   await page
-    .getByLabel("Facebook or Instagram URL")
+    .getByLabel("Post URL")
     .fill("https://www.instagram.com/reel/qa-test/");
-  await page.getByRole("button", { name: "Capture", exact: true }).click();
+  await page.getByRole("button", { name: "Save post", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
 
   await page.getByRole("button", { name: "Connect OpenAI" }).click();
