@@ -238,6 +238,7 @@
 }
 
 .inbox-filter-builder header {
+  position: static;
   display: flex;
   align-items: start;
   justify-content: space-between;
@@ -246,6 +247,7 @@
   padding: 0;
   border: 0;
   background: transparent;
+  backdrop-filter: none;
 }
 
 .inbox-filter-builder .eyebrow {

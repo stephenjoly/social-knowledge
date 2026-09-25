@@ -307,6 +307,10 @@
   font-size: 13px;
 }
 
+.capture-feedback.error {
+  color: #b42318;
+}
+
 .capture-hint {
   margin: -8px 0 0;
 }

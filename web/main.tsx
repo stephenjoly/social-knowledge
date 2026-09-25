@@ -603,12 +603,16 @@ function AppNavigation({
         <button
           type="button"
           className={tab === nextTab ? "active" : ""}
+          aria-label={label}
           aria-current={tab === nextTab ? "page" : undefined}
           onClick={() => onNavigate(nextTab)}
           key={nextTab}
         >
           <Icon className="app-nav-icon" aria-hidden="true" />
-          <span>{label}</span>
+          <span className="app-nav-desktop-label">{label}</span>
+          <span className="app-nav-mobile-label" aria-hidden="true">
+            {nextTab === "library" ? "Knowledge" : label}
+          </span>
           {nextTab === "activity" && activeCount > 0 && (
             <span className="app-nav-badge" aria-hidden="true">
               {activeCount}
@@ -4044,6 +4048,7 @@ function App() {
   const [captureUrl, setCaptureUrl] = useState("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
+  const [captureError, setCaptureError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [captureSubmitted, setCaptureSubmitted] = useState(false);
   const [jobDetails, setJobDetails] = useState<JobDetails | null>(null);
@@ -4272,6 +4277,7 @@ function App() {
   const navigateTo = (nextTab: AppTab) => {
     if (nextTab === "capture") {
       setMessage("");
+      setCaptureError(false);
       setCaptureSubmitted(false);
     }
     setTab(nextTab);
@@ -4320,6 +4326,7 @@ function App() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     setSubmitting(true);
+    setCaptureError(false);
     setMessage("Submitting…");
     try {
       const result = await api<{
@@ -4348,6 +4355,7 @@ function App() {
         "analysis_provider_required",
         "transcription_required",
       ].includes(errorCode ?? "");
+      setCaptureError(true);
       setMessage(
         errorCode === "transcription_required"
           ? "Choose a connected OpenAI transcription model in Settings before capturing."
@@ -4355,6 +4363,8 @@ function App() {
             ? "Choose a connected analysis provider in Settings before capturing."
             : providerRequired
               ? "Finish AI processing setup before capturing."
+              : errorCode === "invalid_url" || errorCode === "invalid_request"
+                ? "Enter a valid Facebook or Instagram post URL."
               : e instanceof Error
                 ? e.message
                 : "Submission failed",
@@ -5004,7 +5014,7 @@ function App() {
                   <small>Supports public and connected-account posts.</small>
                 </label>
                 <label>
-                  Why are you saving it? <span className="capture-optional">Optional</span>
+                  <span>Why are you saving it? <span className="capture-optional">Optional</span></span>
                   <textarea
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
@@ -5018,7 +5028,7 @@ function App() {
                   {submitting ? "Submitting…" : "Capture post"}
                 </button>
                 </div>
-                {message && <p className="capture-feedback" role="status">{message}</p>}
+                {message && <p className={`capture-feedback ${captureError ? "error" : ""}`} role={captureError ? "alert" : "status"}>{message}</p>}
               </form>
               )}
             </section>

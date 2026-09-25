@@ -2236,6 +2236,10 @@ a:focus-visible {
   flex: 0 0 auto;
 }
 
+.app-nav-mobile-label {
+  display: none;
+}
+
 .app-nav-badge {
   display: grid;
   min-width: 19px;
@@ -2954,6 +2958,7 @@ details {
   }
 
   .app-nav button {
+    flex-direction: column;
     min-height: 54px;
     justify-content: center;
     gap: 3px;
@@ -2966,6 +2971,18 @@ details {
   .app-nav button.active,
   .app-nav button:hover {
     background: transparent;
+  }
+
+  .app-nav-desktop-label {
+    display: none;
+  }
+
+  .app-nav-mobile-label {
+    display: block;
+    overflow: hidden;
+    max-width: 100%;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .app-nav-icon {

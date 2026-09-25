@@ -19,6 +19,7 @@ const captures = [
     sourceUrl: "https://www.instagram.com/reel/example-one",
     synopsis: "A short reel on making space for a small creative habit.",
     topics: ["Creative practice"],
+    categoryLabel: "Learning",
     createdAt: "2026-09-24T12:00:00.000Z",
     description: null,
     transcript: "",
@@ -47,6 +48,7 @@ const captures = [
     synopsis:
       "Practical ideas for collecting visual references without clutter.",
     topics: ["Organization"],
+    categoryLabel: "Workflows",
     createdAt: "2026-09-22T12:00:00.000Z",
     description: null,
     transcript: "",
@@ -114,6 +116,8 @@ test("switches real Inbox controls over a sorted capture response", async ({
   await page.getByRole("button", { name: "Table" }).click();
   await expect(page.locator(".inbox-capture-table")).toBeVisible();
   await expect(page.getByRole("button", { name: /^Title/ })).toBeVisible();
+  await expect(page.locator(".inbox-capture-table")).toContainText("Learning");
+  await expect(page.locator(".inbox-capture-table")).toContainText("Workflows");
 
   await page.getByRole("button", { name: "+ Add filter" }).click();
   await page.getByLabel("Platform").selectOption("instagram");
