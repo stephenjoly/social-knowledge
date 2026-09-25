@@ -39,7 +39,15 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await page
     .getByRole("button", { name: "Knowledge base", exact: true })
     .click();
-  await expect(page.getByRole("heading", { name: "Library" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  await page.getByRole("button", { name: "Export archive" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Download your archive" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("dialog").getByText("Markdown notes and capture metadata"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
   await expect(
     page.getByRole("button", { name: "Expand Travel" }),
   ).toBeVisible();
@@ -223,6 +231,17 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
     .getByRole("button", { name: "Knowledge base", exact: true })
     .click();
   await expect(page.locator(".library-layout")).toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: "Browse tree", selected: true }),
+  ).toBeVisible();
+  await page
+    .locator(".library-tree")
+    .getByRole("button", { name: "Home" })
+    .click();
+  await expect(
+    page.getByRole("tab", { name: "Reading pane", selected: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Reading pane")).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(

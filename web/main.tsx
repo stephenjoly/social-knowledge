@@ -46,6 +46,7 @@ import {
   type StreamState,
 } from "./chat-stream";
 import "./styles.css";
+import "./knowledge-ask.css";
 
 type Asset = {
   id: string;
@@ -2151,6 +2152,11 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
     "# Social Knowledge\n\nChoose a category or capture to explore your library.",
   );
   const [selectedCapture, setSelectedCapture] = useState<string | null>(null);
+  const [treeQuery, setTreeQuery] = useState("");
+  const [mobilePane, setMobilePane] = useState<"browse" | "reading">("browse");
+  const [libraryExports, setLibraryExports] = useState<LibraryExport[]>([]);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportMessage, setExportMessage] = useState("");
   async function loadTree() {
     const result = await api<{
       nodes: LibraryNode[];
@@ -2159,9 +2165,32 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
     setNodes(result.nodes);
     setUnclassifiedCount(result.unclassifiedCount);
   }
+  async function loadExports() {
+    const result = await api<{ exports: LibraryExport[] }>(
+      "/api/v1/library-exports",
+    );
+    setLibraryExports(result.exports);
+  }
   useEffect(() => {
     void loadTree();
+    void loadExports();
   }, []);
+  useEffect(() => {
+    if (!libraryExports.some((item) => item.status === "pending")) {
+      if (exportMessage === "Preparing your archive…") {
+        setExportMessage(
+          libraryExports[0]?.status === "complete"
+            ? "Your archive is ready to download."
+            : libraryExports[0]?.status === "failed"
+              ? "Archive export could not be completed. You can try again."
+              : "",
+        );
+      }
+      return;
+    }
+    const timer = window.setInterval(() => void loadExports(), 2500);
+    return () => window.clearInterval(timer);
+  }, [exportMessage, libraryExports]);
   useEffect(() => {
     if (!nodes.length) return;
     try {
@@ -2181,6 +2210,7 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
     setNode(result.node);
     setMarkdown(result.markdown);
     setSelectedCapture(null);
+    setMobilePane("reading");
   }
   async function openCapture(id: string) {
     const result = await api<{ markdown: string }>(
@@ -2190,6 +2220,7 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
     setSelectedCapture(id);
     setMarkdown(result.markdown);
     setNode(null);
+    setMobilePane("reading");
   }
   async function openUnclassified() {
     const result = await api<{ captures: Capture[] }>(
@@ -2209,82 +2240,139 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
         ),
       ].join("\n"),
     );
+    setMobilePane("reading");
   }
   const children = (parentId: string | null) =>
     nodes.filter((candidate) => candidate.parentId === parentId);
+  const nodeMatchesTreeQuery = (item: LibraryNode): boolean => {
+    const query = treeQuery.trim().toLocaleLowerCase();
+    if (!query) return true;
+    if (item.label.toLocaleLowerCase().includes(query)) return true;
+    return children(item.id).some(nodeMatchesTreeQuery);
+  };
   const branch = (parentId: string | null, depth = 0): ReactNode =>
-    children(parentId).map((item) => {
-      const expandable = item.childCount > 0;
-      const expanded = expandedNodes.has(item.id);
-      const branchId = `library-branch-${item.id}`;
-      return (
-        <Collapsible
-          key={item.id}
-          open={expanded}
-          onOpenChange={(open) =>
-            setExpandedNodes((current) => {
-              const next = new Set(current);
-              if (open) next.add(item.id);
-              else next.delete(item.id);
-              return next;
-            })
-          }
-        >
-          <div
-            className={`library-tree-row ${selected === item.id ? "selected" : ""}`}
-            style={{ paddingLeft: 4 + depth * 16 }}
+    children(parentId)
+      .filter(nodeMatchesTreeQuery)
+      .map((item) => {
+        const expandable = item.childCount > 0;
+        const expanded = expandedNodes.has(item.id);
+        const branchId = `library-branch-${item.id}`;
+        return (
+          <Collapsible
+            key={item.id}
+            open={expanded}
+            onOpenChange={(open) =>
+              setExpandedNodes((current) => {
+                const next = new Set(current);
+                if (open) next.add(item.id);
+                else next.delete(item.id);
+                return next;
+              })
+            }
           >
-            {expandable ? (
-              <CollapsibleTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="library-tree-toggle"
-                  aria-label={`${expanded ? "Collapse" : "Expand"} ${item.label}`}
-                  aria-controls={branchId}
-                >
-                  <ChevronRight aria-hidden="true" />
-                </Button>
-              </CollapsibleTrigger>
-            ) : (
-              <span className="library-tree-leaf" aria-hidden="true" />
-            )}
-            <Button
-              type="button"
-              variant="ghost"
-              className="library-tree-node"
-              onClick={() => void openNode(item.id)}
+            <div
+              className={`library-tree-row ${selected === item.id ? "selected" : ""}`}
+              style={{ paddingLeft: 4 + depth * 16 }}
             >
-              <span className="library-tree-label">
-                {expandable && expanded ? <FolderOpen /> : <Folder />}
-                <span>{item.label}</span>
-              </span>
-              <small className="library-count">{item.captureCount}</small>
-            </Button>
-          </div>
-          {expandable && (
-            <CollapsibleContent id={branchId} className="library-tree-branch">
-              {branch(item.id, depth + 1)}
-            </CollapsibleContent>
-          )}
-        </Collapsible>
-      );
-    });
+              {expandable ? (
+                <CollapsibleTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="library-tree-toggle"
+                    aria-label={`${expanded ? "Collapse" : "Expand"} ${item.label}`}
+                    aria-controls={branchId}
+                  >
+                    <ChevronRight aria-hidden="true" />
+                  </Button>
+                </CollapsibleTrigger>
+              ) : (
+                <span className="library-tree-leaf" aria-hidden="true" />
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                className="library-tree-node"
+                onClick={() => void openNode(item.id)}
+              >
+                <span className="library-tree-label">
+                  {expandable && expanded ? <FolderOpen /> : <Folder />}
+                  <span>{item.label}</span>
+                </span>
+                <small className="library-count">{item.captureCount}</small>
+              </Button>
+            </div>
+            {expandable && (
+              <CollapsibleContent id={branchId} className="library-tree-branch">
+                {branch(item.id, depth + 1)}
+              </CollapsibleContent>
+            )}
+          </Collapsible>
+        );
+      });
   async function refresh() {
     await loadTree();
     if (node) await openNode(node.id);
   }
+  const selectedTitle =
+    node?.label ??
+    (selectedCapture
+      ? "Capture note"
+      : selected === "unclassified"
+        ? "Unclassified"
+        : "Home");
+  const preparingExport = libraryExports.some(
+    (item) => item.status === "pending",
+  );
   return (
     <div className="library-page">
-      <div className="page-title">
-        <div className="eyebrow">Generated knowledge base</div>
-        <h1>Library</h1>
-        <p>
-          Browse stable Markdown notes through an organized, living hierarchy.
-        </p>
+      <div className="knowledge-page-heading">
+        <div>
+          <div className="eyebrow">Knowledge base</div>
+          <h1>{selectedTitle}</h1>
+          <p>
+            {selectedCapture
+              ? "Generated Markdown, source context, and the original capture."
+              : "Browse generated notes by category. Your saved posts remain the source."}
+          </p>
+        </div>
+        <div className="knowledge-page-actions">
+          <a className="knowledge-back-link" href="/">
+            ← Back to Inbox
+          </a>
+          <button
+            type="button"
+            className="knowledge-export-button"
+            onClick={() => setExportDialogOpen(true)}
+          >
+            Export archive
+          </button>
+        </div>
       </div>
-      <div className={`library-layout ${selected !== "home" ? "viewing" : ""}`}>
+      <div
+        className="library-mobile-switch"
+        role="tablist"
+        aria-label="Knowledge base view"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mobilePane === "browse"}
+          onClick={() => setMobilePane("browse")}
+        >
+          Browse tree
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mobilePane === "reading"}
+          onClick={() => setMobilePane("reading")}
+        >
+          Reading pane
+        </button>
+      </div>
+      <div className={`library-layout mobile-${mobilePane}`}>
         <aside className="library-sidebar" aria-label="Knowledge tree">
           <div className="library-sidebar-header">
             <div>
@@ -2301,6 +2389,25 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
               Collapse all
             </Button>
           </div>
+          <label className="knowledge-tree-search">
+            <Search aria-hidden="true" />
+            <span className="sr-only">Search categories</span>
+            <input
+              type="search"
+              placeholder="Search categories"
+              value={treeQuery}
+              onChange={(event) => setTreeQuery(event.target.value)}
+            />
+            {treeQuery && (
+              <button
+                type="button"
+                aria-label="Clear category search"
+                onClick={() => setTreeQuery("")}
+              >
+                <X aria-hidden="true" />
+              </button>
+            )}
+          </label>
           <ScrollArea className="library-tree">
             <Button
               type="button"
@@ -2313,6 +2420,7 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
                 setMarkdown(
                   "# Social Knowledge\n\nChoose a domain to begin exploring.",
                 );
+                setMobilePane("reading");
               }}
             >
               <House aria-hidden="true" />
@@ -2336,19 +2444,7 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
             </Button>
           </ScrollArea>
         </aside>
-        <section className="markdown-pane">
-          {selected !== "home" && (
-            <button
-              className="library-mobile-back"
-              onClick={() => {
-                setSelected("home");
-                setNode(null);
-                setSelectedCapture(null);
-              }}
-            >
-              ‹ Browse library
-            </button>
-          )}
+        <section className="markdown-pane" aria-label="Reading pane">
           {node && (
             <div className="library-toolbar">
               <div className="library-breadcrumb">
@@ -2477,6 +2573,77 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
           </article>
         </section>
       </div>
+      {exportDialogOpen && (
+        <div
+          className="knowledge-export-scrim"
+          role="presentation"
+          onClick={() => setExportDialogOpen(false)}
+        >
+          <section
+            className="knowledge-export-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="export-archive-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div>
+              <div className="eyebrow">Portable backup</div>
+              <h2 id="export-archive-title">Download your archive</h2>
+              <p>
+                Create a complete private copy of your saved knowledge. Account
+                credentials and server configuration are excluded.
+              </p>
+            </div>
+            <ul className="knowledge-export-contents">
+              <li>Markdown notes and capture metadata</li>
+              <li>Transcripts, comments, images, audio, and video</li>
+              <li>One secure download link, available for 24 hours</li>
+            </ul>
+            {exportMessage && (
+              <p className="knowledge-export-message" role="status">
+                {exportMessage}
+              </p>
+            )}
+            {libraryExports[0]?.status === "complete" && (
+              <a
+                className="knowledge-export-ready"
+                href={`/api/v1/library-exports/${libraryExports[0].id}/download`}
+              >
+                Download ready archive
+              </a>
+            )}
+            <div className="knowledge-export-actions">
+              <button
+                type="button"
+                className="knowledge-dialog-cancel"
+                onClick={() => setExportDialogOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="knowledge-export-button"
+                disabled={preparingExport}
+                onClick={async () => {
+                  setExportMessage("Preparing your archive…");
+                  try {
+                    await api("/api/v1/library-exports", { method: "POST" });
+                    await loadExports();
+                  } catch (error) {
+                    setExportMessage(
+                      error instanceof Error
+                        ? error.message
+                        : "Archive export could not start.",
+                    );
+                  }
+                }}
+              >
+                {preparingExport ? "Preparing…" : "Prepare download"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -2488,6 +2655,7 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState("");
   const [reconciliationNotice, setReconciliationNotice] = useState("");
+  const [conversationListOpen, setConversationListOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const selectedConversationIdRef = useRef<string | null>(null);
   const activeAttemptRef = useRef<{
@@ -2882,214 +3050,250 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
     "Which products have creators recommended?",
   ];
   return (
-    <div className="ask-page">
-      <aside className="conversation-sidebar">
-        <button className="new-chat" onClick={() => void createConversation()}>
-          ＋ New conversation
-        </button>
-        {conversations.map((conversation) => (
-          <button
-            key={conversation.id}
-            className={current?.id === conversation.id ? "selected" : ""}
-            onClick={() => void openConversation(conversation.id)}
-          >
-            <span>{conversation.title}</span>
-            <small>{conversation.messageCount ?? 0} messages</small>
-          </button>
-        ))}
-      </aside>
-      <section className="chat-panel">
-        <div className="chat-heading">
-          <div>
-            <div className="eyebrow">Your saved archive</div>
-            <h1>Ask AI</h1>
-          </div>
-          {current && (
-            <button
-              className="delete-chat"
-              disabled={streaming}
-              onClick={async () => {
-                if (!window.confirm("Delete this conversation?")) return;
-                await api(`/api/v1/conversations/${current.id}`, {
-                  method: "DELETE",
-                });
-                setCurrent(null);
-                selectedConversationIdRef.current = null;
-                await loadList();
-              }}
-            >
-              Delete
-            </button>
-          )}
+    <div className="ask-page-wrap">
+      <div className="ask-page-intro">
+        <div>
+          <div className="eyebrow">Your saved archive</div>
+          <h1>Ask</h1>
+          <p>Answers from your saved posts, with sources.</p>
         </div>
-        <div className="messages">
-          {!current?.messages?.length && (
-            <div className="ask-empty">
-              <h2>Ask what you’ve saved.</h2>
-              <p>
-                Answers are grounded only in your archived captures and link
-                back to their evidence.
-              </p>
-              <div className="suggestions">
-                {suggestions.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    onClick={() => void send(suggestion)}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {current?.messages?.map((message) => (
-            <article
-              className={`chat-message ${message.role} ${message.status}`}
-              key={message.id}
+      </div>
+      <div className="ask-page">
+        <aside
+          className={`conversation-sidebar ${conversationListOpen ? "open" : ""}`}
+          aria-label="Ask conversations"
+        >
+          <div className="conversation-sidebar-heading">
+            <strong>Conversations</strong>
+            <button
+              type="button"
+              className="conversation-list-toggle"
+              aria-expanded={conversationListOpen}
+              aria-controls="ask-conversation-list"
+              onClick={() => setConversationListOpen((open) => !open)}
             >
-              <div className="message-role">
-                {message.role === "user" ? "You" : "Social Knowledge"}
-              </div>
-              <div className="message-content">
-                {message.content ? (
-                  message.role === "assistant" ? (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      urlTransform={(url) =>
-                        /^(capture:|https?:|mailto:)/i.test(url) ? url : ""
-                      }
-                      components={{
-                        a: ({ href, children }) => {
-                          if (href?.startsWith("capture:")) {
-                            const source = message.sources.find(
-                              ({ id }) => id === href.slice(8),
-                            );
-                            if (source)
-                              return (
-                                <button
-                                  type="button"
-                                  className={`inline-capture-link platform-${source.platform.toLowerCase()}`}
-                                  aria-label={`Open ${source.platform} reel: ${source.title}`}
-                                  title={`Open ${source.title}`}
-                                  onClick={() => onOpen(source.id)}
-                                >
-                                  <PlatformMark platform={source.platform} />
-                                  <span>{children}</span>
-                                </button>
-                              );
-                          }
-                          return (
-                            <a href={href} target="_blank" rel="noreferrer">
-                              {children}
-                            </a>
-                          );
-                        },
-                      }}
-                    >
-                      {answerWithCaptureLinks(message.content, message.sources)}
-                    </ReactMarkdown>
-                  ) : (
-                    message.content
-                  )
-                ) : message.status === "pending" ? (
-                  <span className="typing">
-                    {message.statusText || "Searching your archive…"}
-                  </span>
-                ) : (
-                  <span>
-                    {message.status === "cancelled"
-                      ? "Answer stopped."
-                      : "Ask AI could not finish this answer."}
-                  </span>
-                )}
-              </div>
-              {message.role === "assistant" &&
-                (message.status === "failed" ||
-                  message.status === "cancelled") && (
-                  <button
-                    className="retry-answer"
-                    disabled={streaming}
-                    onClick={() => void retry(message)}
-                  >
-                    Retry
-                  </button>
-                )}
-              {message.role === "assistant" && message.sufficient === false && (
-                <small className="insufficient">
-                  The saved archive did not contain enough evidence.
-                </small>
-              )}
-              {message.sources?.length > 0 && (
-                <div className="answer-sources">
-                  <strong>Sources</strong>
-                  {message.sources.map((source) => (
+              {conversationListOpen ? "Hide" : "Browse"}
+            </button>
+          </div>
+          <button
+            className="new-chat"
+            onClick={() => void createConversation()}
+          >
+            ＋ New conversation
+          </button>
+          <div id="ask-conversation-list" className="conversation-list">
+            {conversations.map((conversation) => (
+              <button
+                key={conversation.id}
+                className={current?.id === conversation.id ? "selected" : ""}
+                onClick={() => {
+                  setConversationListOpen(false);
+                  void openConversation(conversation.id);
+                }}
+              >
+                <span>{conversation.title}</span>
+                <small>{conversation.messageCount ?? 0} messages</small>
+              </button>
+            ))}
+          </div>
+        </aside>
+        <section className="chat-panel">
+          <div className="chat-heading">
+            <div>
+              <div className="eyebrow">Your saved archive</div>
+              <h1>Ask AI</h1>
+            </div>
+            {current && (
+              <button
+                className="delete-chat"
+                disabled={streaming}
+                onClick={async () => {
+                  if (!window.confirm("Delete this conversation?")) return;
+                  await api(`/api/v1/conversations/${current.id}`, {
+                    method: "DELETE",
+                  });
+                  setCurrent(null);
+                  selectedConversationIdRef.current = null;
+                  await loadList();
+                }}
+              >
+                Delete
+              </button>
+            )}
+          </div>
+          <div className="messages">
+            {!current?.messages?.length && (
+              <div className="ask-empty">
+                <h2>Ask what you’ve saved.</h2>
+                <p>
+                  Answers are grounded only in your archived captures and link
+                  back to their evidence.
+                </p>
+                <div className="suggestions">
+                  {suggestions.map((suggestion) => (
                     <button
-                      key={source.id}
-                      aria-label={`Open ${source.platform} reel: ${source.title}`}
-                      onClick={() => onOpen(source.id)}
+                      key={suggestion}
+                      onClick={() => void send(suggestion)}
                     >
-                      <span
-                        className={`source-number platform-${source.platform.toLowerCase()}`}
-                      >
-                        <PlatformMark platform={source.platform} />
-                        <span>{source.citation}</span>
-                      </span>
-                      <span>
-                        <b>{source.title}</b>
-                        <small>
-                          {source.breadcrumb.join(" › ") || source.platform}
-                        </small>
-                      </span>
+                      {suggestion}
                     </button>
                   ))}
                 </div>
-              )}
-            </article>
-          ))}
-        </div>
-        {error && (
-          <p className="chat-error" role="alert">
-            {error}
-          </p>
-        )}
-        {reconciliationNotice && (
-          <p className="chat-error" role="status">
-            {reconciliationNotice}
-          </p>
-        )}
-        <form
-          className="chat-composer"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void send();
-          }}
-        >
-          <textarea
-            aria-label="Ask your archive"
-            placeholder="Ask about your saved places, products, recommendations…"
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void send();
-              }
+              </div>
+            )}
+            {current?.messages?.map((message) => (
+              <article
+                className={`chat-message ${message.role} ${message.status}`}
+                key={message.id}
+              >
+                <div className="message-role">
+                  {message.role === "user" ? "You" : "Social Knowledge"}
+                </div>
+                <div className="message-content">
+                  {message.content ? (
+                    message.role === "assistant" ? (
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        urlTransform={(url) =>
+                          /^(capture:|https?:|mailto:)/i.test(url) ? url : ""
+                        }
+                        components={{
+                          a: ({ href, children }) => {
+                            if (href?.startsWith("capture:")) {
+                              const source = message.sources.find(
+                                ({ id }) => id === href.slice(8),
+                              );
+                              if (source)
+                                return (
+                                  <button
+                                    type="button"
+                                    className={`inline-capture-link platform-${source.platform.toLowerCase()}`}
+                                    aria-label={`Open ${source.platform} reel: ${source.title}`}
+                                    title={`Open ${source.title}`}
+                                    onClick={() => onOpen(source.id)}
+                                  >
+                                    <PlatformMark platform={source.platform} />
+                                    <span>{children}</span>
+                                  </button>
+                                );
+                            }
+                            return (
+                              <a href={href} target="_blank" rel="noreferrer">
+                                {children}
+                              </a>
+                            );
+                          },
+                        }}
+                      >
+                        {answerWithCaptureLinks(
+                          message.content,
+                          message.sources,
+                        )}
+                      </ReactMarkdown>
+                    ) : (
+                      message.content
+                    )
+                  ) : message.status === "pending" ? (
+                    <span className="typing">
+                      {message.statusText || "Searching your archive…"}
+                    </span>
+                  ) : (
+                    <span>
+                      {message.status === "cancelled"
+                        ? "Answer stopped."
+                        : "Ask AI could not finish this answer."}
+                    </span>
+                  )}
+                </div>
+                {message.role === "assistant" &&
+                  (message.status === "failed" ||
+                    message.status === "cancelled") && (
+                    <button
+                      className="retry-answer"
+                      disabled={streaming}
+                      onClick={() => void retry(message)}
+                    >
+                      Retry
+                    </button>
+                  )}
+                {message.role === "assistant" &&
+                  message.sufficient === false && (
+                    <small className="insufficient">
+                      The saved archive did not contain enough evidence.
+                    </small>
+                  )}
+                {message.sources?.length > 0 && (
+                  <div className="answer-sources">
+                    <strong>Sources</strong>
+                    {message.sources.map((source) => (
+                      <button
+                        key={source.id}
+                        aria-label={`Open ${source.platform} reel: ${source.title}`}
+                        onClick={() => onOpen(source.id)}
+                      >
+                        <span
+                          className={`source-number platform-${source.platform.toLowerCase()}`}
+                        >
+                          <PlatformMark platform={source.platform} />
+                          <span>{source.citation}</span>
+                        </span>
+                        <span>
+                          <b>{source.title}</b>
+                          <small>
+                            {source.breadcrumb.join(" › ") || source.platform}
+                          </small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+          {error && (
+            <p className="chat-error" role="alert">
+              {error}
+            </p>
+          )}
+          {reconciliationNotice && (
+            <p className="chat-error" role="status">
+              {reconciliationNotice}
+            </p>
+          )}
+          <form
+            className="chat-composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void send();
             }}
-          />
-          <button
-            type={streaming ? "button" : "submit"}
-            className={streaming ? "stop-answer" : ""}
-            disabled={!streaming && !question.trim()}
-            onClick={streaming ? () => abortRef.current?.abort() : undefined}
           >
-            {streaming ? "Stop" : "Send"}
-          </button>
-        </form>
-        <small className="grounding-note">
-          Answers use only your saved archive. Open sources to verify creator
-          claims.
-        </small>
-      </section>
+            <textarea
+              aria-label="Ask your archive"
+              placeholder="Ask about your saved places, products, recommendations…"
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void send();
+                }
+              }}
+            />
+            <button
+              type={streaming ? "button" : "submit"}
+              className={streaming ? "stop-answer" : ""}
+              disabled={!streaming && !question.trim()}
+              onClick={streaming ? () => abortRef.current?.abort() : undefined}
+            >
+              {streaming ? "Stop" : "Send"}
+            </button>
+          </form>
+          <small className="grounding-note">
+            Answers use only your saved archive. Open sources to verify creator
+            claims.
+          </small>
+        </section>
+      </div>
     </div>
   );
 }
