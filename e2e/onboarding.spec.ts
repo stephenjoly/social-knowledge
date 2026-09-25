@@ -144,7 +144,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   await invitedPage.getByRole("button", { name: "Close capture" }).click();
   await invitedPage.getByRole("button", { name: "Inbox", exact: true }).click();
   await expect(
-    invitedPage.getByRole("heading", { name: "Ideas worth keeping." }),
+    invitedPage.getByRole("heading", { name: "Inbox", exact: true }),
   ).toBeVisible();
   await invitedPage.getByRole("button", { name: "Open account menu" }).click();
   const accountMenu = invitedPage.getByRole("dialog");

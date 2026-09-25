@@ -74,6 +74,7 @@ type Capture = {
   sourceUrl: string;
   synopsis: string;
   topics: string[];
+  categoryLabel?: string | null;
   createdAt: string;
   description: string | null;
   transcript: string;
@@ -4752,7 +4753,7 @@ function App() {
                       {captures.map((capture) => (
                         <CaptureCard
                           capture={capture}
-                          categoryLabel={activeCategory}
+                          categoryLabel={capture.categoryLabel ?? null}
                           onOpen={setDetail}
                           key={capture.id}
                         />
@@ -4795,7 +4796,7 @@ function App() {
                             {captures.map((capture) => (
                               <CaptureTableRow
                                 capture={capture}
-                                categoryLabel={activeCategory}
+                                categoryLabel={capture.categoryLabel ?? null}
                                 onOpen={setDetail}
                                 key={capture.id}
                               />
@@ -4810,7 +4811,7 @@ function App() {
                         {captures.map((capture) => (
                           <CaptureMobileRow
                             capture={capture}
-                            categoryLabel={activeCategory}
+                            categoryLabel={capture.categoryLabel ?? null}
                             onOpen={setDetail}
                             key={capture.id}
                           />
