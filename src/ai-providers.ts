@@ -361,6 +361,10 @@ export class AiProviderService {
                   ? { reasoning_effort: context.thinkingLevel }
                   : {}),
                 ...(request.stream ? { stream: true } : {}),
+                ...(context.diagnostic &&
+                typeof request.max_output_tokens === "number"
+                  ? { max_completion_tokens: request.max_output_tokens }
+                  : {}),
                 ...(format?.type === "json_schema"
                   ? {
                       response_format: {
@@ -378,6 +382,7 @@ export class AiProviderService {
             );
             if (request.stream) {
               return (async function* () {
+                let finishReason: string | null = null;
                 if (
                   completion &&
                   typeof (completion as any)[Symbol.asyncIterator] ===
@@ -385,23 +390,56 @@ export class AiProviderService {
                 ) {
                   for await (const chunk of completion as any) {
                     const delta = chunk.choices?.[0]?.delta?.content;
+                    const chunkFinishReason =
+                      chunk.choices?.[0]?.finish_reason;
+                    if (typeof chunkFinishReason === "string")
+                      finishReason = chunkFinishReason;
                     if (typeof delta === "string" && delta)
                       yield {
                         type: "response.output_text.delta",
                         delta,
                       };
                   }
+                  if (context.diagnostic)
+                    yield finishReason === "stop"
+                      ? {
+                          type: "response.completed",
+                          response: { status: "completed" },
+                        }
+                      : {
+                          type: "response.incomplete",
+                          response: { status: "incomplete" },
+                        };
                   return;
                 }
                 const output =
                   (completion as any).choices?.[0]?.message?.content ?? "";
+                const directFinishReason =
+                  (completion as any).choices?.[0]?.finish_reason;
                 if (output)
                   yield { type: "response.output_text.delta", delta: output };
+                if (context.diagnostic)
+                  yield directFinishReason === "stop"
+                    ? {
+                        type: "response.completed",
+                        response: { status: "completed" },
+                      }
+                    : {
+                        type: "response.incomplete",
+                        response: { status: "incomplete" },
+                      };
               })();
             }
+            const finishReason = (completion as any).choices?.[0]?.finish_reason;
             return {
               output_text:
                 (completion as any).choices?.[0]?.message?.content ?? "",
+              ...(context.diagnostic
+                ? {
+                    status:
+                      finishReason === "stop" ? "completed" : "incomplete",
+                  }
+                : {}),
             };
           } catch (error) {
             if (
@@ -631,13 +669,19 @@ export class AiProviderService {
           signal,
         );
         let receivedText = false;
+        let completed = false;
         for await (const event of stream) {
           if (
             event.type === "response.output_text.delta" &&
             typeof event.delta === "string" &&
-            event.delta.length > 0
+            event.delta.trim().length > 0
           )
             receivedText = true;
+          if (event.type === "response.completed") {
+            if (event.response.status !== "completed")
+              throw new DiagnosticFailure("invalid_response");
+            completed = true;
+          }
           if (
             event.type === "error" ||
             event.type === "response.failed" ||
@@ -645,7 +689,8 @@ export class AiProviderService {
           )
             throw new DiagnosticFailure("invalid_response");
         }
-        if (!receivedText) throw new DiagnosticFailure("invalid_response");
+        if (!receivedText || !completed)
+          throw new DiagnosticFailure("invalid_response");
       });
       return result("ok");
     } catch (error) {

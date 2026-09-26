@@ -53,6 +53,39 @@ describe("AI connection diagnostics", () => {
     return { config, fetch, service, store, user };
   }
 
+  async function connectedCerebrasService(
+    respond: (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) => Response | Promise<Response>,
+  ) {
+    const store = new JobStore(":memory:");
+    const user = store.createUser("cerebras-diagnostic-user", "hash");
+    const config = testConfig("/tmp/cerebras-ai-diagnostics");
+    const fetch = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        if (urlOf(input).endsWith("/models"))
+          return new Response(JSON.stringify({ data: [] }), { status: 200 });
+        return respond(input, init);
+      },
+    );
+    vi.stubGlobal("fetch", fetch);
+    const service = new AiProviderService(store, config);
+    await service.verifyAndSave(
+      user.id,
+      "cerebras",
+      "csk-diagnostic-placeholder",
+    );
+    service.saveSelections(user.id, {
+      analysis: {
+        provider: "cerebras",
+        model: config.cerebrasAnalysisModel,
+        thinkingLevel: null,
+      },
+    });
+    return { config, fetch, service, store, user };
+  }
+
   it("runs bounded structured and streaming tests with the saved selection only", async () => {
     const requestBodies: Array<Record<string, unknown>> = [];
     const { config, fetch, service, store, user } = await connectedService(
@@ -189,6 +222,95 @@ describe("AI connection diagnostics", () => {
     expect(result).toMatchObject({ ok: false, code: "invalid_response" });
     expect(calls).toBe(1);
     store.close();
+  });
+
+  it("requires a non-whitespace delta and completed event from OpenAI streams", async () => {
+    const eof = await connectedService(() =>
+      stream([{ type: "response.output_text.delta", delta: "partial" }]),
+    );
+    await expect(eof.service.testConnection(eof.user.id, "ask")).resolves.toMatchObject({
+      ok: false,
+      code: "invalid_response",
+    });
+    eof.store.close();
+
+    const whitespace = await connectedService(() =>
+      stream([
+        { type: "response.output_text.delta", delta: " \n\t" },
+        { type: "response.completed", response: { status: "completed" } },
+      ]),
+    );
+    await expect(
+      whitespace.service.testConnection(whitespace.user.id, "ask"),
+    ).resolves.toMatchObject({ ok: false, code: "invalid_response" });
+    whitespace.store.close();
+  });
+
+  it("maps Cerebras diagnostic caps and accepts only stop finish reasons", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const complete = await connectedCerebrasService((_input, init) => {
+      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<
+        string,
+        unknown
+      >;
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: { role: "assistant", content: '{"ok":true}' },
+            },
+          ],
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    });
+    await expect(
+      complete.service.testConnection(complete.user.id, "analysis"),
+    ).resolves.toMatchObject({ ok: true, code: "ok" });
+    expect(requestBody).toMatchObject({
+      model: complete.config.cerebrasAnalysisModel,
+      max_completion_tokens: 2048,
+    });
+    expect(requestBody).not.toHaveProperty("max_output_tokens");
+    complete.store.close();
+
+    const truncated = await connectedCerebrasService(() =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              finish_reason: "length",
+              message: { role: "assistant", content: '{"ok":true}' },
+            },
+          ],
+        }),
+        { headers: { "content-type": "application/json" } },
+      ),
+    );
+    await expect(
+      truncated.service.testConnection(truncated.user.id, "analysis"),
+    ).resolves.toMatchObject({ ok: false, code: "invalid_response" });
+    truncated.store.close();
+  });
+
+  it("rejects Cerebras streamed length and content-filter finish reasons", async () => {
+    for (const finishReason of ["length", "content_filter"]) {
+      const service = await connectedCerebrasService(() =>
+        stream([
+          {
+            choices: [
+              { delta: { content: "partial" }, finish_reason: null },
+            ],
+          },
+          { choices: [{ delta: {}, finish_reason: finishReason }] },
+        ]),
+      );
+      await expect(
+        service.service.testConnection(service.user.id, "ask"),
+      ).resolves.toMatchObject({ ok: false, code: "invalid_response" });
+      service.store.close();
+    }
   });
 
   it("rejects incomplete structured output even when it contains valid JSON", async () => {
