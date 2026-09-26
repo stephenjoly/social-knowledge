@@ -570,6 +570,25 @@ describe("API", () => {
         })
       ).statusCode,
     ).toBe(200);
+    const listedKeys = await app.inject({
+      method: "GET",
+      url: "/api/v1/api-keys",
+      headers: { cookie: cookie! },
+    });
+    expect(listedKeys.statusCode).toBe(200);
+    expect(listedKeys.body).not.toContain(createdKey.json().token);
+    const revokedKey = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/api-keys/${createdKey.json().apiKey.id}`,
+      headers: { cookie: cookie! },
+    });
+    expect(revokedKey.statusCode).toBe(200);
+    const revokedRead = await app.inject({
+      method: "GET",
+      url: "/api/v1/knowledge/search?q=lisbon",
+      headers: { authorization: `Bearer ${createdKey.json().token}` },
+    });
+    expect(revokedRead.statusCode).toBe(401);
   });
 
   it("does not trust spoofed forwarded addresses", async () => {

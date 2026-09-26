@@ -135,6 +135,8 @@ type LibraryExport = {
 };
 type ActivityEvent = {
   id: string;
+  attempt?: number | null;
+  failureCode?: string | null;
   status: string;
   createdAt: string;
   label: string;
@@ -419,7 +421,7 @@ const failureCopy: Record<string, { title: string; message: string }> = {
 };
 
 function failureFor(job: ActivityJob) {
-  if (job.errorCode && failureCopy[job.errorCode])
+  if (job.errorCode && Object.hasOwn(failureCopy, job.errorCode))
     return failureCopy[job.errorCode]!;
   return {
     title: "Capture failed",
@@ -543,19 +545,26 @@ const safeActivityMessages = new Set([
   "AI title ready; extracting detailed knowledge",
 ]);
 
-function safeActivityEvent(event: ActivityEvent) {
+function safeActivityEvent(event: ActivityEvent): ActivityEvent | null {
   const label = Object.hasOwn(activityLogLabels, event.status)
     ? activityLogLabels[event.status]
     : null;
   if (!label) return null;
   return {
     ...event,
+    attempt: Number.isSafeInteger(event.attempt) && (event.attempt ?? 0) > 0 ? event.attempt : null,
     label: event.status === "queued" && event.message === "Manual retry requested"
-      ? "Retry requested"
-      : label,
-    message: safeActivityMessages.has(event.message ?? "")
-      ? event.message
-      : null,
+      ? "Manual retry requested"
+      : event.status === "queued" && event.message === "Retry scheduled"
+        ? "Automatic retry scheduled"
+        : label,
+    message: event.status === "failed"
+      ? event.failureCode && Object.hasOwn(failureCopy, event.failureCode)
+        ? `${failureCopy[event.failureCode]!.title}. ${failureCopy[event.failureCode]!.message}`
+        : "The cause was not recorded for this attempt."
+      : safeActivityMessages.has(event.message ?? "")
+        ? event.message
+        : null,
   };
 }
 type ApiKey = {
@@ -4391,6 +4400,7 @@ function App() {
         [
           formatEventTime(event.createdAt),
           event.label,
+          event.attempt ? `Attempt ${event.attempt}` : null,
           event.message,
           formatEventDuration(event),
         ]
@@ -5055,7 +5065,7 @@ function App() {
                               {copyFeedback && <p className="activity-copy-feedback" role="status">{copyFeedback}</p>}
                               {detailsLoading && events.length === 0 ? <p>Loading logs…</p> : detailsError ? <p role="alert">Logs are unavailable. Close and reopen this capture to retry.</p> : safeEvents.length > 0 ? (
                                 <ol tabIndex={0} aria-label="Processing log entries">
-                                  {safeEvents.map((event) => <li key={event.id}><span className={`activity-log-dot ${event.state}`} aria-hidden="true" /><time className="activity-log-time" dateTime={event.createdAt}>{formatEventTime(event.createdAt)}</time><strong>{event.label}</strong><span className="activity-log-message">{event.message || "—"}</span><span className="activity-log-duration">{formatEventDuration(event)}</span></li>)}
+                                  {safeEvents.map((event) => <li key={event.id}><span className={`activity-log-dot ${event.state}`} aria-hidden="true" /><time className="activity-log-time" dateTime={event.createdAt}>{formatEventTime(event.createdAt)}</time><strong>{event.label}{event.attempt && <small className="activity-log-attempt">Attempt {event.attempt}</small>}</strong><span className="activity-log-message">{event.message || "—"}</span><span className="activity-log-duration">{formatEventDuration(event)}</span></li>)}
                                 </ol>
                               ) : <p>Safe processing events will appear here.</p>}
                               <div className="activity-stage-durations" aria-label="Stage durations">
@@ -5085,7 +5095,7 @@ function App() {
                     <div className="activity-attention-item" role="listitem" key={job.id}>
                       <span className="activity-attention-dot" aria-hidden="true" />
                       <div><strong>{job.displayTitle || sourceReference(job.normalizedUrl)}</strong><small>{sourceLabel(job.normalizedUrl)} · {failureFor(job).message}</small></div>
-                      <span className="activity-retry-count">{job.attempts} {job.attempts === 1 ? "retry" : "retries"}</span>
+                      <span className="activity-retry-count">{job.attempts} manual {job.attempts === 1 ? "retry" : "retries"}</span>
                       <button type="button" disabled={retryPending || retryingIds.includes(job.id)} onClick={() => void retryJob(job)}>{retryingIds.includes(job.id) ? "Retrying…" : "Retry"}</button>
                     </div>
                   ))}
