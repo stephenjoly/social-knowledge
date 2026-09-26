@@ -38,6 +38,8 @@ Activity uses the shared application sidebar, content width, and page gutters so
 
 For release verification boundaries, see [Preview acceptance](preview-acceptance.md).
 
+Knowledge base Home shows the saved-capture count and navigable categories from the loaded library tree. Categories lead to topics and generated capture notes.
+
 ## Current scope
 
 The supported source platforms are Facebook and Instagram. The application provides a private dashboard, Apple Shortcut ingestion, account API keys, OAuth-backed read-only MCP access, Obsidian Markdown output, and complete library exports.

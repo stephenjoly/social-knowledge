@@ -1,6 +1,6 @@
 # Preview layout and functional readiness
 
-Status: active
+Status: complete
 Owner: Codex
 Started: 2026-09-26
 
@@ -29,8 +29,8 @@ Root owns layout, UI integration, browser checks, and delivery. Isolated workers
 
 - [x] Preflight and bounded worker assignments.
 - [x] Shared Activity sizing and safe failure UI.
-- [ ] Knowledge base diagnosis and fix.
-- [ ] Integration, checks, preview delivery, readiness report.
+- [x] Knowledge base diagnosis and fix.
+- [x] Integration and checks complete; delivery via PR #28 preview. Readiness report in `docs/preview-acceptance.md`.
 
 ## Verification
 
@@ -47,3 +47,9 @@ Root owns layout, UI integration, browser checks, and delivery. Isolated workers
 ## Risks and recovery
 
 Preserve existing persisted histories and owner isolation. Unknown historic failure detail stays unknown. Roll back scoped commits if needed. Real provider and production credentials remain outside this preview task.
+
+## Outcome
+
+Activity shares page/sidebar geometry with the other main routes, retains the 320px scrolling log panel, and displays safe failure causes with attempt and retry labels. Knowledge base Home now contains counts and navigable categories. The worker verified the existing preview category → topic → capture path; the defect reproduced at Home was generic placeholder content despite a populated tree, not missing notes.
+
+Final integrated `npm run check`: 119 tests passed. Seven focused browser journeys passed: Activity, Knowledge base, provider settings, navigation history/cross-page geometry, capture submission, Inbox live refresh, and Inbox controls. API-key revocation is also verified. Live provider/network and external-client acceptance remain explicit pre-production requirements in the readiness document; this task does not certify production readiness or authorize promotion.
