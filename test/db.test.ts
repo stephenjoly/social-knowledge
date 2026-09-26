@@ -75,7 +75,9 @@ describe("JobStore", () => {
       tokenHash: AuthService.hashToken(expiredToken),
       expiresAt: new Date(Date.now() - 1_000).toISOString(),
     });
-    expect(store.inspectInvitation(AuthService.hashToken(expiredToken))).toBeNull();
+    expect(
+      store.inspectInvitation(AuthService.hashToken(expiredToken)),
+    ).toBeNull();
     expect(
       store.redeemInvitation({
         tokenHash: AuthService.hashToken(expiredToken),
@@ -92,7 +94,9 @@ describe("JobStore", () => {
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     });
     expect(store.revokeInvitation(revoked.id)).toBe(true);
-    expect(store.inspectInvitation(AuthService.hashToken(revokedToken))).toBeNull();
+    expect(
+      store.inspectInvitation(AuthService.hashToken(revokedToken)),
+    ).toBeNull();
 
     const original = store.createInvitation({
       createdByUserId: administrator.id,
@@ -107,10 +111,15 @@ describe("JobStore", () => {
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     });
     expect(replacement).toMatchObject({ role: "admin", revokedAt: null });
-    expect(store.inspectInvitation(AuthService.hashToken("replace-me"))).toBeNull();
+    expect(
+      store.inspectInvitation(AuthService.hashToken("replace-me")),
+    ).toBeNull();
     expect(
       store.inspectInvitation(AuthService.hashToken("replacement-token")),
-    ).toMatchObject({ id: replacement?.id, role: "admin" });
+    ).toMatchObject({
+      id: replacement?.id,
+      role: "admin",
+    });
     store.close();
   });
 
@@ -368,12 +377,21 @@ describe("JobStore", () => {
     const first = store.createUser("ai-owner", "hash");
     const second = store.createUser("other-ai-owner", "hash");
 
-    store.saveAiProviderConnection(first.id, "openai", "openai-secret", "oa…key");
-    store.saveAiProviderConnection(first.id, "cerebras", "cerebras-secret", "cb…key");
-    expect(store.aiProviderConnections(first.id).map(({ provider }) => provider)).toEqual([
-      "cerebras",
+    store.saveAiProviderConnection(
+      first.id,
       "openai",
-    ]);
+      "openai-secret",
+      "oa…key",
+    );
+    store.saveAiProviderConnection(
+      first.id,
+      "cerebras",
+      "cerebras-secret",
+      "cb…key",
+    );
+    expect(
+      store.aiProviderConnections(first.id).map(({ provider }) => provider),
+    ).toEqual(["cerebras", "openai"]);
     expect(store.aiProviderConnections(second.id)).toEqual([]);
 
     const selections = store.saveAiTaskSelections(first.id, {
@@ -393,6 +411,7 @@ describe("JobStore", () => {
       transcriptionModel: null,
       analysisProvider: null,
       analysisModel: null,
+      analysisThinkingLevel: null,
       updatedAt: null,
     });
 
@@ -414,30 +433,91 @@ describe("JobStore", () => {
       transcriptionModel: "transcribe-v1",
       analysisProvider: "cerebras",
       analysisModel: "analyze-v1",
+      analysisThinkingLevel: "high",
     }).job;
     expect(created).toMatchObject({
       transcriptionProvider: "openai",
       transcriptionModel: "transcribe-v1",
       analysisProvider: "cerebras",
       analysisModel: "analyze-v1",
+      analysisThinkingLevel: "high",
       aiProvider: "cerebras",
     });
 
-    store.database.prepare("UPDATE jobs SET status='failed' WHERE id=?").run(created.id);
+    store.database
+      .prepare("UPDATE jobs SET status='failed' WHERE id=?")
+      .run(created.id);
     expect(
       store.retry(created.id, {
         transcriptionProvider: "openai",
         transcriptionModel: "transcribe-v2",
         analysisProvider: "openai",
         analysisModel: "analyze-v2",
+        analysisThinkingLevel: null,
       }),
     ).toBe(true);
     expect(store.get(created.id)).toMatchObject({
       transcriptionModel: "transcribe-v2",
       analysisProvider: "openai",
       analysisModel: "analyze-v2",
+      analysisThinkingLevel: null,
       aiProvider: "openai",
     });
+  });
+
+  it("adds thinking to an existing task-selection table before reading it", () => {
+    const directory = mkdtempSync(join(tmpdir(), "social-knowledge-db-"));
+    const filename = join(directory, "selection-migration.sqlite3");
+    try {
+      const legacy = new Database(filename);
+      legacy.exec(`
+        CREATE TABLE users(id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,role TEXT NOT NULL,created_at TEXT NOT NULL);
+        CREATE TABLE ai_task_selections(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,transcription_provider TEXT,transcription_model TEXT,analysis_provider TEXT,analysis_model TEXT,updated_at TEXT NOT NULL);
+        INSERT INTO users VALUES('user-1','legacy-selection','hash','admin','2026-01-01T00:00:00.000Z');
+        INSERT INTO ai_task_selections VALUES('user-1','openai','gpt-4o-mini-transcribe','openai','gpt-5-mini','2026-01-01T00:00:00.000Z');
+      `);
+      legacy.close();
+
+      const migrated = new JobStore(filename);
+      expect(migrated.aiTaskSelections("user-1")).toMatchObject({
+        transcriptionProvider: "openai",
+        transcriptionModel: "gpt-4o-mini-transcribe",
+        analysisProvider: "openai",
+        analysisModel: "gpt-5-mini",
+        analysisThinkingLevel: null,
+      });
+      expect(migrated.aiProviderConfiguration("user-1", "openai")).toEqual({
+        transcriptionModel: "gpt-4o-mini-transcribe",
+        analysisModel: "gpt-5-mini",
+        thinkingLevel: null,
+      });
+      migrated.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("does not create task assignments for a newly connected provider on restart", () => {
+    const directory = mkdtempSync(join(tmpdir(), "social-knowledge-db-"));
+    const filename = join(directory, "no-auto-assign.sqlite3");
+    try {
+      const first = new JobStore(filename);
+      const user = first.createUser("new-provider", "hash");
+      first.saveAiProviderConnection(user.id, "openai", "encrypted", "sk…test");
+      first.close();
+
+      const restarted = new JobStore(filename);
+      expect(restarted.aiTaskSelections(user.id)).toMatchObject({
+        transcriptionProvider: null,
+        analysisProvider: null,
+      });
+      expect(
+        restarted.aiProviderConfiguration(user.id, "openai"),
+      ).toBeUndefined();
+      restarted.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("migrates legacy provider rows and job routing without losing secrets", () => {
@@ -448,10 +528,12 @@ describe("JobStore", () => {
       legacy.exec(`
         CREATE TABLE users(id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,role TEXT NOT NULL,created_at TEXT NOT NULL);
         CREATE TABLE jobs(id TEXT PRIMARY KEY,owner_user_id TEXT NOT NULL REFERENCES users(id),source_url TEXT NOT NULL,normalized_url TEXT NOT NULL,source_hash TEXT NOT NULL,user_note TEXT,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,error TEXT,result_note_path TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,next_attempt_at TEXT NOT NULL,error_code TEXT,error_detail TEXT,display_title TEXT,ai_provider TEXT CHECK(ai_provider IN ('openai','cerebras')),UNIQUE(owner_user_id,source_hash));
+        CREATE TABLE job_events(id TEXT PRIMARY KEY,job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,status TEXT NOT NULL,message TEXT,created_at TEXT NOT NULL);
         CREATE TABLE ai_provider_connections(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('openai','cerebras')),encrypted_payload TEXT NOT NULL,status TEXT NOT NULL,key_hint TEXT NOT NULL,verified_at TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
         INSERT INTO users VALUES('user-1','legacy','hash','admin','2026-01-01T00:00:00.000Z');
         INSERT INTO ai_provider_connections VALUES('user-1','openai','encrypted-secret','verified','sk…1234','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z');
         INSERT INTO jobs VALUES('job-1','user-1','https://example.com','https://example.com','hash',NULL,'complete',1,NULL,NULL,'2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z',NULL,NULL,NULL,'openai');
+        INSERT INTO job_events VALUES('event-1','job-1','queued','Legacy event','2026-01-01T00:00:00.000Z');
       `);
       legacy.close();
 
@@ -472,6 +554,9 @@ describe("JobStore", () => {
         analysisProvider: "openai",
         aiProvider: "openai",
       });
+      expect(migrated.events("job-1")).toMatchObject([
+        { id: "event-1", message: "Legacy event", failureCode: null },
+      ]);
       migrated.close();
     } finally {
       rmSync(directory, { recursive: true, force: true });

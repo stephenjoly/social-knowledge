@@ -10,7 +10,13 @@ import Fastify from "fastify";
 import { z } from "zod";
 import { AuthService, SESSION_COOKIE } from "./auth.js";
 import type { AppConfig } from "./config.js";
-import type { JobStore } from "./db.js";
+import {
+  captureSortKeys,
+  defaultCaptureSort,
+  type CaptureCursor,
+  type JobStore,
+} from "./db.js";
+import { activityEvents, activityJob } from "./activity.js";
 import type { EventHub } from "./events.js";
 import { normalizeSocialUrl } from "./url.js";
 import { LibraryPublisher } from "./library-publisher.js";
@@ -24,7 +30,12 @@ import {
   matchesKnowledge,
 } from "./knowledge.js";
 import { openApiDocument } from "./openapi.js";
-import { AiProviderService, aiProviderIds } from "./ai-providers.js";
+import {
+  AiProviderService,
+  aiDiagnosticTasks,
+  aiProviderIds,
+  thinkingLevels,
+} from "./ai-providers.js";
 import { AskService } from "./ask.js";
 import { registerOAuth } from "./oauth.js";
 import { registerMcp } from "./mcp.js";
@@ -44,29 +55,153 @@ const requestIdSchema = z
   .max(128)
   .regex(/^[A-Za-z0-9._~-]+$/);
 
+const activityCursorSchema = z.object({
+  createdAt: z.string().datetime(),
+  id: z.string().uuid(),
+  filter: z.enum(["active", "all"]),
+});
+const failedActivityCursorSchema = z.object({
+  priority: z.number().int().min(0).max(8),
+  updatedAt: z.string().datetime(),
+  id: z.string().uuid(),
+});
+const aiTestRequestSchema = z
+  .object({
+    audio: z
+      .object({
+        contentType: z.string().min(1).max(100),
+        base64: z.string().min(1).max(1_400_000),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+function controlledError(
+  error: unknown,
+  allowed: readonly string[],
+  fallback: string,
+) {
+  return error instanceof Error && allowed.includes(error.message)
+    ? error.message
+    : fallback;
+}
+
+function encodeActivityCursor(value: object) {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+function decodeActivityCursor<T>(value: string, schema: z.ZodType<T>) {
+  try {
+    return schema.parse(JSON.parse(Buffer.from(value, "base64url").toString()));
+  } catch {
+    throw new Error("invalid_cursor");
+  }
+}
+
+function localDateParts(now: number, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(new Date(now));
+  const value = (name: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === name)?.value);
+  return { year: value("year"), month: value("month"), day: value("day") };
+}
+
+function localOffsetAt(now: number, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(new Date(now));
+  const value = (name: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === name)?.value);
+  return (
+    Date.UTC(
+      value("year"),
+      value("month") - 1,
+      value("day"),
+      value("hour"),
+      value("minute"),
+      value("second"),
+    ) - now
+  );
+}
+
+function localMidnight(
+  year: number,
+  month: number,
+  day: number,
+  timeZone: string,
+) {
+  const base = Date.UTC(year, month - 1, day);
+  let instant = base;
+  for (let index = 0; index < 3; index++)
+    instant = base - localOffsetAt(instant, timeZone);
+  return new Date(instant).toISOString();
+}
+
+function viewerDayBounds(now: number, timeZone: string) {
+  const today = localDateParts(now, timeZone);
+  const next = new Date(Date.UTC(today.year, today.month - 1, today.day + 1));
+  return {
+    start: localMidnight(today.year, today.month, today.day, timeZone),
+    end: localMidnight(
+      next.getUTCFullYear(),
+      next.getUTCMonth() + 1,
+      next.getUTCDate(),
+      timeZone,
+    ),
+  };
+}
+
+function validTimeZone(value: string | undefined) {
+  const timeZone = value ?? "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format();
+    return timeZone;
+  } catch {
+    return null;
+  }
+}
+
+function markdownText(value: string) {
+  return value
+    .replace(/[\r\n]+/g, " ")
+    .replace(/([\\`*_[\]{}()#+\-.!|<>])/g, "\\$1");
+}
+
 export function canReceiveLiveEvent(
   store: JobStore,
   userId: string,
   event: unknown,
 ) {
   const envelope =
-    event && typeof event === "object"
-      ? (event as { payload?: unknown })
-      : {};
-  const item = (envelope.payload && typeof envelope.payload === "object"
-    ? envelope.payload
-    : envelope) as {
+    event && typeof event === "object" ? (event as { payload?: unknown }) : {};
+  const item = (
+    envelope.payload && typeof envelope.payload === "object"
+      ? envelope.payload
+      : envelope
+  ) as {
     id?: string;
     jobId?: string;
     captureId?: string;
   };
   return Boolean(
     (item.jobId && store.getOwned(userId, item.jobId)) ||
-      (item.captureId && store.getOwnedCapture(userId, item.captureId)) ||
-      (item.id &&
-        (store.getOwned(userId, item.id) ||
-          store.getOwnedCapture(userId, item.id))) ||
-      (!item.id && !item.jobId && !item.captureId),
+    (item.captureId && store.getOwnedCapture(userId, item.captureId)) ||
+    (item.id &&
+      (store.getOwned(userId, item.id) ||
+        store.getOwnedCapture(userId, item.id))) ||
+    (!item.id && !item.jobId && !item.captureId),
   );
 }
 
@@ -85,7 +220,9 @@ export function buildApp(
   });
   const auth = new AuthService(store, config);
   const setSessionCookie = (
-    reply: { setCookie: (name: string, value: string, options: object) => unknown },
+    reply: {
+      setCookie: (name: string, value: string, options: object) => unknown;
+    },
     session: { token: string; expiresAt: string },
   ) => {
     reply.setCookie(SESSION_COOKIE, session.token, {
@@ -98,7 +235,7 @@ export function buildApp(
   };
   const library = new LibraryPublisher(store, config.vaultDir);
   const userNodeMarkdown = (
-    node: NonNullable<ReturnType<JobStore["libraryNode"]>>,
+    node: NonNullable<ReturnType<JobStore["libraryContentNode"]>>,
   ) =>
     [
       "---",
@@ -107,31 +244,47 @@ export function buildApp(
       "generated: true",
       "---",
       "",
-      `# ${node.label}`,
+      `# ${markdownText(node.label)}`,
       "",
-      node.breadcrumb.map((item) => item.label).join(" → "),
+      node.breadcrumb.map((item) => markdownText(item.label)).join(" → "),
       "",
-      "## Browse",
+      `Explore ${node.captureCount} saved ${node.captureCount === 1 ? "capture" : "captures"} in this category${node.children.length ? " and its subcategories" : ""}.`,
       "",
       ...(node.children.length
-        ? node.children.map(
-            (child) =>
-              `- [${child.label}](library:${child.id}) — ${child.captureCount} captures`,
-          )
-        : ["_No child categories._"]),
+        ? [
+            "## Browse",
+            "",
+            ...node.children.map(
+              (child) =>
+                `- [${markdownText(child.label)}](library:${child.id}) — ${child.captureCount} ${child.captureCount === 1 ? "capture" : "captures"}`,
+            ),
+            "",
+          ]
+        : []),
+      ...(node.captures.some((capture) => capture.takeaways.length)
+        ? [
+            "## Browse by insight",
+            "",
+            ...node.captures.flatMap((capture) =>
+              capture.takeaways.map(
+                (takeaway) =>
+                  `- [${markdownText(takeaway)}](capture:${capture.id}) — ${markdownText(capture.title)}`,
+              ),
+            ),
+            "",
+          ]
+        : []),
+      `## Captures (${node.captureCount})`,
       "",
-      "## Captures",
-      "",
-      ...(node.captures.length
-        ? node.captures.map(
-            (capture) =>
-              `- [${capture.title}](capture:${capture.id}) — ${capture.platform}`,
-          )
-        : ["_No captures assigned directly to this category._"]),
-      "",
+      ...node.captures.flatMap((capture) => [
+        `- [${markdownText(capture.title)}](capture:${capture.id}) — ${markdownText(capture.creator ?? capture.platform)}`,
+        ...(capture.synopsis ? [`  ${markdownText(capture.synopsis)}`] : []),
+        "",
+      ]),
     ].join("\n");
   const ask =
-    askService ?? new AskService(aiProviderService.routedClient(), config, store);
+    askService ??
+    new AskService(aiProviderService.routedClient(), config, store);
   const knowledgeExporter = new KnowledgeExporter(store, config);
   let exportCleanup: NodeJS.Timeout | null = null;
   app.addHook("onReady", async () => {
@@ -328,7 +481,9 @@ export function buildApp(
   });
   app.get("/health", async () => ({ status: "ok" }));
   app.get("/openapi.json", async () => openApiDocument(config.appUrl));
-  app.get("/roadmap", async (_request, reply) => reply.sendFile("roadmap.html"));
+  app.get("/roadmap", async (_request, reply) =>
+    reply.sendFile("roadmap.html"),
+  );
   registerOAuth(app, config, store, auth);
   registerMcp(app, config, store, auth);
 
@@ -339,8 +494,7 @@ export function buildApp(
         rateLimit: {
           max: 5,
           timeWindow: "15 minutes",
-          keyGenerator: (request: any) =>
-            AuthService.hashToken(request.ip),
+          keyGenerator: (request: any) => AuthService.hashToken(request.ip),
         },
       },
     },
@@ -395,9 +549,16 @@ export function buildApp(
         .safeParse(request.body);
       if (!input.success)
         return reply.code(400).send({ error: "invalid_invitation" });
-      const invitation = store.inspectInvitation(AuthService.hashToken(input.data.token));
+      const invitation = store.inspectInvitation(
+        AuthService.hashToken(input.data.token),
+      );
       return invitation
-        ? { invitation: { role: invitation.role, expiresAt: invitation.expiresAt } }
+        ? {
+            invitation: {
+              role: invitation.role,
+              expiresAt: invitation.expiresAt,
+            },
+          }
         : reply.code(400).send({ error: "invalid_invitation" });
     },
   );
@@ -428,7 +589,9 @@ export function buildApp(
       if (!invitation)
         return reply.code(400).send({ error: "invalid_invitation" });
       if (invitation.role === "admin" && !input.data.administratorAcknowledged)
-        return reply.code(400).send({ error: "administrator_acknowledgement_required" });
+        return reply
+          .code(400)
+          .send({ error: "administrator_acknowledgement_required" });
       const result = store.redeemInvitation({
         tokenHash,
         username: input.data.username,
@@ -529,12 +692,18 @@ export function buildApp(
           store.retry(result.job.id, selections);
         const job = retried ? store.get(result.job.id) : result.job;
         events.publish("job", { id: result.job.id, status: job?.status });
-        return reply
-          .code(result.created || retried ? 202 : 200)
-          .send({ created: result.created, retried, job });
+        return reply.code(result.created || retried ? 202 : 200).send({
+          created: result.created,
+          retried,
+          job: activityJob(job ?? result.job, store.events(result.job.id)),
+        });
       } catch (error) {
         const code = error instanceof Error ? error.message : "invalid_url";
-        if (["transcription_required", "analysis_provider_required"].includes(code))
+        if (
+          ["transcription_required", "analysis_provider_required"].includes(
+            code,
+          )
+        )
           return reply.code(428).send({ error: code });
         return reply.code(400).send({
           error: "invalid_url",
@@ -795,10 +964,7 @@ export function buildApp(
       }
       return user;
     };
-    const newInvitation = (
-      userId: string,
-      role: "member" | "admin",
-    ) => {
+    const newInvitation = (userId: string, role: "member" | "admin") => {
       const token = randomBytes(32).toString("base64url");
       const invitation = store.createInvitation({
         createdByUserId: userId,
@@ -835,7 +1001,10 @@ export function buildApp(
           .safeParse(request.body ?? {});
         if (!input.success)
           return reply.code(400).send({ error: "invalid_request" });
-        if (input.data.role === "admin" && !input.data.administratorAcknowledged)
+        if (
+          input.data.role === "admin" &&
+          !input.data.administratorAcknowledged
+        )
           return reply.code(400).send({
             error: "administrator_acknowledgement_required",
           });
@@ -846,7 +1015,9 @@ export function buildApp(
       "/api/v1/admin/invitations/:id/revoke",
       async (request, reply) => {
         if (!requireAdmin(request, reply)) return;
-        const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+        const params = z
+          .object({ id: z.string().uuid() })
+          .safeParse(request.params);
         if (!params.success)
           return reply.code(400).send({ error: "invalid_request" });
         return store.revokeInvitation(params.data.id)
@@ -862,7 +1033,9 @@ export function buildApp(
       async (request, reply) => {
         const user = requireAdmin(request, reply);
         if (!user) return;
-        const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+        const params = z
+          .object({ id: z.string().uuid() })
+          .safeParse(request.params);
         if (!params.success)
           return reply.code(400).send({ error: "invalid_request" });
         const token = randomBytes(32).toString("base64url");
@@ -883,42 +1056,164 @@ export function buildApp(
     protectedApi.get("/api/v1/inbox-analytics", async (request, reply) => {
       reply.header("Cache-Control", "no-store");
       const generatedAt = new Date().toISOString();
-      const cutoff = new Date(
+      const last24HoursCutoff = new Date(
         Date.parse(generatedAt) - 24 * 60 * 60 * 1000,
       ).toISOString();
+      const last7DaysCutoff = new Date(
+        Date.parse(generatedAt) - 7 * 24 * 60 * 60 * 1000,
+      ).toISOString();
       return {
-        ...store.inboxAnalytics(auth.user(request)!.id, cutoff),
+        ...store.inboxAnalytics(
+          auth.user(request)!.id,
+          last24HoursCutoff,
+          last7DaysCutoff,
+        ),
         generatedAt,
       };
     });
-    protectedApi.get("/api/v1/jobs", async (request) => {
+    protectedApi.get("/api/v1/jobs", async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
       const user = auth.user(request)!;
-      const q = z
-        .object({ limit: z.coerce.number().int().min(1).max(100).default(50) })
-        .parse(request.query);
+      const parsed = z
+        .object({
+          limit: z.coerce.number().int().min(1).max(100).default(50),
+          filter: z.enum(["active", "all"]).optional(),
+          cursor: z.string().max(300).optional(),
+          timeZone: z.string().min(1).max(100).optional(),
+          timezone: z.string().min(1).max(100).optional(),
+        })
+        .safeParse(request.query);
+      if (!parsed.success)
+        return reply.code(400).send({ error: "invalid_request" });
+      if (
+        parsed.data.timeZone &&
+        parsed.data.timezone &&
+        parsed.data.timeZone !== parsed.data.timezone
+      )
+        return reply.code(400).send({ error: "invalid_request" });
+      const timeZone = validTimeZone(
+        parsed.data.timeZone ?? parsed.data.timezone,
+      );
+      if (!timeZone) return reply.code(400).send({ error: "invalid_request" });
+      const filter = parsed.data.filter ?? "all";
+      let cursor: { createdAt: string; id: string } | undefined;
+      if (parsed.data.cursor) {
+        try {
+          const decoded = decodeActivityCursor(
+            parsed.data.cursor,
+            activityCursorSchema,
+          );
+          if (decoded.filter !== filter) throw new Error("invalid_cursor");
+          cursor = { createdAt: decoded.createdAt, id: decoded.id };
+        } catch {
+          return reply.code(400).send({ error: "invalid_cursor" });
+        }
+      }
+      const now = Date.now();
+      const page = store.listActivityJobs({
+        userId: user.id,
+        filter,
+        limit: parsed.data.limit,
+        ...(cursor ? { cursor } : {}),
+      });
+      const day = viewerDayBounds(now, timeZone);
       return {
-        jobs: store.list(user.id, q.limit).map((job) => ({
-          ...job,
-          reachedStages: [
-            ...new Set(
-              (store.events(job.id) as Array<{ status: string }>).map(
-                (event) => event.status,
-              ),
-            ),
-          ],
-        })),
+        jobs: page.jobs.map((job) =>
+          activityJob(job, store.events(job.id), now),
+        ),
+        nextCursor: page.nextCursor
+          ? encodeActivityCursor({ ...page.nextCursor, filter })
+          : null,
+        generatedAt: new Date(now).toISOString(),
+        counts: store.activityCounts({
+          userId: user.id,
+          savedTodayStart: day.start,
+          savedTodayEnd: day.end,
+          recentEventsStart: new Date(now - 10 * 60 * 1000).toISOString(),
+          recentEventsEnd: new Date(now).toISOString(),
+        }),
+      };
+    });
+    protectedApi.get("/api/v1/jobs/failed", async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      const user = auth.user(request)!;
+      const parsed = z
+        .object({
+          limit: z.coerce.number().int().min(1).max(100).default(50),
+          cursor: z.string().max(300).optional(),
+        })
+        .safeParse(request.query);
+      if (!parsed.success)
+        return reply.code(400).send({ error: "invalid_request" });
+      let cursor:
+        { priority: number; updatedAt: string; id: string } | undefined;
+      if (parsed.data.cursor) {
+        try {
+          cursor = decodeActivityCursor(
+            parsed.data.cursor,
+            failedActivityCursorSchema,
+          );
+        } catch {
+          return reply.code(400).send({ error: "invalid_cursor" });
+        }
+      }
+      const now = Date.now();
+      const page = store.listFailedActivityJobs({
+        userId: user.id,
+        limit: parsed.data.limit,
+        ...(cursor ? { cursor } : {}),
+      });
+      return {
+        failures: page.jobs.map((job) =>
+          activityJob(job, store.events(job.id), now),
+        ),
+        nextCursor: page.nextCursor
+          ? encodeActivityCursor(page.nextCursor)
+          : null,
+        total: store.countFailedActivityJobs(user.id),
       };
     });
     protectedApi.get("/api/v1/jobs/:id", async (request, reply) => {
-      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      reply.header("Cache-Control", "no-store");
+      const params = z
+        .object({ id: z.string().uuid() })
+        .safeParse(request.params);
+      if (!params.success)
+        return reply.code(400).send({ error: "invalid_request" });
+      const { id } = params.data;
       const user = auth.user(request)!;
       const job = store.getOwned(user.id, id);
+      const now = Date.now();
+      const jobEvents = job ? store.events(id) : [];
       return job
-        ? { job, events: store.events(id) }
+        ? {
+            job: activityJob(job, jobEvents, now),
+            events: activityEvents(job, jobEvents, now),
+          }
         : reply.code(404).send({ error: "not_found" });
     });
+    protectedApi.post("/api/v1/jobs/retry-failed", async (request, reply) => {
+      const user = auth.user(request)!;
+      if (store.countFailedActivityJobs(user.id) === 0)
+        return { requested: 0, retried: 0 };
+      let selections;
+      try {
+        selections = aiProviderService.captureSelections(user.id);
+      } catch (error) {
+        return reply.code(428).send({ error: "analysis_provider_required" });
+      }
+      const result = store.retryAllFailed(user.id, selections);
+      for (const id of result.retriedIds)
+        events.publish("job", { id, status: "queued" });
+      return { requested: result.requested, retried: result.retriedIds.length };
+    });
     protectedApi.post("/api/v1/jobs/:id/retry", async (request, reply) => {
-      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const params = z
+        .object({ id: z.string().uuid() })
+        .safeParse(request.params);
+      if (!params.success)
+        return reply.code(400).send({ error: "invalid_request" });
+      const { id } = params.data;
       const user = auth.user(request)!;
       if (!store.getOwned(user.id, id))
         return reply.code(404).send({ error: "not_found" });
@@ -926,14 +1221,13 @@ export function buildApp(
       try {
         selections = aiProviderService.captureSelections(user.id);
       } catch (error) {
-        return reply.code(428).send({
-          error: error instanceof Error ? error.message : "analysis_provider_required",
-        });
+        return reply.code(428).send({ error: "analysis_provider_required" });
       }
       if (!store.retry(id, selections))
         return reply.code(409).send({ error: "not_retryable" });
       events.publish("job", { id, status: "queued" });
-      return { job: store.get(id) };
+      const retried = store.getOwned(user.id, id)!;
+      return { job: activityJob(retried, store.events(id)) };
     });
     protectedApi.get("/api/v1/api-keys", async (request) => {
       const user = auth.user(request)!;
@@ -961,8 +1255,11 @@ export function buildApp(
             body.data.apiKey,
           );
         } catch (error) {
-          const code =
-            error instanceof Error ? error.message : "provider_unavailable";
+          const code = controlledError(
+            error,
+            ["invalid_api_key", "model_unavailable", "provider_unavailable"],
+            "provider_unavailable",
+          );
           return reply
             .code(
               code === "invalid_api_key"
@@ -979,31 +1276,117 @@ export function buildApp(
       const body = z
         .object({
           transcription: z
-            .object({ provider: z.literal("openai"), model: z.string().min(1) })
+            .object({
+              provider: z.literal("openai"),
+              model: z.string().min(1).optional(),
+            })
             .nullable()
             .optional(),
           analysis: z
-            .object({ provider: z.enum(aiProviderIds), model: z.string().min(1) })
+            .object({
+              provider: z.enum(aiProviderIds),
+              model: z.string().min(1).optional(),
+              thinkingLevel: z.enum(thinkingLevels).nullable().optional(),
+            })
             .nullable()
             .optional(),
         })
-        .refine((value) => value.transcription !== undefined || value.analysis !== undefined)
+        .refine(
+          (value) =>
+            value.transcription !== undefined || value.analysis !== undefined,
+        )
         .safeParse(request.body);
-      if (!body.success) return reply.code(400).send({ error: "invalid_request" });
+      if (!body.success)
+        return reply.code(400).send({ error: "invalid_request" });
       try {
-        return aiProviderService.saveSelections(auth.user(request)!.id, body.data);
+        return aiProviderService.saveSelections(
+          auth.user(request)!.id,
+          body.data,
+        );
       } catch (error) {
         return reply.code(409).send({
-          error: error instanceof Error ? error.message : "invalid_selection",
+          error: controlledError(
+            error,
+            [
+              "invalid_provider_selection",
+              "provider_configuration_required",
+              "provider_configuration_mismatch",
+              "invalid_model_selection",
+              "invalid_thinking_level",
+            ],
+            "invalid_selection",
+          ),
         });
       }
     });
+    protectedApi.put(
+      "/api/v1/ai-providers/:provider/configuration",
+      async (request, reply) => {
+        const params = z
+          .object({ provider: z.enum(aiProviderIds) })
+          .safeParse(request.params);
+        const body = z
+          .object({
+            transcriptionModel: z.string().min(1).nullable(),
+            analysisModel: z.string().min(1).nullable(),
+            thinkingLevel: z.enum(thinkingLevels).nullable(),
+          })
+          .strict()
+          .safeParse(request.body);
+        if (!params.success || !body.success)
+          return reply.code(400).send({ error: "invalid_request" });
+        try {
+          return aiProviderService.saveConfiguration(
+            auth.user(request)!.id,
+            params.data.provider,
+            body.data,
+          );
+        } catch (error) {
+          return reply.code(409).send({
+            error: controlledError(
+              error,
+              [
+                "provider_not_connected",
+                "invalid_transcription_configuration",
+                "invalid_analysis_configuration",
+                "invalid_thinking_level",
+              ],
+              "invalid_configuration",
+            ),
+          });
+        }
+      },
+    );
+    protectedApi.post(
+      "/api/v1/ai-tests/:task",
+      { bodyLimit: 1536 * 1024 },
+      async (request, reply) => {
+        const params = z
+          .object({ task: z.enum(aiDiagnosticTasks) })
+          .safeParse(request.params);
+        const body = aiTestRequestSchema.safeParse(request.body);
+        if (!params.success || !body.success)
+          return reply.code(400).send({ error: "invalid_request" });
+        reply.header("cache-control", "no-store");
+        return aiProviderService.testConnection(
+          auth.user(request)!.id,
+          params.data.task,
+          body.data.audio,
+        );
+      },
+    );
     protectedApi.delete(
       "/api/v1/ai-providers/:provider",
       async (request, reply) => {
-        const params = z.object({ provider: z.enum(aiProviderIds) }).safeParse(request.params);
-        if (!params.success) return reply.code(400).send({ error: "invalid_request" });
-        return aiProviderService.remove(auth.user(request)!.id, params.data.provider);
+        const params = z
+          .object({ provider: z.enum(aiProviderIds) })
+          .safeParse(request.params);
+        if (!params.success)
+          return reply.code(400).send({ error: "invalid_request" });
+        return aiProviderService.remove(
+          auth.user(request)!.id,
+          params.data.provider,
+        );
       },
     );
     protectedApi.get("/api/v1/library-exports", async (request) => ({
@@ -1181,6 +1564,10 @@ export function buildApp(
           sourceType: z.string().optional(),
           nodeId: z.string().uuid().optional(),
           topic: z.string().trim().max(100).optional(),
+          sort: z.enum(captureSortKeys).default(defaultCaptureSort.key),
+          direction: z
+            .enum(["asc", "desc"])
+            .default(defaultCaptureSort.direction),
         })
         .safeParse(request.query);
       if (!parsed.success) {
@@ -1191,18 +1578,39 @@ export function buildApp(
         });
       }
       const q = parsed.data;
-      let cursor: ReturnType<typeof decodeCursor>;
+      let cursor: CaptureCursor | undefined;
       try {
-        cursor = decodeCursor(q.cursor);
+        const decoded = decodeCursor(q.cursor);
+        if (decoded) {
+          const raw = decoded as unknown as Record<string, unknown>;
+          const isDefaultSort =
+            q.sort === defaultCaptureSort.key &&
+            q.direction === defaultCaptureSort.direction;
+          if (
+            isDefaultSort &&
+            raw.sort === undefined &&
+            raw.direction === undefined &&
+            raw.value === undefined
+          ) {
+            cursor = { createdAt: decoded.createdAt, id: decoded.id };
+          } else if (
+            raw.sort === q.sort &&
+            raw.direction === q.direction &&
+            (typeof raw.value === "string" || raw.value === null)
+          ) {
+            cursor = { value: raw.value, id: decoded.id };
+          } else {
+            throw new Error("invalid_capture_cursor");
+          }
+        }
       } catch {
         return reply.code(400).send({ error: "invalid_cursor" });
       }
       const page = store.listCaptures({
         userId: auth.user(request)!.id,
         limit: q.limit,
-        ...(cursor
-          ? { cursor: { createdAt: cursor.createdAt, id: cursor.id } }
-          : {}),
+        ...(cursor ? { cursor } : {}),
+        sort: { key: q.sort, direction: q.direction },
         ...(q.search ? { search: q.search } : {}),
         ...(q.platform ? { platform: q.platform } : {}),
         ...(q.sourceType ? { sourceType: q.sourceType } : {}),
@@ -1210,9 +1618,18 @@ export function buildApp(
         ...(q.topic ? { topic: q.topic } : {}),
       });
       return {
-        captures: page.captures,
+        captures: page.captures.map((capture) => ({
+          ...capture,
+          categoryLabel: page.categoryLabels.get(capture.id) ?? null,
+        })),
         nextCursor: page.nextCursor
-          ? encodeCursor(page.nextCursor)
+          ? encodeCursor({
+              ...page.nextCursor,
+              createdAt: page.captures.at(-1)!.createdAt,
+              ...("value" in page.nextCursor
+                ? { sort: q.sort, direction: q.direction }
+                : {}),
+            })
           : null,
       };
     });
@@ -1406,13 +1823,11 @@ export function buildApp(
     });
     protectedApi.get("/api/v1/library/tree", async (request) => ({
       nodes: store.libraryTree(auth.user(request)!.id),
-      unclassifiedCount: store.unclassifiedCaptureCount(
-        auth.user(request)!.id,
-      ),
+      unclassifiedCount: store.unclassifiedCaptureCount(auth.user(request)!.id),
     }));
     protectedApi.get("/api/v1/library/nodes/:id", async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-      const node = store.libraryNode(id, auth.user(request)!.id);
+      const node = store.libraryContentNode(id, auth.user(request)!.id);
       if (!node) return reply.code(404).send({ error: "not_found" });
       return { node, markdown: userNodeMarkdown(node) };
     });

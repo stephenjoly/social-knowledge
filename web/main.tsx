@@ -11,14 +11,33 @@ import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  Activity,
+  Bot,
+  ArrowLeft,
+  ArrowRight,
+  ChevronDown,
   ChevronRight,
+  Copy,
+  DatabaseBackup,
   FileQuestion,
   Folder,
   FolderOpen,
   House,
+  Inbox,
+  KeyRound,
+  LibraryBig,
+  Link2,
+  LogOut,
+  MessageSquare,
+  Plus,
+  RotateCw,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
+  Settings as SettingsIcon,
+  UserRound,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import {
@@ -37,6 +56,11 @@ import {
   type StreamState,
 } from "./chat-stream";
 import "./styles.css";
+import "./activity-capture.css";
+import "./auth-redesign.css";
+import "./knowledge-ask.css";
+import "./settings.css";
+import "./inbox.css";
 
 type Asset = {
   id: string;
@@ -54,6 +78,7 @@ type Capture = {
   sourceUrl: string;
   synopsis: string;
   topics: string[];
+  categoryLabel?: string | null;
   createdAt: string;
   description: string | null;
   transcript: string;
@@ -82,19 +107,24 @@ type Capture = {
   assets: Asset[];
   notePath: string;
 };
-type Job = {
+type ActivityStageName = "added" | "found" | "media" | "text" | "saved";
+type ActivityStageState = "queued" | "active" | "completed" | "failed";
+type ActivityStage = {
+  name: ActivityStageName;
+  state: ActivityStageState;
+  durationMs: number | null;
+};
+type ActivityJob = {
   id: string;
   status: string;
   normalizedUrl: string;
   displayTitle: string | null;
   attempts: number;
-  error: string | null;
   errorCode: string | null;
-  errorDetail: string | null;
-  resultNotePath: string | null;
   createdAt: string;
   updatedAt: string;
-  reachedStages?: string[];
+  reachedStages: ActivityStageName[];
+  stages: ActivityStage[];
 };
 type LibraryExport = {
   id: string;
@@ -105,13 +135,36 @@ type LibraryExport = {
   createdAt: string;
   expiresAt: string;
 };
-type JobEvent = {
+type ActivityEvent = {
   id: string;
+  attempt?: number | null;
+  failureCode?: string | null;
   status: string;
-  message: string | null;
   createdAt: string;
+  label: string;
+  message: string | null;
+  durationMs: number | null;
+  state: "pending" | "running" | "completed" | "failed";
 };
-type JobDetails = { job: Job; events: JobEvent[] };
+type ActivityDetails = { job: ActivityJob; events: ActivityEvent[] };
+type ActivityCounts = {
+  active: number;
+  queued: number;
+  failed: number;
+  savedToday: number;
+  recentEvents: number;
+};
+type ActivityPage = {
+  jobs: ActivityJob[];
+  nextCursor: string | null;
+  generatedAt: string;
+  counts: ActivityCounts;
+};
+type FailedActivityPage = {
+  failures: ActivityJob[];
+  nextCursor: string | null;
+  total: number;
+};
 type LibraryNode = {
   id: string;
   parentId: string | null;
@@ -124,7 +177,19 @@ type LibraryNode = {
 type LibraryNodeDetail = LibraryNode & {
   breadcrumb: LibraryNode[];
   children: LibraryNode[];
-  captures: Capture[];
+  captures: Array<{
+    id: string;
+    title: string;
+    platform: string;
+    creator: string | null;
+    creatorUrl: string | null;
+    sourceUrl: string;
+    synopsis: string;
+    takeaways: string[];
+    createdAt: string;
+    assignedNode: { id: string; label: string };
+    breadcrumb: Array<{ id: string; label: string }>;
+  }>;
 };
 type CaptureFacets = {
   categories: Array<{
@@ -135,12 +200,61 @@ type CaptureFacets = {
   }>;
   topics: Array<{ label: string; count: number }>;
 };
-type InboxAnalytics = {
-  totalCaptures: number;
-  capturesLast24Hours: number;
-  failedImports: number;
-  generatedAt: string;
-};
+type InboxView = "tiles" | "table";
+type InboxSortKey = "title" | "savedAt" | "source" | "category" | "topic";
+
+const inboxSortOptions: Array<{
+  key: InboxSortKey;
+  label: string;
+  ascending: string;
+  descending: string;
+}> = [
+  {
+    key: "savedAt",
+    label: "Saved date",
+    ascending: "Oldest first",
+    descending: "Newest first",
+  },
+  {
+    key: "title",
+    label: "Title",
+    ascending: "Title A–Z",
+    descending: "Title Z–A",
+  },
+  {
+    key: "source",
+    label: "Source",
+    ascending: "Source A–Z",
+    descending: "Source Z–A",
+  },
+  {
+    key: "category",
+    label: "Category",
+    ascending: "Category A–Z",
+    descending: "Category Z–A",
+  },
+  {
+    key: "topic",
+    label: "Topic",
+    ascending: "Topic A–Z",
+    descending: "Topic Z–A",
+  },
+];
+
+function captureSource(capture: Capture) {
+  const platform = capture.platform
+    ? `${capture.platform.slice(0, 1).toUpperCase()}${capture.platform.slice(1)}`
+    : "Unknown platform";
+  return capture.creator ? `${platform} · ${capture.creator}` : platform;
+}
+
+function formatCaptureDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
 type OAuthConnection = {
   clientId: string;
   name: string;
@@ -160,6 +274,39 @@ type PlatformConnection = {
 
 function markdownForDisplay(value: string) {
   return value.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "");
+}
+
+function markdownLinkText(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/[\[\]]/g, "\\$&");
+}
+
+function libraryHomeMarkdown(
+  nodes: LibraryNode[],
+  unclassifiedCount: number,
+) {
+  const populated = nodes.filter((node) => node.captureCount > 0);
+  const domains = populated.filter((node) => node.parentId === null);
+  const captureCount = domains.reduce((total, node) => total + node.captureCount, 0) + unclassifiedCount;
+  const mapBranch = (parentId: string | null, depth = 0): string[] =>
+    populated.filter((node) => node.parentId === parentId).flatMap((node) => [
+      `${"  ".repeat(depth)}- [${markdownLinkText(node.label)}](library:${node.id}) — ${node.captureCount} ${node.captureCount === 1 ? "capture" : "captures"}`,
+      ...mapBranch(node.id, depth + 1),
+    ]);
+  return [
+    "# Social Knowledge",
+    "",
+    captureCount ? `Browse ${captureCount} saved ${captureCount === 1 ? "capture" : "captures"} across your knowledge base.` : "Your map of content will grow as you save and classify captures.",
+    "",
+    "## Map of content",
+    "",
+    ...mapBranch(null),
+    ...(unclassifiedCount > 0 ? [`- [Unclassified](library:unclassified) — ${unclassifiedCount} captures`] : []),
+    "",
+    ...(captureCount > 0 ? ["Open a category to browse its subcategories, extracted insights, and source captures.", ""] : []),
+  ].join("\n");
 }
 
 function externalLinkLabel(href: string | undefined, children: ReactNode) {
@@ -256,25 +403,29 @@ function PlatformMark({ platform }: { platform: string }) {
   return <span aria-hidden="true">↗</span>;
 }
 
-const stages = [
-  "queued",
-  "downloading",
-  "processing",
-  "transcribing",
-  "translating",
-  "analyzing",
-  "writing",
-  "complete",
+const activityStages: ActivityStageName[] = [
+  "added",
+  "found",
+  "media",
+  "text",
+  "saved",
 ];
-const stageCopy: Record<string, string> = {
-  queued: "Waiting",
+const activityStageCopy: Record<ActivityStageName, string> = {
+  added: "Added",
+  found: "Found",
+  media: "Media",
+  text: "Text",
+  saved: "Saved",
+};
+const activityStatusCopy: Record<string, string> = {
+  queued: "Queued",
   downloading: "Downloading",
   processing: "Preparing media",
   transcribing: "Transcribing",
   translating: "Translating",
   analyzing: "Extracting knowledge",
-  writing: "Archiving",
-  complete: "Complete",
+  writing: "Saving capture",
+  complete: "Saved",
   failed: "Needs attention",
 };
 const failureCopy: Record<string, { title: string; message: string }> = {
@@ -314,22 +465,30 @@ const failureCopy: Record<string, { title: string; message: string }> = {
     message:
       "The media was downloaded, but transcription or analysis did not finish.",
   },
+  ai_credentials_rejected: {
+    title: "AI credentials rejected",
+    message: "Reconnect the AI provider, then retry this capture.",
+  },
+  ai_quota_exceeded: {
+    title: "AI provider quota exceeded",
+    message: "Add provider credits or increase the quota, then retry.",
+  },
+  ai_rate_limited: {
+    title: "AI provider rate limit reached",
+    message: "Wait a little, then retry this capture.",
+  },
+  ai_model_unavailable: {
+    title: "AI model unavailable",
+    message: "Choose or configure an available AI model, then retry.",
+  },
 };
 
-function failureFor(job: Job) {
-  if (job.errorCode && failureCopy[job.errorCode])
+function failureFor(job: ActivityJob) {
+  if (job.errorCode && Object.hasOwn(failureCopy, job.errorCode))
     return failureCopy[job.errorCode]!;
-  const text = (job.error || "").toLowerCase();
-  if (/cookie|logged-in|authentication/.test(text))
-    return failureCopy.authentication_required!;
-  if (/private/.test(text)) return failureCopy.private_post!;
-  if (/unavailable|removed|404/.test(text)) return failureCopy.unavailable!;
-  if (/unsupported|without metadata|no downloadable/.test(text))
-    return failureCopy.unsupported_format!;
-  if (/size|duration|limit/.test(text)) return failureCopy.archive_limit!;
   return {
     title: "Capture failed",
-    message: "Retry this capture. Open the diagnostic only if it fails again.",
+    message: "Retry this capture. If it fails again, check your capture setup.",
   };
 }
 
@@ -374,96 +533,102 @@ function PlatformIcon({ url }: { url: string }) {
   );
 }
 
-function JobInfoModal({
-  details,
-  onClose,
-}: {
-  details: JobDetails;
-  onClose: () => void;
-}) {
-  const { job, events } = details;
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
-  }, [onClose]);
-  return (
-    <div className="modal-scrim" onClick={onClose}>
-      <section
-        className="job-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Processing details"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="modal-heading">
-          <div>
-            <div className="eyebrow">Processing details</div>
-            <h2 id="job-modal-title">
-              {job.displayTitle || sourceLabel(job.normalizedUrl)}
-            </h2>
-          </div>
-          <button
-            className="icon-button"
-            onClick={onClose}
-            aria-label="Close details"
-          >
-            ×
-          </button>
-        </div>
-        <dl className="job-facts">
-          <div>
-            <dt>Status</dt>
-            <dd>{stageCopy[job.status] || job.status}</dd>
-          </div>
-          <div>
-            <dt>Attempts</dt>
-            <dd>{job.attempts}</dd>
-          </div>
-          <div>
-            <dt>Submitted</dt>
-            <dd>{new Date(job.createdAt).toLocaleString()}</dd>
-          </div>
-          <div>
-            <dt>Last update</dt>
-            <dd>{new Date(job.updatedAt).toLocaleString()}</dd>
-          </div>
-        </dl>
-        <a
-          className="source-link"
-          href={job.normalizedUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open original post ↗
-        </a>
-        <h3>Processing log</h3>
-        <ol className="event-log">
-          {events.map((event) => (
-            <li key={event.id}>
-              <span className={`event-dot ${event.status}`} />
-              <div>
-                <strong>{stageCopy[event.status] || event.status}</strong>
-                {event.message && <p>{event.message}</p>}
-                <time>{new Date(event.createdAt).toLocaleString()}</time>
-              </div>
-            </li>
-          ))}
-        </ol>
-        {(job.errorDetail || job.error) && (
-          <details className="modal-diagnostic">
-            <summary>Technical diagnostic</summary>
-            <code>{job.errorDetail || job.error}</code>
-          </details>
-        )}
-        {job.resultNotePath && (
-          <small className="note-result">
-            Archive note: {job.resultNotePath}
-          </small>
-        )}
-      </section>
-    </div>
-  );
+function formatPreciseDuration(durationMs: number | null) {
+  if (durationMs === null) return "pending";
+  if (durationMs < 1000) return `${durationMs} ms`;
+  if (durationMs < 60000) {
+    const seconds = durationMs / 1000;
+    return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)} s`;
+  }
+  const minutes = Math.floor(durationMs / 60000);
+  const seconds = Math.floor((durationMs % 60000) / 1000);
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function formatEventDuration(event: ActivityEvent) {
+  if (event.state === "running") return "running";
+  if (event.state === "pending") return "pending";
+  return event.durationMs === null ? "—" : formatPreciseDuration(event.durationMs);
+}
+
+function formatStageDuration(stage: ActivityStage | undefined) {
+  if (!stage || stage.state === "queued") return "pending";
+  if (stage.state === "active") return "running";
+  return stage.durationMs === null ? "—" : formatPreciseDuration(stage.durationMs);
+}
+
+function formatActivityTime(value: string) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "—";
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 10) return "now";
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
+}
+
+function formatEventTime(value: string) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "—";
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(timestamp));
+}
+
+const activityLogLabels: Record<string, string> = {
+  queued: "Queued",
+  downloading: "Finding source",
+  processing: "Processing media",
+  transcribing: "Transcribing",
+  translating: "Translating",
+  analyzing: "Extracting knowledge",
+  writing: "Saving capture",
+  complete: "Saved",
+  failed: "Capture failed",
+};
+const safeActivityMessages = new Set([
+  "URL accepted and queued",
+  "Capture accepted",
+  "Source found",
+  "Instagram reel found",
+  "Facebook post found",
+  "Download started",
+  "Media prepared",
+  "Waiting for media download",
+  "Transcript ready",
+  "Knowledge extracted",
+  "Capture archived",
+  "Manual retry requested",
+  "Retry scheduled",
+  "AI title ready; extracting detailed knowledge",
+]);
+
+function safeActivityEvent(event: ActivityEvent): ActivityEvent | null {
+  const label = Object.hasOwn(activityLogLabels, event.status)
+    ? activityLogLabels[event.status]
+    : null;
+  if (!label) return null;
+  return {
+    ...event,
+    attempt: Number.isSafeInteger(event.attempt) && (event.attempt ?? 0) > 0 ? event.attempt : null,
+    label: event.status === "queued" && event.message === "Manual retry requested"
+      ? "Manual retry requested"
+      : event.status === "queued" && event.message === "Retry scheduled"
+        ? "Automatic retry scheduled"
+        : label,
+    message: event.status === "failed"
+      ? event.failureCode && Object.hasOwn(failureCopy, event.failureCode)
+        ? `${failureCopy[event.failureCode]!.title}. ${failureCopy[event.failureCode]!.message}`
+        : "The cause was not recorded for this attempt."
+      : safeActivityMessages.has(event.message ?? "")
+        ? event.message
+        : null,
+  };
 }
 type ApiKey = {
   id: string;
@@ -471,6 +636,11 @@ type ApiKey = {
   prefix: string;
   createdAt: string;
   lastUsedAt: string | null;
+};
+type AiThinkingLevel = "minimal" | "low" | "medium" | "high";
+type AiTaskOption = { model: string };
+type AiAnalysisTaskOption = AiTaskOption & {
+  thinkingLevels: AiThinkingLevel[];
 };
 type AiProvider = {
   id: "openai" | "cerebras";
@@ -483,22 +653,242 @@ type AiProvider = {
   supportsVision: boolean;
   capabilities: { transcription: boolean; analysis: boolean };
   models: { transcription: string[]; analysis: string[] };
+  taskOptions: {
+    transcription: AiTaskOption[];
+    analysis: AiAnalysisTaskOption[];
+  };
 };
-type AiSelection = { provider: "openai" | "cerebras"; model: string };
+type AiSelection = {
+  provider: "openai" | "cerebras";
+  model: string;
+};
+type AiAnalysisSelection = AiSelection & { thinkingLevel: AiThinkingLevel | null };
 type AiProviderState = {
   providers: AiProvider[];
   selections: {
     transcription: AiSelection | null;
-    analysis: AiSelection | null;
+    analysis: AiAnalysisSelection | null;
   };
   readiness: { capture: boolean; ask: boolean };
 };
+type AiDraftSelections = AiProviderState["selections"];
+type AiTestTask = "transcription" | "analysis" | "ask";
+type AiTestCode =
+  | "ok"
+  | "missing_selection"
+  | "invalid_audio"
+  | "unsupported_audio"
+  | "invalid_audio_data"
+  | "credential_error"
+  | "model_error"
+  | "quota_exceeded"
+  | "rate_limited"
+  | "timeout"
+  | "provider_error"
+  | "invalid_response"
+  | "busy";
+type AiTestResult = {
+  ok: boolean;
+  code: AiTestCode;
+  checkedAt: string;
+  durationMs: number;
+  selection: AiAnalysisSelection | AiSelection | null;
+};
+type AiTestState = {
+  result: AiTestResult | null;
+  status: "idle" | "pending" | "stale" | "complete";
+};
+
+function transcriptionOptions(provider: AiProvider) {
+  return provider.taskOptions?.transcription?.length
+    ? provider.taskOptions.transcription
+    : provider.models.transcription.map((model) => ({ model }));
+}
+
+function analysisOptions(provider: AiProvider) {
+  return provider.taskOptions?.analysis?.length
+    ? provider.taskOptions.analysis
+    : provider.models.analysis.map((model) => ({
+        model,
+        thinkingLevels: [] as AiThinkingLevel[],
+      }));
+}
+
+function taskOptionFor(provider: AiProvider, model: string) {
+  return analysisOptions(provider).find((option) => option.model === model) ?? null;
+}
+
+function sameAiSelections(left: AiDraftSelections, right: AiDraftSelections) {
+  return (
+    left.transcription?.provider === right.transcription?.provider &&
+    left.transcription?.model === right.transcription?.model &&
+    left.analysis?.provider === right.analysis?.provider &&
+    left.analysis?.model === right.analysis?.model &&
+    left.analysis?.thinkingLevel === right.analysis?.thinkingLevel
+  );
+}
+
+function selectionsForConnectedProviders(
+  selections: AiDraftSelections,
+  providers: AiProvider[],
+): AiDraftSelections {
+  const selectionFor = (task: "transcription" | "analysis") => {
+    const selection = selections[task];
+    const provider = providers.find((item) => item.id === selection?.provider);
+    return provider?.connected && provider.capabilities[task] ? selection : null;
+  };
+  return {
+    transcription: selectionFor("transcription"),
+    analysis: selectionFor("analysis") as AiAnalysisSelection | null,
+  };
+}
+
+function savedOrFirstTaskModel(
+  state: AiProviderState,
+  provider: AiProvider,
+  task: "transcription" | "analysis",
+) {
+  const current = state.selections[task];
+  const options =
+    task === "transcription"
+      ? transcriptionOptions(provider)
+      : analysisOptions(provider);
+  const saved =
+    current?.provider === provider.id &&
+    options.some((option) => option.model === current.model)
+      ? current
+      : null;
+  const model = saved?.model ?? options[0]?.model ?? null;
+  if (!model) return null;
+  return {
+    model,
+    thinkingLevel:
+      task === "analysis"
+        ? (saved as AiAnalysisSelection | null)?.thinkingLevel ?? null
+        : null,
+  };
+}
+
+function initialAiTestStates(): Record<AiTestTask, AiTestState> {
+  return {
+    transcription: { result: null, status: "idle" },
+    analysis: { result: null, status: "idle" },
+    ask: { result: null, status: "idle" },
+  };
+}
+
+function aiTestGuidance(code: AiTestCode) {
+  const copy: Record<Exclude<AiTestCode, "ok">, string> = {
+    missing_selection: "Save a provider and model for this task, then test again.",
+    invalid_audio: "Choose an audio file up to 1 MB, then test again.",
+    unsupported_audio: "Choose a supported audio file, then test again.",
+    invalid_audio_data: "Choose a valid audio file, then test again.",
+    credential_error: "Reconnect this provider key, then test again.",
+    model_error: "Choose an available model, save it, then test again.",
+    quota_exceeded: "Add provider credits or increase its quota, then test again.",
+    rate_limited: "Wait a moment, then test again.",
+    timeout: "The provider did not respond in time. Try again shortly.",
+    provider_error: "The provider could not complete this test. Try again shortly.",
+    invalid_response: "The provider returned an unexpected result. Try again shortly.",
+    busy: "Another connection test is already running. Wait for it to finish.",
+  };
+  return copy[code as Exclude<AiTestCode, "ok">];
+}
+
+function formatAiTestSelection(result: AiTestResult) {
+  if (!result.selection) return "saved selection";
+  const thinkingLevel = (result.selection as AiAnalysisSelection).thinkingLevel;
+  return `${result.selection.provider} · ${result.selection.model}${thinkingLevel ? ` · ${thinkingLevel}` : ""}`;
+}
+
+function matchesCurrentTestSelection(
+  task: AiTestTask,
+  current: AiProviderState | null,
+  result: AiTestResult,
+) {
+  const expected = task === "transcription"
+    ? current?.selections.transcription
+    : current?.selections.analysis;
+  if (!expected || !result.selection) return false;
+  if (
+    expected.provider !== result.selection.provider ||
+    expected.model !== result.selection.model
+  )
+    return false;
+  if (task === "transcription") return true;
+  return (expected as AiAnalysisSelection).thinkingLevel ===
+    (result.selection as AiAnalysisSelection).thinkingLevel;
+}
+type SettingsTopic =
+  "overview" | "ai" | "connections" | "api" | "data" | "account" | "all";
 type AccountUser = {
   id: string;
   username: string;
   role: string;
   createdAt?: string;
 };
+
+type AppTab = "inbox" | "library" | "ask" | "activity" | "capture" | "settings";
+
+function tabFromLocation(): AppTab {
+  const value = new URLSearchParams(window.location.search).get("tab");
+  return value === "library" ||
+    value === "ask" ||
+    value === "activity" ||
+    value === "capture" ||
+    value === "settings"
+    ? value
+    : "inbox";
+}
+
+const appNavigation: Array<{
+  tab: Exclude<AppTab, "capture">;
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { tab: "inbox", label: "Inbox", icon: Inbox },
+  { tab: "activity", label: "Activity", icon: Activity },
+  { tab: "library", label: "Knowledge base", icon: LibraryBig },
+  { tab: "ask", label: "Ask", icon: MessageSquare },
+  { tab: "settings", label: "Settings", icon: SettingsIcon },
+];
+
+function AppNavigation({
+  tab,
+  activeCount,
+  onNavigate,
+}: {
+  tab: AppTab;
+  activeCount: number;
+  onNavigate: (nextTab: AppTab) => void;
+}) {
+  return (
+    <nav className="app-nav" aria-label="Primary navigation">
+      {appNavigation.map(({ tab: nextTab, label, icon: Icon }) => (
+        <button
+          type="button"
+          className={tab === nextTab ? "active" : ""}
+          data-tab={nextTab}
+          aria-label={label}
+          aria-current={tab === nextTab ? "page" : undefined}
+          onClick={() => onNavigate(nextTab)}
+          key={nextTab}
+        >
+          <Icon className="app-nav-icon" aria-hidden="true" />
+          <span className="app-nav-desktop-label">{label}</span>
+          <span className="app-nav-mobile-label" aria-hidden="true">
+            {nextTab === "library" ? "Knowledge" : label}
+          </span>
+          {nextTab === "activity" && activeCount > 0 && (
+            <span className="app-nav-badge" aria-hidden="true">
+              {activeCount}
+            </span>
+          )}
+        </button>
+      ))}
+    </nav>
+  );
+}
 type Invitation = {
   id: string;
   role: "admin" | "member";
@@ -566,7 +956,9 @@ function RegistrationForm({
       return;
     }
     if (isAdministrator && !acknowledged) {
-      setError("Confirm that you understand this account has administrator access.");
+      setError(
+        "Confirm that you understand this account has administrator access.",
+      );
       return;
     }
     try {
@@ -598,7 +990,7 @@ function RegistrationForm({
   return (
     <main className="auth">
       <section className="auth-card">
-        <div className="mark">◉</div>
+        <div className="auth-wordmark">social knowledge</div>
         <h1>{heading}</h1>
         <p>
           {setup
@@ -649,12 +1041,17 @@ function RegistrationForm({
                   checked={acknowledged}
                   onChange={(event) => setAcknowledged(event.target.checked)}
                 />
-                I understand this is an administrator account and can manage access to this archive.
+                I understand this is an administrator account and can manage
+                access to this archive.
               </span>
             </label>
           )}
           <button>Create account</button>
-          {error && <p className="error" role="alert">{error}</p>}
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
         </form>
       </section>
     </main>
@@ -678,12 +1075,19 @@ function Auth({
   const [loadingInvite, setLoadingInvite] = useState(Boolean(inviteToken));
   useEffect(() => {
     if (!inviteToken) return;
-    void api<{ invitation: InvitationDetails }>("/api/auth/invitations/inspect", {
-      method: "POST",
-      body: JSON.stringify({ token: inviteToken }),
-    })
+    void api<{ invitation: InvitationDetails }>(
+      "/api/auth/invitations/inspect",
+      {
+        method: "POST",
+        body: JSON.stringify({ token: inviteToken }),
+      },
+    )
       .then((result) => setInvite(result.invitation))
-      .catch(() => setError("This invitation is no longer valid. Ask an administrator for a new link."))
+      .catch(() =>
+        setError(
+          "This invitation is no longer valid. Ask an administrator for a new link.",
+        ),
+      )
       .finally(() => setLoadingInvite(false));
   }, [inviteToken]);
   useEffect(() => {
@@ -702,9 +1106,22 @@ function Auth({
       />
     );
   if (inviteToken && loadingInvite)
-    return <main className="auth"><p>Checking invitation…</p></main>;
+    return (
+      <main className="auth">
+        <p>Checking invitation…</p>
+      </main>
+    );
   if (inviteToken && error)
-    return <main className="auth"><section className="auth-card"><h1>Invitation unavailable</h1><p className="error" role="alert">{error}</p></section></main>;
+    return (
+      <main className="auth">
+        <section className="auth-card">
+          <h1>Invitation unavailable</h1>
+          <p className="error" role="alert">
+            {error}
+          </p>
+        </section>
+      </main>
+    );
   async function login(loginUsername: string, loginPassword: string) {
     setError("");
     try {
@@ -717,7 +1134,11 @@ function Auth({
       });
       onDone(false);
     } catch (e) {
-      setError(e instanceof Error ? "Incorrect username or password." : "Unable to sign in.");
+      setError(
+        e instanceof Error
+          ? "Incorrect username or password."
+          : "Unable to sign in.",
+      );
     }
   }
   async function submit(event: FormEvent) {
@@ -727,13 +1148,18 @@ function Auth({
   return (
     <main className="auth">
       <section className="auth-card">
-        <div className="mark">◉</div>
+        <div className="auth-wordmark">social knowledge</div>
         <h1>Welcome back</h1>
         <p>Sign in to your Social Knowledge archive.</p>
         <form onSubmit={submit}>
           <label>
             Username
-            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              required
+            />
           </label>
           <label>
             Password
@@ -746,15 +1172,26 @@ function Auth({
             />
           </label>
           <button>Continue</button>
-          {error && <p className="error" role="alert">{error}</p>}
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
         </form>
         {!!demoAccounts.length && (
-          <section className="demo-accounts" aria-labelledby="demo-accounts-title">
+          <section
+            className="demo-accounts"
+            aria-labelledby="demo-accounts-title"
+          >
             <h2 id="demo-accounts-title">Test accounts</h2>
             {demoAccounts.map((account) => (
               <article key={account.username}>
                 <div>
-                  <strong>{account.role === "admin" ? "Demo administrator" : "Demo member"}</strong>
+                  <strong>
+                    {account.role === "admin"
+                      ? "Demo administrator"
+                      : "Demo member"}
+                  </strong>
                   <span>{account.username}</span>
                   <code>{account.password}</code>
                 </div>
@@ -767,7 +1204,9 @@ function Auth({
                 </button>
               </article>
             ))}
-            <small>Synthetic test accounts only. Never store real information here.</small>
+            <small>
+              Synthetic test accounts only. Never store real information here.
+            </small>
           </section>
         )}
       </section>
@@ -777,7 +1216,9 @@ function Auth({
 
 function ProviderOnboarding({ onDone }: { onDone: () => void }) {
   const [state, setState] = useState<AiProviderState | null>(null);
-  const [step, setStep] = useState<"transcription" | "analysis">("transcription");
+  const [step, setStep] = useState<"transcription" | "analysis">(
+    "transcription",
+  );
   const [provider, setProvider] = useState<"openai" | "cerebras">("openai");
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState("");
@@ -788,11 +1229,32 @@ function ProviderOnboarding({ onDone }: { onDone: () => void }) {
       if (result.selections.transcription) setStep("analysis");
     });
   }, []);
-  const selectedProvider = state?.providers.find((item) => item.id === provider);
-  async function choose(selection: "transcription" | "analysis", selected: AiSelection) {
+  const selectedProvider = state?.providers.find(
+    (item) => item.id === provider,
+  );
+  async function choose(
+    selection: "transcription" | "analysis",
+    selectedProvider: AiSelection["provider"],
+    definition: AiProvider,
+    previousState: AiProviderState,
+  ) {
+    const savedSelection = savedOrFirstTaskModel(
+      previousState,
+      definition,
+      selection,
+    );
+    if (!savedSelection) throw new Error("model_unavailable");
     const result = await api<AiProviderState>("/api/v1/ai-settings", {
       method: "PUT",
-      body: JSON.stringify({ [selection]: selected }),
+      body: JSON.stringify({
+        [selection]: {
+          provider: selectedProvider,
+          model: savedSelection.model,
+          ...(selection === "analysis"
+            ? { thinkingLevel: savedSelection.thinkingLevel }
+            : {}),
+        },
+      }),
     });
     setState(result);
     return result;
@@ -800,49 +1262,132 @@ function ProviderOnboarding({ onDone }: { onDone: () => void }) {
   return (
     <main className="auth">
       <section className="auth-card onboarding-card">
-        <div className="mark">◉</div>
-        <p className="step-label">Step {step === "transcription" ? "1" : "2"} of 2</p>
-        <h1>{step === "transcription" ? "Transcribe your captures" : "Analyze your archive"}</h1>
-        <p>{step === "transcription" ? "Connect OpenAI to turn reel audio into searchable text." : "Choose the provider that summarizes captures and answers questions."} Keys are encrypted and verified before they are saved.</p>
-        <form onSubmit={async (event) => {
-          event.preventDefault();
-          setSubmitting(true);
-          setMessage("Testing the key with the provider…");
-          try {
-            let result = state!;
-            if (!selectedProvider?.connected) {
-              result = await api<AiProviderState>(`/api/v1/ai-providers/${provider}`, { method: "PUT", body: JSON.stringify({ apiKey }) });
-              setState(result);
+        <div className="auth-wordmark">social knowledge</div>
+        <p className="step-label">
+          Step {step === "transcription" ? "1" : "2"} of 2
+        </p>
+        <h1>
+          {step === "transcription"
+            ? "Transcribe your captures"
+            : "Analyze your archive"}
+        </h1>
+        <p>
+          {step === "transcription"
+            ? "Connect OpenAI to turn reel audio into searchable text."
+            : "Choose the provider that summarizes captures and answers questions."}{" "}
+          Keys are encrypted and verified before they are saved.
+        </p>
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setSubmitting(true);
+            setMessage("Testing the key with the provider…");
+            try {
+              let result = state!;
+              if (!selectedProvider?.connected) {
+                result = await api<AiProviderState>(
+                  `/api/v1/ai-providers/${provider}`,
+                  { method: "PUT", body: JSON.stringify({ apiKey }) },
+                );
+                setState(result);
+              }
+              const definition = result.providers.find(
+                (item) => item.id === provider,
+              )!;
+              result = await choose(step, provider, definition, result);
+              setApiKey("");
+              if (step === "transcription") {
+                setStep("analysis");
+                setProvider(
+                  result.providers.find((item) => item.id === "openai")
+                    ?.connected
+                    ? "openai"
+                    : "cerebras",
+                );
+                setMessage(
+                  "Transcription is ready. Now choose how to analyze your archive.",
+                );
+              } else onDone();
+            } catch (error) {
+              setMessage(
+                (error as { body?: { error?: string } }).body?.error ===
+                  "invalid_api_key"
+                  ? "The provider rejected that API key. Check it and try again."
+                  : "The provider could not be reached. Try again shortly.",
+              );
+            } finally {
+              setSubmitting(false);
             }
-            const definition = result.providers.find((item) => item.id === provider)!;
-            const model = definition.models[step][0];
-            if (!model) throw new Error("model_unavailable");
-            result = await choose(step, { provider, model });
-            setApiKey("");
-            if (step === "transcription") {
-              setStep("analysis");
-              setProvider(result.providers.find((item) => item.id === "openai")?.connected ? "openai" : "cerebras");
-              setMessage("Transcription is ready. Now choose how to analyze your archive.");
-            } else onDone();
-          } catch (error) {
-            setMessage((error as { body?: { error?: string } }).body?.error === "invalid_api_key" ? "The provider rejected that API key. Check it and try again." : "The provider could not be reached. Try again shortly.");
-          } finally {
-            setSubmitting(false);
-          }
-        }}>
-          {step === "analysis" && <label>Analysis provider
-            <select value={provider} onChange={(event) => { setProvider(event.target.value as "openai" | "cerebras"); setApiKey(""); }}>
-              <option value="openai">OpenAI</option><option value="cerebras">Cerebras</option>
-            </select>
-          </label>}
-          {selectedProvider?.models[step][0] && <p className="model-choice"><span>{step === "transcription" ? "Transcription model" : "Analysis model"}</span><strong>{selectedProvider.models[step][0]}</strong></p>}
-          {selectedProvider?.connected ? <p className="connected-choice"><strong>{selectedProvider.name} connected</strong><span>{selectedProvider.keyHint} · no need to enter the key again</span></p> : <label>{provider === "cerebras" ? "Cerebras" : "OpenAI"} API key
-            <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" placeholder="Paste API key" required />
-          </label>}
-          <button disabled={submitting || !state}>{submitting ? "Verifying…" : step === "transcription" ? "Connect transcription" : "Use for analysis"}</button>
-          <button type="button" className="secondary-button" onClick={onDone}>Set up later</button>
-          <p className="settings-help">Capture needs transcription and analysis. Ask only needs analysis. You can finish either setup in Settings.</p>
-          {message && <p className="action-feedback" role="status">{message}</p>}
+          }}
+        >
+          {step === "analysis" && (
+            <label>
+              Analysis provider
+              <select
+                value={provider}
+                onChange={(event) => {
+                  setProvider(event.target.value as "openai" | "cerebras");
+                  setApiKey("");
+                }}
+              >
+                <option value="openai">OpenAI</option>
+                <option value="cerebras">Cerebras</option>
+              </select>
+            </label>
+          )}
+          {selectedProvider && (
+            <p className="model-choice">
+              <span>
+                {step === "transcription"
+                  ? "Transcription model"
+                  : "Analysis model"}
+              </span>
+              <strong>
+                {state
+                  ? savedOrFirstTaskModel(state, selectedProvider, step)?.model
+                  : null}
+              </strong>
+            </p>
+          )}
+          {selectedProvider?.connected ? (
+            <p className="connected-choice">
+              <strong>{selectedProvider.name} connected</strong>
+              <span>
+                {selectedProvider.keyHint} · no need to enter the key again
+              </span>
+            </p>
+          ) : (
+            <label>
+              {provider === "cerebras" ? "Cerebras" : "OpenAI"} API key
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
+                autoComplete="off"
+                placeholder="Paste API key"
+                required
+              />
+            </label>
+          )}
+          <button disabled={submitting || !state}>
+            {submitting
+              ? "Verifying…"
+              : step === "transcription"
+                ? "Connect transcription"
+                : "Use for analysis"}
+          </button>
+          <button type="button" className="secondary-button" onClick={onDone}>
+            Set up later
+          </button>
+          <p className="settings-help">
+            Capture needs transcription and analysis. Ask only needs analysis.
+            You can finish either setup in Settings.
+          </p>
+          {message && (
+            <p className="action-feedback" role="status">
+              {message}
+            </p>
+          )}
         </form>
       </section>
     </main>
@@ -852,36 +1397,148 @@ function ProviderOnboarding({ onDone }: { onDone: () => void }) {
 function CaptureCard({
   capture,
   onOpen,
+  categoryLabel,
 }: {
   capture: Capture;
   onOpen: (id: string) => void;
+  categoryLabel: string | null;
 }) {
+  const [imageFailed, setImageFailed] = useState(false);
   const thumb = capture.assets.find(
     (a) => a.kind === "thumbnail" || a.kind === "image",
   );
   return (
-    <button className="capture-card" onClick={() => onOpen(capture.id)}>
-      {thumb ? (
-        <img src={assetUrl(capture.id, thumb.id)} alt="" />
-      ) : (
-        <div className="placeholder">
-          {capture.platform.slice(0, 1).toUpperCase()}
-        </div>
-      )}
-      <div className="card-body">
-        <div className="eyebrow">
-          {capture.platform} ·{" "}
-          {new Date(capture.createdAt).toLocaleDateString()}
-        </div>
-        <h3>{capture.title}</h3>
-        <p>{capture.creator || "Unknown creator"}</p>
-        <div className="chips">
-          {capture.topics.slice(0, 3).map((topic) => (
-            <span key={topic}>{topic}</span>
+    <button
+      type="button"
+      className="capture-card inbox-tile"
+      onClick={() => onOpen(capture.id)}
+    >
+      <span className="inbox-tile-media">
+        {thumb && !imageFailed ? (
+          <img
+            src={assetUrl(capture.id, thumb.id)}
+            alt=""
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <span className="placeholder" aria-hidden="true">
+            {capture.platform.slice(0, 1).toUpperCase()}
+          </span>
+        )}
+      </span>
+      <span className="card-body">
+        <span className="inbox-tile-source">
+          <span>
+            <PlatformMark platform={capture.platform} />
+            {captureSource(capture)}
+          </span>
+          <time dateTime={capture.createdAt}>
+            {formatCaptureDate(capture.createdAt)}
+          </time>
+        </span>
+        <strong className="inbox-tile-title">{capture.title}</strong>
+        <span className="inbox-tile-summary">
+          {capture.synopsis || "No summary is available yet."}
+        </span>
+        <span className="inbox-tile-footer">
+          {categoryLabel && <span>Category: {categoryLabel}</span>}
+          {capture.topics.slice(0, 1).map((topic) => (
+            <span className="inbox-topic" key={topic}>
+              {topic}
+            </span>
           ))}
-        </div>
-      </div>
+          <span className="inbox-open-detail">
+            Open details <ChevronRight aria-hidden="true" />
+          </span>
+        </span>
+      </span>
     </button>
+  );
+}
+
+function CaptureTableRow({
+  capture,
+  onOpen,
+  categoryLabel,
+}: {
+  capture: Capture;
+  onOpen: (id: string) => void;
+  categoryLabel: string | null;
+}) {
+  return (
+    <tr>
+      <td>
+        <button
+          type="button"
+          className="inbox-table-title"
+          onClick={() => onOpen(capture.id)}
+        >
+          {capture.title}
+          <ChevronRight aria-hidden="true" />
+        </button>
+      </td>
+      <td>
+        <time dateTime={capture.createdAt}>
+          {formatCaptureDate(capture.createdAt)}
+        </time>
+      </td>
+      <td>{captureSource(capture)}</td>
+      <td>{categoryLabel || "—"}</td>
+      <td>{capture.topics[0] || "—"}</td>
+    </tr>
+  );
+}
+
+function CaptureMobileRow({
+  capture,
+  onOpen,
+  categoryLabel,
+}: {
+  capture: Capture;
+  onOpen: (id: string) => void;
+  categoryLabel: string | null;
+}) {
+  return (
+    <article className="inbox-mobile-row">
+      <button type="button" onClick={() => onOpen(capture.id)}>
+        <strong>
+          {capture.title}
+          <ChevronRight aria-hidden="true" />
+        </strong>
+        <span>
+          <b>Saved date</b>
+          <time dateTime={capture.createdAt}>
+            {formatCaptureDate(capture.createdAt)}
+          </time>
+        </span>
+        <span>
+          <b>Source</b>
+          {captureSource(capture)}
+        </span>
+        <span>
+          <b>Category</b>
+          {categoryLabel || "—"}
+        </span>
+        <span>
+          <b>Topic</b>
+          {capture.topics[0] || "—"}
+        </span>
+      </button>
+    </article>
+  );
+}
+
+function InboxLoadingCards() {
+  return (
+    <div className="inbox-loading-cards" aria-label="Loading captures">
+      {[1, 2, 3, 4].map((index) => (
+        <div className="inbox-loading-card" key={index} aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1041,23 +1698,37 @@ function Detail({ id, onClose }: { id: string; onClose: () => void }) {
 function AccessManagement() {
   const [users, setUsers] = useState<AccountUser[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [role, setRole] = useState<"member" | "admin">("member");
-  const [administratorAcknowledged, setAdministratorAcknowledged] = useState(false);
+  const [administratorAcknowledged, setAdministratorAcknowledged] =
+    useState(false);
   const [message, setMessage] = useState("");
   const [createdInvitationUrl, setCreatedInvitationUrl] = useState("");
   async function load() {
-    const [userResult, invitationResult] = await Promise.all([
-      api<{ users: AccountUser[] }>("/api/v1/admin/users"),
-      api<{ invitations: Invitation[] }>("/api/v1/admin/invitations"),
-    ]);
-    setUsers(userResult.users);
-    setInvitations(invitationResult.invitations);
+    setLoadError("");
+    try {
+      const [userResult, invitationResult] = await Promise.all([
+        api<{ users: AccountUser[] }>("/api/v1/admin/users"),
+        api<{ invitations: Invitation[] }>("/api/v1/admin/invitations"),
+      ]);
+      setUsers(userResult.users);
+      setInvitations(invitationResult.invitations);
+    } catch {
+      setLoadError("People and invitations could not be loaded. Try again.");
+    } finally {
+      setLoading(false);
+    }
   }
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+  }, []);
   const copyInvitation = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
-      setMessage("Invitation link copied. It is shown only when created or regenerated.");
+      setMessage(
+        "Invitation link copied. It is shown only when created or regenerated.",
+      );
     } catch {
       setMessage("Copy the invitation link from the field below.");
     }
@@ -1066,68 +1737,210 @@ function AccessManagement() {
     event.preventDefault();
     setMessage("");
     if (role === "admin" && !administratorAcknowledged) {
-      setMessage("Confirm administrator access before creating this invitation.");
+      setMessage(
+        "Confirm administrator access before creating this invitation.",
+      );
       return;
     }
     try {
-      const result = await api<{ invitation: Invitation; invitationUrl: string }>(
-        "/api/v1/admin/invitations",
-        { method: "POST", body: JSON.stringify({ role, administratorAcknowledged }) },
-      );
+      const result = await api<{
+        invitation: Invitation;
+        invitationUrl: string;
+      }>("/api/v1/admin/invitations", {
+        method: "POST",
+        body: JSON.stringify({ role, administratorAcknowledged }),
+      });
       setCreatedInvitationUrl(result.invitationUrl);
-      setMessage(`${role === "admin" ? "Administrator" : "Member"} invitation created. It expires in 24 hours.`);
+      setMessage(
+        `${role === "admin" ? "Administrator" : "Member"} invitation created. It expires in 24 hours.`,
+      );
       await load();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Invitation could not be created.");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Invitation could not be created.",
+      );
     }
   };
   return (
     <section className="settings-card access-management">
       <h2>People and access</h2>
-      <p className="settings-help">Administrators can invite people and manage invitations. Each person’s archive, connections, API keys, and exports remain private to their account.</p>
+      <p className="settings-help">
+        Administrators can invite people and manage invitations. Each person’s
+        archive, connections, API keys, and exports remain private to their
+        account.
+      </p>
       <form onSubmit={create}>
         <label>
           Invitation role
-          <select value={role} onChange={(event) => { setRole(event.target.value as "member" | "admin"); setAdministratorAcknowledged(false); }}>
+          <select
+            value={role}
+            onChange={(event) => {
+              setRole(event.target.value as "member" | "admin");
+              setAdministratorAcknowledged(false);
+            }}
+          >
             <option value="member">Member — private archive access</option>
             <option value="admin">Administrator — can manage access</option>
           </select>
         </label>
         {role === "admin" && (
           <label className="toggle-label">
-            <input type="checkbox" checked={administratorAcknowledged} onChange={(event) => setAdministratorAcknowledged(event.target.checked)} />
+            <input
+              type="checkbox"
+              checked={administratorAcknowledged}
+              onChange={(event) =>
+                setAdministratorAcknowledged(event.target.checked)
+              }
+            />
             I understand this invitation grants administrator access.
           </label>
         )}
         <button>Create invitation</button>
       </form>
-      {message && <p className="action-feedback" role="status">{message}</p>}
+      {message && (
+        <p className="action-feedback" role="status">
+          {message}
+        </p>
+      )}
+      {loadError && (
+        <div className="settings-inline-error" role="alert">
+          <span>{loadError}</span>
+          <button type="button" onClick={() => void load()}>
+            Retry
+          </button>
+        </div>
+      )}
       {createdInvitationUrl && (
         <div className="token-box invitation-link">
           <strong>Share this link securely</strong>
-          <input value={createdInvitationUrl} readOnly aria-label="New invitation link" />
-          <button type="button" onClick={() => void copyInvitation(createdInvitationUrl)}>Copy invitation</button>
+          <input
+            value={createdInvitationUrl}
+            readOnly
+            aria-label="New invitation link"
+          />
+          <button
+            type="button"
+            onClick={() => void copyInvitation(createdInvitationUrl)}
+          >
+            Copy invitation
+          </button>
         </div>
       )}
       <div className="access-list">
         <h3>Accounts</h3>
-        {users.map((user) => <article key={user.id}><div><strong>{user.username}</strong><small>{user.role === "admin" ? "Administrator" : "Member"}{user.createdAt ? ` · joined ${new Date(user.createdAt).toLocaleDateString()}` : ""}</small></div></article>)}
-        {!users.length && <p className="settings-help">Loading accounts…</p>}
+        {users.map((user) => (
+          <article key={user.id}>
+            <div>
+              <strong>{user.username}</strong>
+              <small>
+                {user.role === "admin" ? "Administrator" : "Member"}
+                {user.createdAt
+                  ? ` · joined ${new Date(user.createdAt).toLocaleDateString()}`
+                  : ""}
+              </small>
+            </div>
+          </article>
+        ))}
+        {!users.length && !loadError && (
+          <p className="settings-help">
+            {loading ? "Loading accounts…" : "No accounts yet."}
+          </p>
+        )}
       </div>
       <div className="access-list">
         <h3>Invitations</h3>
         {invitations.map((invitation) => {
-          const inactive = invitation.consumedAt || invitation.revokedAt || new Date(invitation.expiresAt).getTime() < Date.now();
-          const state = invitation.consumedAt ? "Used" : invitation.revokedAt ? "Revoked" : new Date(invitation.expiresAt).getTime() < Date.now() ? "Expired" : "Active";
-          return <article key={invitation.id}><div><strong>{invitation.role === "admin" ? "Administrator" : "Member"} invitation</strong><small>{state} · expires {new Date(invitation.expiresAt).toLocaleString()}</small></div><div className="access-actions">{!inactive && <button type="button" className="secondary-button" onClick={async () => { await api(`/api/v1/admin/invitations/${invitation.id}/revoke`, { method: "POST" }); setMessage("Invitation revoked."); await load(); }}>Revoke</button>}{!invitation.consumedAt && <button type="button" className="secondary-button" onClick={async () => { const result = await api<{ invitationUrl: string }>(`/api/v1/admin/invitations/${invitation.id}/regenerate`, { method: "POST" }); setCreatedInvitationUrl(result.invitationUrl); setMessage("New invitation link created. The previous link no longer works."); await load(); }}>Regenerate</button>}</div></article>;
+          const inactive =
+            invitation.consumedAt ||
+            invitation.revokedAt ||
+            new Date(invitation.expiresAt).getTime() < Date.now();
+          const state = invitation.consumedAt
+            ? "Used"
+            : invitation.revokedAt
+              ? "Revoked"
+              : new Date(invitation.expiresAt).getTime() < Date.now()
+                ? "Expired"
+                : "Active";
+          return (
+            <article key={invitation.id}>
+              <div>
+                <strong>
+                  {invitation.role === "admin" ? "Administrator" : "Member"}{" "}
+                  invitation
+                </strong>
+                <small>
+                  {state} · expires{" "}
+                  {new Date(invitation.expiresAt).toLocaleString()}
+                </small>
+              </div>
+              <div className="access-actions">
+                {!inactive && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={async () => {
+                      try {
+                        await api(
+                          `/api/v1/admin/invitations/${invitation.id}/revoke`,
+                          { method: "POST" },
+                        );
+                        setMessage("Invitation revoked.");
+                        await load();
+                      } catch {
+                        setMessage(
+                          "Invitation could not be revoked. Try again.",
+                        );
+                      }
+                    }}
+                  >
+                    Revoke
+                  </button>
+                )}
+                {!invitation.consumedAt && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={async () => {
+                      try {
+                        const result = await api<{ invitationUrl: string }>(
+                          `/api/v1/admin/invitations/${invitation.id}/regenerate`,
+                          { method: "POST" },
+                        );
+                        setCreatedInvitationUrl(result.invitationUrl);
+                        setMessage(
+                          "New invitation link created. The previous link no longer works.",
+                        );
+                        await load();
+                      } catch {
+                        setMessage(
+                          "Invitation link could not be regenerated. Try again.",
+                        );
+                      }
+                    }}
+                  >
+                    Regenerate
+                  </button>
+                )}
+              </div>
+            </article>
+          );
         })}
-        {!invitations.length && <p className="settings-help">No invitations yet.</p>}
+        {!invitations.length && !loadError && (
+          <p className="settings-help">
+            {loading ? "Loading invitations…" : "No invitations yet."}
+          </p>
+        )}
       </div>
     </section>
   );
 }
 
 function Settings({ user }: { user: AccountUser | null }) {
+  const [topic, setTopic] = useState<SettingsTopic>("overview");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [name, setName] = useState("iPhone Shortcut");
   const [token, setToken] = useState("");
@@ -1145,46 +1958,120 @@ function Settings({ user }: { user: AccountUser | null }) {
   const [libraryExports, setLibraryExports] = useState<LibraryExport[]>([]);
   const [backupMessage, setBackupMessage] = useState("");
   const [aiState, setAiState] = useState<AiProviderState | null>(null);
+  const aiStateRef = useRef<AiProviderState | null>(null);
+  const [draftSelections, setDraftSelections] =
+    useState<AiDraftSelections | null>(null);
+  const [savingAiSelections, setSavingAiSelections] = useState(false);
   const [selectedAiProvider, setSelectedAiProvider] = useState<
     "openai" | "cerebras"
-  >("cerebras");
+  >("openai");
+  const [providerDialogOpen, setProviderDialogOpen] = useState(false);
+  const providerDialogTrigger = useRef<HTMLElement | null>(null);
   const [providerApiKey, setProviderApiKey] = useState("");
+  const [replaceProviderKey, setReplaceProviderKey] = useState(false);
   const [providerMessage, setProviderMessage] = useState("");
+  const [providerMessageKind, setProviderMessageKind] = useState<
+    "pending" | "success" | "error"
+  >("success");
   const [verifyingProvider, setVerifyingProvider] = useState(false);
-  async function load() {
-    const [
-      keyResult,
-      preferenceResult,
-      connectionResult,
-      exportResult,
-      platformResult,
-      aiResult,
-    ] = await Promise.all([
-      api<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
-      api<{
-        preferences: { defaultLanguage: string; translateForeign: boolean };
-      }>("/api/v1/preferences"),
-      api<{ connections: OAuthConnection[]; mcpUrl: string }>(
-        "/api/v1/oauth/connections",
-      ),
-      api<{ exports: LibraryExport[] }>("/api/v1/library-exports"),
-      api<{ connections: PlatformConnection[] }>(
-        "/api/v1/platform-connections",
-      ),
-      api<AiProviderState>("/api/v1/ai-providers"),
-    ]);
-    setKeys(keyResult.apiKeys);
-    setDefaultLanguage(preferenceResult.preferences.defaultLanguage);
-    setTranslateForeign(preferenceResult.preferences.translateForeign);
-    setConnections(connectionResult.connections);
-    setMcpUrl(connectionResult.mcpUrl);
-    setLibraryExports(exportResult.exports);
-    setPlatformConnections(platformResult.connections);
-    setAiState(aiResult);
+  const [testStates, setTestStates] = useState<Record<AiTestTask, AiTestState>>(
+    initialAiTestStates,
+  );
+  const [testingTask, setTestingTask] = useState<AiTestTask | null>(null);
+  const [testAudioFile, setTestAudioFile] = useState<File | null>(null);
+  const [testDialogOpen, setTestDialogOpen] = useState(false);
+  const testDialogTrigger = useRef<HTMLElement | null>(null);
+  const testDialogPanel = useRef<HTMLElement | null>(null);
+  const testGeneration = useRef(0);
+  const applyAiState = (nextState: AiProviderState, resetDraft = false) => {
+    const previousState = aiStateRef.current;
+    aiStateRef.current = nextState;
+    setAiState(nextState);
+    setDraftSelections((current) =>
+      resetDraft ||
+      !current ||
+      (previousState && sameAiSelections(current, previousState.selections))
+        ? nextState.selections
+        : selectionsForConnectedProviders(current, nextState.providers),
+    );
+  };
+  const applyProviderDraft = (providerId: AiSelection["provider"]) => {
+    const definition = aiStateRef.current?.providers.find(
+      (item) => item.id === providerId,
+    );
+    setSelectedAiProvider(providerId);
+    setProviderApiKey("");
+    setReplaceProviderKey(!definition?.connected);
+  };
+  const openProviderDialog = (providerId: AiSelection["provider"]) => {
+    providerDialogTrigger.current = document.activeElement as HTMLElement | null;
+    applyProviderDraft(providerId);
+    setProviderMessage("");
+    setProviderDialogOpen(true);
+  };
+  const closeProviderDialog = () => {
+    setProviderApiKey("");
+    setReplaceProviderKey(false);
+    setProviderDialogOpen(false);
+    window.requestAnimationFrame(() => providerDialogTrigger.current?.focus());
+  };
+  const openTestDialog = () => {
+    testDialogTrigger.current = document.activeElement as HTMLElement | null;
+    setTestDialogOpen(true);
+  };
+  const closeTestDialog = () => {
+    setTestDialogOpen(false);
+    window.requestAnimationFrame(() => testDialogTrigger.current?.focus());
+  };
+  async function load(showLoading = false) {
+    if (showLoading) setLoading(true);
+    setLoadError("");
+    try {
+      const [
+        keyResult,
+        preferenceResult,
+        connectionResult,
+        exportResult,
+        platformResult,
+        aiResult,
+      ] = await Promise.all([
+        api<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
+        api<{
+          preferences: { defaultLanguage: string; translateForeign: boolean };
+        }>("/api/v1/preferences"),
+        api<{ connections: OAuthConnection[]; mcpUrl: string }>(
+          "/api/v1/oauth/connections",
+        ),
+        api<{ exports: LibraryExport[] }>("/api/v1/library-exports"),
+        api<{ connections: PlatformConnection[] }>(
+          "/api/v1/platform-connections",
+        ),
+        api<AiProviderState>("/api/v1/ai-providers"),
+      ]);
+      setKeys(keyResult.apiKeys);
+      setDefaultLanguage(preferenceResult.preferences.defaultLanguage);
+      setTranslateForeign(preferenceResult.preferences.translateForeign);
+      setConnections(connectionResult.connections);
+      setMcpUrl(connectionResult.mcpUrl);
+      setLibraryExports(exportResult.exports);
+      setPlatformConnections(platformResult.connections);
+      applyAiState(aiResult);
+    } catch {
+      setLoadError(
+        "Settings could not be loaded. Check your connection and try again.",
+      );
+    } finally {
+      if (showLoading) setLoading(false);
+    }
   }
   useEffect(() => {
-    void load();
+    void load(true);
   }, []);
+  useEffect(() => {
+    if (!testDialogOpen) return;
+    const frame = window.requestAnimationFrame(() => testDialogPanel.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [testDialogOpen]);
   useEffect(() => {
     if (!libraryExports.some((item) => item.status === "pending")) {
       if (backupMessage === "Preparing your backup…") {
@@ -1203,17 +2090,21 @@ function Settings({ user }: { user: AccountUser | null }) {
   }, [libraryExports]);
   async function create(event: FormEvent) {
     event.preventDefault();
-    const result = await api<{ token: string; apiKey: ApiKey }>(
-      "/api/v1/api-keys",
-      {
-        method: "POST",
-        body: JSON.stringify({ name }),
-      },
-    );
-    setToken(result.token);
-    setCreatedKeyId(result.apiKey.id);
-    setMessage("Copy this key now. It will not be shown again.");
-    await load();
+    try {
+      const result = await api<{ token: string; apiKey: ApiKey }>(
+        "/api/v1/api-keys",
+        {
+          method: "POST",
+          body: JSON.stringify({ name }),
+        },
+      );
+      setToken(result.token);
+      setCreatedKeyId(result.apiKey.id);
+      setMessage("Copy this key now. It will not be shown again.");
+      await load();
+    } catch {
+      setMessage("The API key could not be created. Try again.");
+    }
   }
   async function uploadPlatformCookies(
     platform: PlatformConnection["platform"],
@@ -1242,466 +2133,1516 @@ function Settings({ user }: { user: AccountUser | null }) {
       );
     }
   }
+  function invalidateTests(tasks: AiTestTask[]) {
+    testGeneration.current += 1;
+    setTestStates((current) => {
+      const next = { ...current };
+      for (const task of tasks) {
+        const state = current[task];
+        next[task] = {
+          ...state,
+          status:
+            state.result || state.status === "pending" ? "stale" : "idle",
+        };
+      }
+      return next;
+    });
+  }
+  async function audioData(file: File) {
+    const result = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("invalid_audio_data"));
+      reader.onload = () => resolve(String(reader.result ?? ""));
+      reader.readAsDataURL(file);
+    });
+    const separator = result.indexOf(",");
+    if (separator < 0) throw new Error("invalid_audio_data");
+    return result.slice(separator + 1);
+  }
+  function audioContentType(file: File) {
+    const aliases: Record<string, string> = {
+      "audio/x-m4a": "audio/mp4",
+      "audio/x-mp4": "audio/mp4",
+      "audio/x-wav": "audio/wav",
+      "audio/wave": "audio/wav",
+      "audio/x-wave": "audio/wav",
+    };
+    const contentType = file.type.toLowerCase();
+    if (
+      ["audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/webm"].includes(
+        contentType,
+      )
+    )
+      return contentType;
+    if (aliases[contentType]) return aliases[contentType];
+    const extension = file.name.toLowerCase().split(".").pop();
+    const typesByExtension: Record<string, string> = {
+      mp3: "audio/mpeg",
+      m4a: "audio/mp4",
+      mp4: "audio/mp4",
+      ogg: "audio/ogg",
+      wav: "audio/wav",
+      webm: "audio/webm",
+    };
+    return typesByExtension[extension ?? ""] ?? contentType;
+  }
+  async function runAiTest(task: AiTestTask) {
+    if (testingTask) return;
+    if (aiSettingsDirty || savingAiSelections) return;
+    const selection =
+      task === "transcription"
+        ? aiStateRef.current?.selections.transcription
+        : aiStateRef.current?.selections.analysis;
+    if (!selection || providerMessageKind === "pending") return;
+    const file = task === "transcription" ? testAudioFile : null;
+    if (task === "transcription" && !file) return;
+    if (file && file.size > 1024 * 1024) {
+      setTestStates((current) => ({
+        ...current,
+        [task]: {
+          status: "complete",
+          result: {
+            ok: false,
+            code: "invalid_audio",
+            checkedAt: new Date().toISOString(),
+            durationMs: 0,
+            selection: null,
+          },
+        },
+      }));
+      return;
+    }
+    const generation = testGeneration.current;
+    const startedAt = performance.now();
+    setTestingTask(task);
+    setTestStates((current) => ({
+      ...current,
+      [task]: { result: null, status: "pending" },
+    }));
+    try {
+      const body = file
+        ? {
+            audio: {
+              contentType: audioContentType(file),
+              base64: await audioData(file),
+            },
+          }
+        : {};
+      const result = await api<AiTestResult>(`/api/v1/ai-tests/${task}`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      setTestStates((current) => ({
+        ...current,
+        [task]:
+          generation === testGeneration.current &&
+          (!result.ok || matchesCurrentTestSelection(task, aiStateRef.current, result))
+            ? { result, status: "complete" }
+            : { ...current[task], status: "stale" },
+      }));
+    } catch {
+      const result: AiTestResult = {
+        ok: false,
+        code: "provider_error",
+        checkedAt: new Date().toISOString(),
+        durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        selection: null,
+      };
+      setTestStates((current) => ({
+        ...current,
+        [task]:
+          generation === testGeneration.current
+            ? { result, status: "complete" }
+            : { ...current[task], status: "stale" },
+      }));
+    } finally {
+      setTestingTask(null);
+    }
+  }
+  async function saveAiSelections() {
+    const nextSelections = draftSelections ?? aiStateRef.current?.selections;
+    if (!nextSelections || savingAiSelections) return;
+    setSavingAiSelections(true);
+    setProviderMessageKind("pending");
+    setProviderMessage("Saving AI settings…");
+    try {
+      const result = await api<AiProviderState>("/api/v1/ai-settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          transcription: nextSelections.transcription,
+          analysis: nextSelections.analysis,
+        }),
+      });
+      invalidateTests(["transcription", "analysis", "ask"]);
+      applyAiState(result, true);
+      setProviderMessageKind("success");
+      setProviderMessage("AI settings saved.");
+    } catch (error) {
+      setProviderMessageKind("error");
+      const code = (error as { body?: { error?: string } }).body?.error;
+      setProviderMessage(
+        ["model_unavailable", "invalid_model_selection", "invalid_thinking_level"].includes(
+          code ?? "",
+        )
+          ? "That model is no longer available from this provider. Choose another model. Your changes are still here."
+          : "AI settings could not be saved. Your changes are still here.",
+      );
+    } finally {
+      setSavingAiSelections(false);
+    }
+  }
+  function updateTaskDraft(
+    task: "transcription" | "analysis",
+    selection: AiSelection | AiAnalysisSelection | null,
+  ) {
+    setDraftSelections((current) => {
+      const existing = current ?? aiStateRef.current?.selections;
+      return existing ? { ...existing, [task]: selection } : current;
+    });
+  }
+  async function disconnectAiProvider(provider: AiSelection["provider"]) {
+    const definition = aiStateRef.current?.providers.find(
+      (item) => item.id === provider,
+    );
+    if (!definition || verifyingProvider) return;
+    setVerifyingProvider(true);
+    setProviderMessageKind("pending");
+    setProviderMessage(`Disconnecting ${definition.name}…`);
+    try {
+      const result = await api<AiProviderState>(
+        `/api/v1/ai-providers/${provider}`,
+        { method: "DELETE" },
+      );
+      invalidateTests(["transcription", "analysis", "ask"]);
+      applyAiState(result);
+      setProviderMessageKind("success");
+      setProviderMessage(
+        `${definition.name} disconnected. Its draft assignment was cleared.`,
+      );
+      closeProviderDialog();
+    } catch {
+      setProviderMessageKind("error");
+      setProviderMessage(`${definition.name} could not be disconnected. Try again.`);
+    } finally {
+      setVerifyingProvider(false);
+    }
+  }
+  async function submitProviderConfiguration(event: FormEvent) {
+    event.preventDefault();
+    const definition = aiStateRef.current?.providers.find(
+      (item) => item.id === selectedAiProvider,
+    );
+    const needsKey = !definition?.connected || replaceProviderKey;
+    if (needsKey && !providerApiKey.trim()) {
+      setProviderMessageKind("error");
+      setProviderMessage("Enter an API key to connect this provider.");
+      return;
+    }
+    if (!needsKey) {
+      closeProviderDialog();
+      return;
+    }
+    invalidateTests(["transcription", "analysis", "ask"]);
+    setVerifyingProvider(true);
+    setProviderMessageKind("pending");
+    setProviderMessage("Verifying the key…");
+    try {
+      const state = await api<AiProviderState>(
+        `/api/v1/ai-providers/${selectedAiProvider}`,
+        { method: "PUT", body: JSON.stringify({ apiKey: providerApiKey }) },
+      );
+      applyAiState(state);
+      setProviderApiKey("");
+      const current = state.providers.find(
+        (item) => item.id === selectedAiProvider,
+      );
+      if (!current?.connected) throw new Error("provider_unavailable");
+      setProviderMessageKind("success");
+      setProviderMessage(`${current.name} connected. Assign it to a task below.`);
+      closeProviderDialog();
+    } catch (error) {
+      setProviderMessageKind("error");
+      const code = (error as { body?: { error?: string } }).body?.error;
+      setProviderMessage(
+        code === "invalid_api_key"
+          ? "The provider rejected that API key. Check it and try again."
+          : "The provider could not be connected. Try again shortly.",
+      );
+    } finally {
+      setVerifyingProvider(false);
+    }
+  }
+  const topics: Array<{
+    id: SettingsTopic;
+    label: string;
+    description: string;
+    icon: LucideIcon;
+  }> = [
+    {
+      id: "overview",
+      label: "Overview",
+      description: "A clear view of your setup.",
+      icon: SettingsIcon,
+    },
+    {
+      id: "ai",
+      label: "AI",
+      description: "Providers and task models.",
+      icon: Bot,
+    },
+    {
+      id: "connections",
+      label: "Connections",
+      description: "Sources and social sessions.",
+      icon: Link2,
+    },
+    {
+      id: "api",
+      label: "API keys",
+      description: "Integration access.",
+      icon: KeyRound,
+    },
+    {
+      id: "data",
+      label: "Data & export",
+      description: "Language and portable archives.",
+      icon: DatabaseBackup,
+    },
+    {
+      id: "account",
+      label: "Account",
+      description: "Profile and access management.",
+      icon: UserRound,
+    },
+  ];
+  const connectedPlatforms = platformConnections.filter(
+    (connection) => connection.connected,
+  );
+  const openAi = aiState?.providers.find(
+    (provider) => provider.id === "openai",
+  );
+  const configuredAiProviders = aiState?.providers ?? [];
+  const dialogProvider = aiState?.providers.find(
+    (provider) => provider.id === selectedAiProvider,
+  );
+  const currentAiSelections = draftSelections ?? aiState?.selections ?? {
+    transcription: null,
+    analysis: null,
+  };
+  const aiSettingsDirty = Boolean(
+    aiState && !sameAiSelections(currentAiSelections, aiState.selections),
+  );
+  const aiTestBlocked = aiSettingsDirty || savingAiSelections;
+  const activeTopic = topics.find((item) => item.id === topic);
+  const showTopic = (value: SettingsTopic) =>
+    topic === value || topic === "all";
+  const selectTopic = (value: SettingsTopic) => {
+    setTopic(value);
+    window.requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>(".settings-heading")?.focus(),
+    );
+  };
   return (
-    <div className="settings">
-      <div className="page-title">
-        <h1>Settings</h1>
-        <p>
-          Choose how knowledge is processed and manage Shortcut and agent
-          access.
-        </p>
-      </div>
-      <section className="settings-card ai-provider-settings">
-        <h2>AI processing</h2>
-        <p className="settings-help">
-          Choose transcription and analysis separately. Provider keys are
-          encrypted at rest and never shown again.
-        </p>
-        <div className="ai-readiness" role="status">
-          <strong>{aiState?.readiness.capture ? "Capture ready" : "Capture needs transcription and analysis"}</strong>
-          <span>{aiState?.readiness.ask ? "Ask is ready." : "Ask needs an analysis provider."}</span>
-        </div>
-        <div className="ai-task-grid">
-          {(["transcription", "analysis"] as const).map((task) => {
-            const selection = aiState?.selections[task];
-            const options = (aiState?.providers ?? []).filter((item) => item.capabilities[task]);
-            return <article className="ai-task" key={task}>
-              <span className="step-label">{task === "transcription" ? "Step 1" : "Step 2"}</span>
-              <h3>{task === "transcription" ? "Transcription" : "Analysis & Ask"}</h3>
-              <p>{task === "transcription" ? "Turns audio into searchable text. OpenAI is currently required." : "Creates summaries, topics, vision insights, and answers."}</p>
-              <label>Provider
-                <select value={selection?.provider ?? ""} onChange={async (event) => {
-                  const provider = event.target.value as "openai" | "cerebras";
-                  const definition = options.find((item) => item.id === provider);
-                  if (!definition?.connected) { setSelectedAiProvider(provider); setProviderMessage(`Connect ${definition?.name ?? provider} below before selecting it for ${task}.`); return; }
-                  const model = definition.models[task][0];
-                  const result = await api<AiProviderState>("/api/v1/ai-settings", { method: "PUT", body: JSON.stringify({ [task]: { provider, model } }) });
-                  setAiState(result);
-                  setProviderMessage(`${task === "transcription" ? "Transcription" : "Analysis"} selection updated.`);
-                }}>
-                  <option value="" disabled>Choose provider</option>
-                  {options.map((item) => <option key={item.id} value={item.id}>{item.name}{item.connected ? " · connected" : " · connect first"}</option>)}
-                </select>
-              </label>
-              {selection && <label>Model
-                <select value={selection.model} onChange={async (event) => {
-                  const result = await api<AiProviderState>("/api/v1/ai-settings", { method: "PUT", body: JSON.stringify({ [task]: { provider: selection.provider, model: event.target.value } }) });
-                  setAiState(result);
-                  setProviderMessage(`${task === "transcription" ? "Transcription" : "Analysis"} model updated.`);
-                }}>{options.find((item) => item.id === selection.provider)?.models[task].map((model) => <option key={model}>{model}</option>)}</select>
-              </label>}
-              <strong className={selection ? "task-status ready" : "task-status"}>{selection ? `${options.find((item) => item.id === selection.provider)?.name} · ${selection.model}` : "Not configured"}</strong>
-            </article>;
-          })}
-        </div>
-        <h3 className="provider-connections-title">Provider connections</h3>
-        <div className="platform-connections">
-          {(aiState?.providers ?? []).map((provider) => (
-            <article key={provider.id}>
-              <div className="platform-connection-heading">
-                <div>
-                  <strong>{provider.name}</strong>
-                  <span
-                    className={`connection-state ${provider.connected ? "connected" : ""}`}
-                  >
-                    {provider.connected
-                      ? "Verified"
-                      : provider.status === "needs_attention"
-                        ? "Reconnect needed"
-                        : "Not connected"}
-                  </span>
-                </div>
-              </div>
-              <p>
-                {provider.connected
-                  ? `${provider.keyHint} · verified ${new Date(provider.verifiedAt!).toLocaleString()}`
-                  : provider.id === "cerebras"
-                    ? "Fast text generation through Cerebras Inference. Transcript, description, and comments are analyzed; sampled video frames are not sent."
-                    : "Required for transcription; also supports analysis and vision."}
-              </p>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => setSelectedAiProvider(provider.id)}
-              >
-                {provider.connected ? "Replace key" : `Connect ${provider.name}`}
-              </button>
-              {provider.connected && <button type="button" className="text-button danger-button" onClick={async () => {
-                const result = await api<AiProviderState>(`/api/v1/ai-providers/${provider.id}`, { method: "DELETE" });
-                setAiState(result);
-                setProviderMessage(`${provider.name} disconnected. Any task that used it now needs a provider.`);
-              }}>Disconnect {provider.name}</button>}
-            </article>
-          ))}
-        </div>
-        <form
-          onSubmit={async (event) => {
-            event.preventDefault();
-            setVerifyingProvider(true);
-            setProviderMessage("Testing the key with the provider…");
-            try {
-              const result = await api<AiProviderState>(`/api/v1/ai-providers/${selectedAiProvider}`, {
-                method: "PUT",
-                body: JSON.stringify({ apiKey: providerApiKey }),
-              });
-              setAiState(result);
-              setProviderApiKey("");
-              setProviderMessage(`${selectedAiProvider === "cerebras" ? "Cerebras" : "OpenAI"} connected. Review the task selections above.`);
-            } catch (error) {
-              setProviderMessage(
-                (error as { body?: { error?: string } }).body?.error ===
-                  "invalid_api_key"
-                  ? "The provider rejected that API key. Check it and try again."
-                  : "The provider could not be reached. Try again shortly.",
-              );
-            } finally {
-              setVerifyingProvider(false);
-            }
-          }}
-        >
-          <label>
-            {selectedAiProvider === "cerebras" ? "Cerebras" : "OpenAI"} API key
-            <input
-              type="password"
-              value={providerApiKey}
-              onChange={(event) => setProviderApiKey(event.target.value)}
-              autoComplete="off"
-              required
-              placeholder="Paste API key"
-            />
-          </label>
-          <button disabled={verifyingProvider}>
-            {verifyingProvider ? "Verifying…" : "Verify and use"}
-          </button>
-        </form>
-        {providerMessage && (
-          <p className="action-feedback" role="status">
-            {providerMessage}
+    <div className="settings settings-workspace">
+      <header className="settings-heading" tabIndex={-1}>
+        <div>
+          <p className="settings-breadcrumb">
+            {topic === "overview"
+              ? "SETTINGS"
+              : `SETTINGS  /  ${activeTopic?.label ?? "ALL TOPICS"}`}
           </p>
+          <h1>
+            {topic === "overview"
+              ? "Settings"
+              : (activeTopic?.label ?? "All settings")}
+          </h1>
+          <p>
+            {topic === "overview"
+              ? "Manage your sources, AI, access, and archive."
+              : (activeTopic?.description ??
+                "Review every part of your workspace setup.")}
+          </p>
+        </div>
+        {topic !== "overview" && topic !== "ai" && (
+          <button
+            className="settings-back"
+            type="button"
+            onClick={() => selectTopic("overview")}
+          >
+            Back to overview
+          </button>
         )}
-      </section>
-      {user?.role === "admin" && <AccessManagement />}
-      <section className="settings-card">
-        <h2>Facebook and Instagram</h2>
-        <p className="settings-help">
-          Connect your logged-in browser session so private or login-protected
-          posts can be captured. Export a Netscape-format{" "}
-          <code>cookies.txt</code> while signed in, then upload it here.
-          Passwords are never requested or stored.
-        </p>
-        <div className="platform-connections">
-          {platformConnections.map((connection) => {
-            const label =
-              connection.platform === "instagram" ? "Instagram" : "Facebook";
-            return (
-              <article key={connection.platform}>
-                <div className="platform-connection-heading">
-                  <PlatformIcon
-                    url={`https://www.${connection.platform}.com`}
-                  />
-                  <div>
-                    <strong>{label}</strong>
-                    <span className={`connection-state ${connection.status}`}>
-                      {connection.status === "connected"
-                        ? "Connected"
-                        : connection.status === "needs_attention"
-                          ? "Reconnect needed"
-                          : "Not connected"}
-                    </span>
+      </header>
+      <div className="settings-layout">
+        <nav className="settings-topic-sidebar" aria-label="Settings topics">
+          <span className="settings-topic-label">Settings</span>
+          {topics.map(({ id, label, icon: Icon }) => (
+            <button
+              className={topic === id ? "active" : ""}
+              type="button"
+              aria-current={topic === id ? "page" : undefined}
+              onClick={() => selectTopic(id)}
+              key={id}
+            >
+              <Icon aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="settings-panels">
+          <nav className="settings-mobile-topics" aria-label="Settings topics">
+            <button
+              type="button"
+              className={topic === "overview" ? "active" : ""}
+              onClick={() => selectTopic("overview")}
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              className={topic === "ai" ? "active" : ""}
+              onClick={() => selectTopic("ai")}
+            >
+              AI
+            </button>
+            <label>
+              <span className="sr-only">More settings topics</span>
+              <select
+                aria-label="More settings topics"
+                value={topic === "overview" || topic === "ai" ? "" : topic}
+                onChange={(event) =>
+                  selectTopic(event.target.value as SettingsTopic)
+                }
+              >
+                <option value="">All topics</option>
+                <option value="connections">Connections</option>
+                <option value="api">API keys</option>
+                <option value="data">Data & export</option>
+                <option value="account">Account</option>
+                <option value="all">View all settings</option>
+              </select>
+            </label>
+          </nav>
+          {loading ? (
+            <section
+              className="settings-loading"
+              aria-live="polite"
+              aria-busy="true"
+            >
+              <span className="settings-loading-mark" aria-hidden="true" />
+              <div>
+                <strong>Loading settings</strong>
+                <p>Getting your private workspace ready.</p>
+              </div>
+            </section>
+          ) : loadError ? (
+            <section className="settings-load-error" role="alert">
+              <strong>Settings unavailable</strong>
+              <p>{loadError}</p>
+              <button type="button" onClick={() => void load(true)}>
+                Try again
+              </button>
+            </section>
+          ) : (
+            <>
+              {topic === "overview" && (
+                <section
+                  className="settings-overview"
+                  aria-labelledby="settings-essentials-heading"
+                >
+                  <div className="settings-overview-heading">
+                    <div>
+                      <p className="settings-section-kicker">ESSENTIALS</p>
+                      <h2 id="settings-essentials-heading">
+                        Start where it matters
+                      </h2>
+                    </div>
+                    {!openAi?.connected && (
+                      <button
+                        className="settings-quick-action"
+                        type="button"
+                        onClick={() => {
+                          setSelectedAiProvider("openai");
+                          selectTopic("ai");
+                        }}
+                      >
+                        Connect OpenAI
+                      </button>
+                    )}
                   </div>
-                </div>
-                <p>
-                  {connection.lastUsedAt
-                    ? `Last worked ${new Date(connection.lastUsedAt).toLocaleString()}`
-                    : connection.connected
-                      ? `${connection.cookieCount} platform cookies stored securely`
-                      : "Anonymous downloads will still be attempted."}
-                </p>
-                <div className="platform-connection-actions">
-                  <label className="button-like">
-                    {connection.connected
-                      ? "Replace cookies"
-                      : "Upload cookies"}
-                    <input
-                      type="file"
-                      accept=".txt,text/plain"
-                      onChange={async (event) => {
-                        const file = event.target.files?.[0];
-                        if (file)
-                          await uploadPlatformCookies(
-                            connection.platform,
-                            file,
-                          );
-                        event.target.value = "";
-                      }}
-                    />
-                  </label>
-                  {connection.connected && (
+                  <div className="settings-overview-list">
+                    {[
+                      {
+                        id: "connections" as const,
+                        icon: Link2,
+                        title: "Connections",
+                        detail: "Connect sources and see what is syncing.",
+                        status: `${connectedPlatforms.length} connected`,
+                      },
+                      {
+                        id: "ai" as const,
+                        icon: Bot,
+                        title: "AI",
+                        detail:
+                          "Choose providers for transcription and analysis.",
+                        status: aiState?.readiness.capture
+                          ? "Ready"
+                          : "Needs setup",
+                      },
+                      {
+                        id: "api" as const,
+                        icon: KeyRound,
+                        title: "API keys",
+                        detail: "Create and manage access for integrations.",
+                        status: keys.length
+                          ? `${keys.length} active`
+                          : "No keys",
+                      },
+                      {
+                        id: "data" as const,
+                        icon: DatabaseBackup,
+                        title: "Full archive export",
+                        detail:
+                          "Download your complete archive in a portable format.",
+                        status: libraryExports.some(
+                          (item) => item.status === "pending",
+                        )
+                          ? "Preparing"
+                          : "Available",
+                      },
+                    ].map(({ id, icon: Icon, title, detail, status }) => (
+                      <button
+                        className="settings-overview-row"
+                        type="button"
+                        onClick={() => selectTopic(id)}
+                        key={id}
+                      >
+                        <span
+                          className="settings-overview-icon"
+                          aria-hidden="true"
+                        >
+                          <Icon />
+                        </span>
+                        <span className="settings-overview-copy">
+                          <strong>{title}</strong>
+                          <small>{detail}</small>
+                        </span>
+                        <span className="settings-overview-status">
+                          {status}
+                        </span>
+                        <ChevronRight aria-hidden="true" />
+                      </button>
+                    ))}
+                  </div>
+                  <div className="settings-account-summary">
+                    <div>
+                      <span
+                        className="settings-overview-icon"
+                        aria-hidden="true"
+                      >
+                        <ShieldCheck />
+                      </span>
+                      <span>
+                        <strong>Account</strong>
+                        <small>
+                          {user?.role === "admin"
+                            ? "Profile, security, and people access."
+                            : "Your profile and private workspace preferences."}
+                        </small>
+                      </span>
+                    </div>
                     <button
-                      className="secondary-button"
-                      onClick={async () => {
-                        await api(
-                          `/api/v1/platform-connections/${connection.platform}`,
-                          { method: "DELETE" },
+                      type="button"
+                      onClick={() => selectTopic("account")}
+                    >
+                      Manage account <ChevronRight aria-hidden="true" />
+                    </button>
+                  </div>
+                </section>
+              )}
+              {showTopic("ai") && (
+                <section className="settings-card ai-provider-settings">
+                  <div className="ai-provider-heading">
+                    <div className="settings-card-heading">
+                      <h2>Provider connections</h2>
+                      <p className="settings-help">
+                        Credentials available to transcription and analysis.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="ai-provider-list">
+                      {configuredAiProviders.map((provider) => {
+                        return (
+                          <article className="ai-provider" key={provider.id}>
+                            <div className="ai-provider-summary">
+                              <div>
+                                <strong>{provider.name}</strong>
+                              </div>
+                              <small>
+                                {provider.connected && provider.keyHint
+                                  ? `API key ${provider.keyHint}`
+                                  : "Optional · No credential added"}
+                              </small>
+                            </div>
+                            <span
+                              className={`connection-state ${provider.connected ? "connected" : ""}`}
+                            >
+                              {provider.connected ? "Connected" : "Not connected"}
+                            </span>
+                            <div className="ai-provider-actions">
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => openProviderDialog(provider.id)}
+                              >
+                                {provider.connected ? "Change key" : "Connect"}
+                              </button>
+                            </div>
+                          </article>
                         );
-                        setPlatformMessage(`${label} disconnected.`);
-                        await load();
+                      })}
+                  </div>
+                  <div className="ai-assignment-heading">
+                    <div>
+                      <h3>Task models</h3>
+                      <p className="settings-help">
+                        Choose which connected provider handles each step.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="ai-task-list">
+                    <div className="ai-task-table-heading" aria-hidden="true">
+                      <span>Task</span>
+                      <span>Provider</span>
+                      <span>Model</span>
+                      <span>Thinking</span>
+                    </div>
+                    {(["transcription", "analysis"] as const).map((task) => {
+                      const selection = currentAiSelections[task];
+                      const providers = (aiState?.providers ?? []).filter(
+                        (provider) =>
+                          provider.connected &&
+                          provider.capabilities[task],
+                      );
+                      const selectedProvider = providers.find(
+                        (provider) => provider.id === selection?.provider,
+                      );
+                      const modelOptions = selectedProvider
+                        ? task === "transcription"
+                          ? transcriptionOptions(selectedProvider)
+                          : analysisOptions(selectedProvider)
+                        : [];
+                      const selectedModel = selection?.model ?? "";
+                      const analysisOption =
+                        task === "analysis" && selectedProvider && selectedModel
+                          ? taskOptionFor(selectedProvider, selectedModel)
+                          : null;
+                      const currentThinkingLevel =
+                        task === "analysis"
+                          ? (selection as AiAnalysisSelection | null)
+                              ?.thinkingLevel ?? null
+                          : null;
+                      const updateSelection = (
+                        providerId: AiSelection["provider"] | null,
+                        model: string | null,
+                        thinkingLevel: AiThinkingLevel | null = null,
+                      ) => {
+                        if (!providerId || !model) {
+                          updateTaskDraft(task, null);
+                          return;
+                        }
+                        if (task === "transcription") {
+                          updateTaskDraft(task, {
+                            provider: providerId,
+                            model,
+                          });
+                          return;
+                        }
+                        updateTaskDraft(task, {
+                          provider: providerId,
+                          model,
+                          thinkingLevel,
+                        });
+                      };
+                      return (
+                        <article className="ai-task" key={task}>
+                          <div>
+                            <h3>
+                              {task === "transcription"
+                                ? "Transcription"
+                                : "Analysis"}
+                            </h3>
+                            <p>
+                              {task === "transcription"
+                                ? "Audio and video → searchable text"
+                                : "Shared with Ask."}
+                            </p>
+                          </div>
+                          <div className="ai-task-controls">
+                            <label>
+                              Provider
+                              <select
+                                value={selection?.provider ?? ""}
+                                disabled={savingAiSelections || verifyingProvider}
+                                onChange={(event) => {
+                                  const providerId = event.target
+                                    .value as AiSelection["provider"];
+                                  const provider = providers.find(
+                                    (item) => item.id === providerId,
+                                  );
+                                  const model = provider
+                                    ? task === "transcription"
+                                      ? transcriptionOptions(provider)[0]?.model
+                                      : analysisOptions(provider)[0]?.model
+                                    : null;
+                                  updateSelection(provider?.id ?? null, model ?? null);
+                                }}
+                              >
+                                <option value="">Not assigned</option>
+                                {providers.map((provider) => (
+                                  <option key={provider.id} value={provider.id}>
+                                    {provider.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              Model
+                              <select
+                                value={selectedModel}
+                                disabled={
+                                  savingAiSelections ||
+                                  verifyingProvider ||
+                                  !selectedProvider
+                                }
+                                onChange={(event) =>
+                                  updateSelection(
+                                    selectedProvider?.id ?? null,
+                                    event.target.value || null,
+                                  )
+                                }
+                              >
+                                <option value="">Choose a model</option>
+                                {modelOptions.map((option) => (
+                                  <option key={option.model} value={option.model}>
+                                    {option.model}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            {task === "transcription" ? (
+                              <span className="ai-thinking-unavailable">
+                                Not applicable
+                              </span>
+                            ) : analysisOption?.thinkingLevels.length ? (
+                              <>
+                              <span className="ai-thinking-mobile-label" aria-hidden="true">Thinking</span>
+                              <div
+                                className="ai-thinking-options"
+                                role="group"
+                                aria-label="Thinking level"
+                              >
+                                <button
+                                  type="button"
+                                  className={
+                                    currentThinkingLevel === null ? "active" : ""
+                                  }
+                                  aria-pressed={currentThinkingLevel === null}
+                                  disabled={savingAiSelections || verifyingProvider}
+                                  onClick={() =>
+                                    updateSelection(
+                                      selectedProvider?.id ?? null,
+                                      selectedModel || null,
+                                      null,
+                                    )
+                                  }
+                                >
+                                  Default
+                                </button>
+                                {analysisOption.thinkingLevels.map((level) => (
+                                  <button
+                                    type="button"
+                                    key={level}
+                                    className={
+                                      currentThinkingLevel === level ? "active" : ""
+                                    }
+                                    aria-pressed={currentThinkingLevel === level}
+                                    disabled={savingAiSelections || verifyingProvider}
+                                    onClick={() =>
+                                      updateSelection(
+                                        selectedProvider?.id ?? null,
+                                        selectedModel || null,
+                                        level,
+                                      )
+                                    }
+                                  >
+                                    {level}
+                                  </button>
+                                ))}
+                              </div>
+                              </>
+                            ) : (
+                              <span className="ai-thinking-unavailable">
+                                Not applicable
+                              </span>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  <div className="ai-settings-footer">
+                    <p>Changes apply to new captures. Existing results stay as saved.</p>
+                    <div>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={openTestDialog}
+                        disabled={savingAiSelections}
+                      >
+                        Test connection
+                      </button>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() => void saveAiSelections()}
+                        disabled={
+                          !aiSettingsDirty ||
+                          savingAiSelections ||
+                          verifyingProvider ||
+                          Boolean(testingTask)
+                        }
+                      >
+                        {savingAiSelections ? "Saving…" : "Save changes"}
+                      </button>
+                    </div>
+                  </div>
+                  {testDialogOpen && (
+                    <div
+                      className="ai-provider-dialog-layer ai-test-dialog-layer"
+                      role="presentation"
+                      onMouseDown={(event) => {
+                        if (!testingTask && event.target === event.currentTarget)
+                          closeTestDialog();
                       }}
                     >
-                      Disconnect
-                    </button>
+                      <section
+                        className="ai-provider-dialog ai-test-dialog"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="test-dialog-title"
+                        aria-describedby="test-dialog-description"
+                        ref={testDialogPanel}
+                        tabIndex={-1}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape" && !testingTask) {
+                            closeTestDialog();
+                            return;
+                          }
+                          if (event.key !== "Tab") return;
+                          const focusable = Array.from(
+                            event.currentTarget.querySelectorAll<HTMLElement>(
+                              "button:not([disabled]), input:not([disabled]), select:not([disabled])",
+                            ),
+                          );
+                          if (!focusable.length) return;
+                          const first = focusable[0]!;
+                          const last = focusable[focusable.length - 1]!;
+                          if (
+                            event.shiftKey &&
+                            (document.activeElement === first ||
+                              document.activeElement === event.currentTarget)
+                          ) {
+                            event.preventDefault();
+                            last.focus();
+                          } else if (
+                            !event.shiftKey &&
+                            (document.activeElement === last ||
+                              document.activeElement === event.currentTarget)
+                          ) {
+                            event.preventDefault();
+                            first.focus();
+                          }
+                        }}
+                      >
+                        <header>
+                          <div>
+                            <h3 id="test-dialog-title">Test connection</h3>
+                            <p id="test-dialog-description" className="settings-help">
+                              Run a small request for each saved task. Usage charges may apply.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            aria-label="Close connection tests"
+                            disabled={Boolean(testingTask)}
+                            onClick={closeTestDialog}
+                          >
+                            <X aria-hidden="true" />
+                          </button>
+                        </header>
+                        {aiTestBlocked && (
+                          <p className="ai-test-save-first" role="status">
+                            {savingAiSelections
+                              ? "Saving settings before tests can run…"
+                              : "Save changes before testing a connection."}
+                          </p>
+                        )}
+                  <div className="ai-test-heading">
+                    <div>
+                      <h4>Diagnostic checks</h4>
+                    </div>
+                  </div>
+                  <p className="settings-help ai-test-intro">
+                    Check each saved task with a small provider request. Usage
+                    charges may apply. These checks test your AI connection;
+                    they do not run a full capture.
+                  </p>
+                  <div className="ai-test-list">
+                    {(["transcription", "analysis", "ask"] as const).map((task) => {
+                      const state = testStates[task];
+                      const isTranscription = task === "transcription";
+                      const label =
+                        task === "analysis"
+                          ? "Analysis"
+                          : task === "ask"
+                            ? "Ask"
+                            : "Transcription";
+                      const selection = isTranscription
+                        ? aiState?.selections.transcription
+                        : aiState?.selections.analysis;
+                      return (
+                        <article className="ai-test-row" key={task}>
+                          <div>
+                            <h4>{label}</h4>
+                            <p>
+                              {isTranscription
+                                ? "Uses only the audio file you select here."
+                                : task === "analysis"
+                                  ? "Tests analysis with sample text."
+                                  : "Tests a sample question without accessing your archive."}
+                            </p>
+                            {isTranscription && (
+                              <label className="ai-test-file">
+                                <span>Short audio file · 1 MB max</span>
+                                <input
+                                  type="file"
+                                  accept="audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,.mp3,.m4a,.mp4,.ogg,.wav,.webm"
+                                  onChange={(event) => {
+                                    setTestAudioFile(event.target.files?.[0] ?? null);
+                                    invalidateTests(["transcription"]);
+                                  }}
+                                />
+                              </label>
+                            )}
+                          </div>
+                          <div className="ai-test-action">
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              disabled={
+                                Boolean(testingTask) ||
+                                aiTestBlocked ||
+                                !selection ||
+                                (isTranscription && !testAudioFile)
+                              }
+                              onClick={() => void runAiTest(task)}
+                            >
+                              {testingTask === task
+                                ? `Testing ${label.toLowerCase()}…`
+                                : `Test ${label.toLowerCase()}`}
+                            </button>
+                            <p
+                              className={`ai-test-status ${state.status === "complete" && !state.result?.ok ? "error" : ""}`}
+                              role={
+                                state.status === "complete" && !state.result?.ok
+                                  ? "alert"
+                                  : "status"
+                              }
+                              aria-live="polite"
+                            >
+                              {state.status === "pending"
+                                ? "Testing saved selection…"
+                                : state.status === "stale"
+                                  ? "Settings changed. Test result discarded; test again."
+                                  : state.result
+                                    ? state.result.ok
+                                      ? `Passed in ${formatPreciseDuration(state.result.durationMs)} · ${formatAiTestSelection(state.result)}`
+                                      : state.result.code === "timeout"
+                                        ? `Timed out — inconclusive after ${formatPreciseDuration(state.result.durationMs)}`
+                                      : `Failed in ${formatPreciseDuration(state.result.durationMs)}`
+                                    : "Not tested"}
+                            </p>
+                            {state.status === "complete" && state.result && !state.result.ok && (
+                              <p className="ai-test-guidance" role="alert">
+                                {aiTestGuidance(state.result.code)}
+                              </p>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                      </section>
+                    </div>
                   )}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-        {platformMessage && (
-          <p className="action-feedback" role="status">
-            {platformMessage}
-          </p>
-        )}
-        <details className="api-examples cookie-help">
-          <summary>How to export browser cookies</summary>
-          <p>
-            Use a trusted cookies.txt exporter in your desktop browser while
-            logged into the selected platform. Social Knowledge discards every
-            cookie that does not belong to that platform before encrypting the
-            connection.
-          </p>
-        </details>
-      </section>
-      <section className="settings-card">
-        <h2>AI Connections</h2>
-        <p className="settings-help">
-          Connect ChatGPT, Codex, or another MCP client with read-only access to
-          your saved archive.
-        </p>
-        <label>
-          MCP server
-          <input readOnly value={mcpUrl} />
-        </label>
-        <details className="api-examples">
-          <summary>Codex configuration</summary>
-          <p>
-            Store your account key in <code>SOCIAL_KNOWLEDGE_API_KEY</code>,
-            then add:
-          </p>
-          <pre>{`[mcp_servers.social_knowledge]\nurl = "${mcpUrl}"\nbearer_token_env_var = "SOCIAL_KNOWLEDGE_API_KEY"`}</pre>
-        </details>
-        <div className="key-list">
-          {connections.map((connection) => (
-            <article key={connection.clientId}>
-              <div>
-                <strong>{connection.name}</strong>
-                <small>
-                  Read-only · connected{" "}
-                  {new Date(connection.authorizedAt).toLocaleDateString()} ·{" "}
-                  {connection.lastUsedAt
-                    ? `last used ${new Date(connection.lastUsedAt).toLocaleDateString()}`
-                    : "never used"}
-                </small>
-              </div>
-              <button
-                onClick={async () => {
-                  await api(
-                    `/api/v1/oauth/connections/${connection.clientId}`,
-                    { method: "DELETE" },
-                  );
-                  await load();
-                }}
-              >
-                Revoke
-              </button>
-            </article>
-          ))}
-          {!connections.length && <p>No OAuth applications connected yet.</p>}
-        </div>
-      </section>
-      <section className="settings-card">
-        <h2>Export library</h2>
-        <p className="settings-help">
-          Create a portable backup containing all of your capture metadata,
-          transcripts, comments, Markdown notes, images, audio, and videos.
-          Account credentials and server configuration are excluded.
-        </p>
-        <button
-          disabled={libraryExports.some((item) => item.status === "pending")}
-          onClick={async () => {
-            setBackupMessage("Preparing your backup…");
-            try {
-              await api("/api/v1/library-exports", { method: "POST" });
-              await load();
-            } catch (error) {
-              setBackupMessage(
-                error instanceof Error
-                  ? error.message
-                  : "Backup could not start.",
-              );
-            }
-          }}
-        >
-          {libraryExports.some((item) => item.status === "pending")
-            ? "Preparing backup…"
-            : "Create full backup"}
-        </button>
-        {backupMessage && <p className="action-feedback">{backupMessage}</p>}
-        <div className="key-list">
-          {libraryExports.map((item) => (
-            <article key={item.id}>
-              <div>
-                <strong>
-                  {item.status === "complete"
-                    ? `Backup ready · ${item.recordCount ?? 0} captures`
-                    : item.status === "pending"
-                      ? "Preparing backup"
-                      : "Backup failed"}
-                </strong>
-                <small>
-                  Created {new Date(item.createdAt).toLocaleString()} · expires{" "}
-                  {new Date(item.expiresAt).toLocaleString()}
-                </small>
-              </div>
-              {item.status === "complete" && (
-                <a
-                  className="backup-download"
-                  href={`/api/v1/library-exports/${item.id}/download`}
-                >
-                  Download
-                </a>
+                  {providerMessage && !providerDialogOpen && (
+                    <p
+                      className={`action-feedback ${providerMessageKind === "error" ? "error" : ""}`}
+                      role={providerMessageKind === "error" ? "alert" : "status"}
+                      aria-live="polite"
+                    >
+                      {providerMessage}
+                    </p>
+                  )}
+                  {providerDialogOpen && (
+                    <div
+                      className="ai-provider-dialog-layer"
+                      role="presentation"
+                      onMouseDown={(event) => {
+                        if (
+                          !verifyingProvider &&
+                          event.target === event.currentTarget
+                        )
+                          closeProviderDialog();
+                      }}
+                    >
+                      <section
+                        className="ai-provider-dialog"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="provider-dialog-title"
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            if (!verifyingProvider) closeProviderDialog();
+                            return;
+                          }
+                          if (event.key !== "Tab") return;
+                          const focusable = Array.from(
+                            event.currentTarget.querySelectorAll<HTMLElement>(
+                              "button:not([disabled]), input:not([disabled]), select:not([disabled])",
+                            ),
+                          );
+                          if (!focusable.length) return;
+                          const first = focusable[0]!;
+                          const last = focusable[focusable.length - 1]!;
+                          if (event.shiftKey && document.activeElement === first) {
+                            event.preventDefault();
+                            last.focus();
+                          } else if (!event.shiftKey && document.activeElement === last) {
+                            event.preventDefault();
+                            first.focus();
+                          }
+                        }}
+                      >
+                        <header>
+                          <div>
+                            <span className="settings-section-kicker">
+                              PROVIDER SETTINGS
+                            </span>
+                            <h3 id="provider-dialog-title">
+                              {dialogProvider?.connected
+                                ? "Manage provider"
+                                : "Connect provider"}
+                            </h3>
+                          </div>
+                          <button
+                            type="button"
+                            aria-label="Close provider settings"
+                            disabled={verifyingProvider}
+                            onClick={closeProviderDialog}
+                          >
+                            <X aria-hidden="true" />
+                          </button>
+                        </header>
+                        <form onSubmit={(event) => void submitProviderConfiguration(event)}>
+                          <label>
+                            Provider
+                            <select
+                              value={selectedAiProvider}
+                              disabled={verifyingProvider}
+                              autoFocus={Boolean(
+                                dialogProvider?.connected && !replaceProviderKey,
+                              )}
+                              onChange={(event) =>
+                                applyProviderDraft(
+                                  event.target.value as AiSelection["provider"],
+                                )
+                              }
+                            >
+                              <option value="openai">OpenAI</option>
+                              <option value="cerebras">Cerebras</option>
+                            </select>
+                          </label>
+                          {(!dialogProvider?.connected || replaceProviderKey) ? (
+                            <label>
+                              {dialogProvider?.name ?? "Provider"} API key
+                              <input
+                                type="password"
+                                value={providerApiKey}
+                                onChange={(event) => setProviderApiKey(event.target.value)}
+                                autoComplete="off"
+                                required
+                                autoFocus
+                                placeholder="Paste API key"
+                              />
+                            </label>
+                          ) : (
+                            <div className="ai-provider-key-state">
+                              <span>{dialogProvider?.keyHint} · connected</span>
+                              <button
+                                type="button"
+                                disabled={verifyingProvider}
+                                onClick={() => setReplaceProviderKey(true)}
+                              >
+                                Replace API key
+                              </button>
+                            </div>
+                          )}
+                          <p className="settings-help">
+                            This only verifies and saves the API key. Choose models
+                            and thinking level in Task models.
+                          </p>
+                          {providerMessage && (
+                            <p
+                              className={`action-feedback ${providerMessageKind === "error" ? "error" : ""}`}
+                              role={providerMessageKind === "error" ? "alert" : "status"}
+                              aria-live="polite"
+                            >
+                              {providerMessage}
+                            </p>
+                          )}
+                          <div className="ai-provider-dialog-actions">
+                            <button
+                              type="button"
+                              onClick={closeProviderDialog}
+                              disabled={verifyingProvider}
+                            >
+                              Cancel
+                            </button>
+                            {dialogProvider?.connected && (
+                              <button
+                                type="button"
+                                className="danger-button"
+                                disabled={verifyingProvider}
+                                onClick={() =>
+                                  void disconnectAiProvider(dialogProvider.id)
+                                }
+                              >
+                                Disconnect
+                              </button>
+                            )}
+                            <button disabled={verifyingProvider}>
+                              {verifyingProvider
+                                ? "Connecting…"
+                                : dialogProvider?.connected && !replaceProviderKey
+                                  ? "Done"
+                                  : "Connect provider"}
+                            </button>
+                          </div>
+                        </form>
+                      </section>
+                    </div>
+                  )}
+                </section>
               )}
-            </article>
-          ))}
-        </div>
-        <p className="settings-help">
-          Backups contain private content and are available for 24 hours. Store
-          downloaded archives somewhere secure.
-        </p>
-      </section>
-      <section className="settings-card">
-        <h2>Language</h2>
-        <p className="settings-help">
-          New captures use these preferences. Original transcripts are always
-          preserved.
-        </p>
-        <form
-          onSubmit={async (event) => {
-            event.preventDefault();
-            const result = await api<{
-              preferences: {
-                defaultLanguage: string;
-                translateForeign: boolean;
-              };
-            }>("/api/v1/preferences", {
-              method: "PATCH",
-              body: JSON.stringify({ defaultLanguage, translateForeign }),
-            });
-            setDefaultLanguage(result.preferences.defaultLanguage);
-            setTranslateForeign(result.preferences.translateForeign);
-            setPreferenceMessage("Language preferences saved.");
-          }}
-        >
-          <label>
-            Default language
-            <select
-              value={defaultLanguage}
-              onChange={(event) => setDefaultLanguage(event.target.value)}
-            >
-              {[
-                "English",
-                "French",
-                "Portuguese",
-                "Spanish",
-                "German",
-                "Italian",
-                "Dutch",
-              ].map((language) => (
-                <option key={language}>{language}</option>
-              ))}
-            </select>
-          </label>
-          <label className="toggle-label">
-            <input
-              type="checkbox"
-              checked={translateForeign}
-              onChange={(event) => setTranslateForeign(event.target.checked)}
-            />
-            Translate foreign-language clips into my default language
-          </label>
-          <button>Save language settings</button>
-        </form>
-        {preferenceMessage && (
-          <p className="action-feedback">{preferenceMessage}</p>
-        )}
-      </section>
-      <section className="settings-card">
-        <h2>API keys</h2>
-        <p className="settings-help">
-          Each account key can submit captures and read, search, and export your
-          knowledge through the Agent API. It cannot manage your account or
-          settings.
-        </p>
-        <form onSubmit={create}>
-          <label>
-            Key name
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </label>
-          <button>Create API key</button>
-        </form>
-        {token && (
-          <div className="token-box">
-            <strong>{message}</strong>
-            <code>{token}</code>
-            <button
-              onClick={async () => {
-                await navigator.clipboard.writeText(token);
-                setMessage("Copied to clipboard.");
-              }}
-            >
-              Copy key
-            </button>
-          </div>
-        )}
-        <div className="key-list">
-          {keys.map((key) => (
-            <article key={key.id}>
-              <div>
-                <strong>{key.name}</strong>
-                <small>
-                  {key.prefix}… · created{" "}
-                  {new Date(key.createdAt).toLocaleDateString()} ·{" "}
-                  {key.lastUsedAt
-                    ? `last used ${new Date(key.lastUsedAt).toLocaleDateString()}`
-                    : "never used"}
-                </small>
-              </div>
-              <button
-                onClick={async () => {
-                  await api(`/api/v1/api-keys/${key.id}`, { method: "DELETE" });
-                  await load();
-                  if (createdKeyId === key.id) {
-                    setToken("");
-                    setCreatedKeyId(null);
-                  }
-                  setMessage(`${key.name} was revoked.`);
-                }}
-              >
-                Revoke
-              </button>
-            </article>
-          ))}
-          {!keys.length && <p>No account API keys yet.</p>}
-        </div>
-        <details className="api-examples">
-          <summary>Agent API examples</summary>
-          <p>
-            Replace <code>$SOCIAL_KNOWLEDGE_API_KEY</code> with an account key.
-          </p>
-          <pre>{`curl -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
+              {showTopic("connections") && (
+                <section className="settings-card settings-connections-card">
+                  <h2>Facebook and Instagram</h2>
+                  <p className="settings-help">
+                    Connect your logged-in browser session so private or
+                    login-protected posts can be captured. Export a
+                    Netscape-format <code>cookies.txt</code> while signed in,
+                    then upload it here. Passwords are never requested or
+                    stored.
+                  </p>
+                  <div className="platform-connections">
+                    {platformConnections.map((connection) => {
+                      const label =
+                        connection.platform === "instagram"
+                          ? "Instagram"
+                          : "Facebook";
+                      return (
+                        <article key={connection.platform}>
+                          <div className="platform-connection-heading">
+                            <PlatformIcon
+                              url={`https://www.${connection.platform}.com`}
+                            />
+                            <div>
+                              <strong>{label}</strong>
+                              <span
+                                className={`connection-state ${connection.status}`}
+                              >
+                                {connection.status === "connected"
+                                  ? "Connected"
+                                  : connection.status === "needs_attention"
+                                    ? "Reconnect needed"
+                                    : "Not connected"}
+                              </span>
+                            </div>
+                          </div>
+                          <p>
+                            {connection.lastUsedAt
+                              ? `Last worked ${new Date(connection.lastUsedAt).toLocaleString()}`
+                              : connection.connected
+                                ? `${connection.cookieCount} platform cookies stored securely`
+                                : "Anonymous downloads will still be attempted."}
+                          </p>
+                          <div className="platform-connection-actions">
+                            <label className="button-like">
+                              {connection.connected
+                                ? "Replace cookies"
+                                : "Upload cookies"}
+                              <input
+                                type="file"
+                                accept=".txt,text/plain"
+                                onChange={async (event) => {
+                                  const file = event.target.files?.[0];
+                                  if (file)
+                                    await uploadPlatformCookies(
+                                      connection.platform,
+                                      file,
+                                    );
+                                  event.target.value = "";
+                                }}
+                              />
+                            </label>
+                            {connection.connected && (
+                              <button
+                                className="secondary-button"
+                                onClick={async () => {
+                                  try {
+                                    await api(
+                                      `/api/v1/platform-connections/${connection.platform}`,
+                                      { method: "DELETE" },
+                                    );
+                                    setPlatformMessage(
+                                      `${label} disconnected.`,
+                                    );
+                                    await load();
+                                  } catch {
+                                    setPlatformMessage(
+                                      `${label} could not be disconnected. Try again.`,
+                                    );
+                                  }
+                                }}
+                              >
+                                Disconnect
+                              </button>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  {platformMessage && (
+                    <p className="action-feedback" role="status">
+                      {platformMessage}
+                    </p>
+                  )}
+                  <details className="api-examples cookie-help">
+                    <summary>How to export browser cookies</summary>
+                    <p>
+                      Use a trusted cookies.txt exporter in your desktop browser
+                      while logged into the selected platform. Social Knowledge
+                      discards every cookie that does not belong to that
+                      platform before encrypting the connection.
+                    </p>
+                  </details>
+                </section>
+              )}
+              {showTopic("api") && (
+                <section className="settings-card settings-agent-connections-card">
+                  <h2>AI Connections</h2>
+                  <p className="settings-help">
+                    Connect ChatGPT, Codex, or another MCP client with read-only
+                    access to your saved archive.
+                  </p>
+                  <label>
+                    MCP server
+                    <input readOnly value={mcpUrl} />
+                  </label>
+                  <details className="api-examples">
+                    <summary>Codex configuration</summary>
+                    <p>
+                      Store your account key in{" "}
+                      <code>SOCIAL_KNOWLEDGE_API_KEY</code>, then add:
+                    </p>
+                    <pre>{`[mcp_servers.social_knowledge]\nurl = "${mcpUrl}"\nbearer_token_env_var = "SOCIAL_KNOWLEDGE_API_KEY"`}</pre>
+                  </details>
+                  <div className="key-list">
+                    {connections.map((connection) => (
+                      <article key={connection.clientId}>
+                        <div>
+                          <strong>{connection.name}</strong>
+                          <small>
+                            Read-only · connected{" "}
+                            {new Date(
+                              connection.authorizedAt,
+                            ).toLocaleDateString()}{" "}
+                            ·{" "}
+                            {connection.lastUsedAt
+                              ? `last used ${new Date(connection.lastUsedAt).toLocaleDateString()}`
+                              : "never used"}
+                          </small>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api(
+                                `/api/v1/oauth/connections/${connection.clientId}`,
+                                { method: "DELETE" },
+                              );
+                              await load();
+                            } catch {
+                              setMessage(
+                                "That AI connection could not be revoked. Try again.",
+                              );
+                            }
+                          }}
+                        >
+                          Revoke
+                        </button>
+                      </article>
+                    ))}
+                    {!connections.length && (
+                      <p>No OAuth applications connected yet.</p>
+                    )}
+                  </div>
+                  {message && !token && (
+                    <p className="action-feedback" role="status">
+                      {message}
+                    </p>
+                  )}
+                </section>
+              )}
+              {showTopic("data") && (
+                <section className="settings-card settings-export-card">
+                  <h2>Export library</h2>
+                  <p className="settings-help">
+                    Create a portable backup containing all of your capture
+                    metadata, transcripts, comments, Markdown notes, images,
+                    audio, and videos. Account credentials and server
+                    configuration are excluded.
+                  </p>
+                  <button
+                    disabled={libraryExports.some(
+                      (item) => item.status === "pending",
+                    )}
+                    onClick={async () => {
+                      setBackupMessage("Preparing your backup…");
+                      try {
+                        await api("/api/v1/library-exports", {
+                          method: "POST",
+                        });
+                        await load();
+                      } catch (error) {
+                        setBackupMessage(
+                          error instanceof Error
+                            ? error.message
+                            : "Backup could not start.",
+                        );
+                      }
+                    }}
+                  >
+                    {libraryExports.some((item) => item.status === "pending")
+                      ? "Preparing backup…"
+                      : "Create full backup"}
+                  </button>
+                  {backupMessage && (
+                    <p className="action-feedback">{backupMessage}</p>
+                  )}
+                  <div className="key-list">
+                    {libraryExports.map((item) => (
+                      <article key={item.id}>
+                        <div>
+                          <strong>
+                            {item.status === "complete"
+                              ? `Backup ready · ${item.recordCount ?? 0} captures`
+                              : item.status === "pending"
+                                ? "Preparing backup"
+                                : "Backup failed"}
+                          </strong>
+                          <small>
+                            Created {new Date(item.createdAt).toLocaleString()}{" "}
+                            · expires{" "}
+                            {new Date(item.expiresAt).toLocaleString()}
+                          </small>
+                        </div>
+                        {item.status === "complete" && (
+                          <a
+                            className="backup-download"
+                            href={`/api/v1/library-exports/${item.id}/download`}
+                          >
+                            Download
+                          </a>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                  <p className="settings-help">
+                    Backups contain private content and are available for 24
+                    hours. Store downloaded archives somewhere secure.
+                  </p>
+                </section>
+              )}
+              {showTopic("data") && (
+                <section className="settings-card settings-language-card">
+                  <h2>Language</h2>
+                  <p className="settings-help">
+                    New captures use these preferences. Original transcripts are
+                    always preserved.
+                  </p>
+                  <form
+                    className="settings-language-form"
+                    onSubmit={async (event) => {
+                      event.preventDefault();
+                      try {
+                        const result = await api<{
+                          preferences: {
+                            defaultLanguage: string;
+                            translateForeign: boolean;
+                          };
+                        }>("/api/v1/preferences", {
+                          method: "PATCH",
+                          body: JSON.stringify({
+                            defaultLanguage,
+                            translateForeign,
+                          }),
+                        });
+                        setDefaultLanguage(result.preferences.defaultLanguage);
+                        setTranslateForeign(
+                          result.preferences.translateForeign,
+                        );
+                        setPreferenceMessage("Language preferences saved.");
+                      } catch {
+                        setPreferenceMessage(
+                          "Language preferences could not be saved. Try again.",
+                        );
+                      }
+                    }}
+                  >
+                    <label>
+                      Default language
+                      <select
+                        value={defaultLanguage}
+                        onChange={(event) =>
+                          setDefaultLanguage(event.target.value)
+                        }
+                      >
+                        {[
+                          "English",
+                          "French",
+                          "Portuguese",
+                          "Spanish",
+                          "German",
+                          "Italian",
+                          "Dutch",
+                        ].map((language) => (
+                          <option key={language}>{language}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="toggle-label">
+                      <input
+                        type="checkbox"
+                        checked={translateForeign}
+                        onChange={(event) =>
+                          setTranslateForeign(event.target.checked)
+                        }
+                      />
+                      Translate foreign-language clips into my default language
+                    </label>
+                    <button>Save language settings</button>
+                  </form>
+                  {preferenceMessage && (
+                    <p className="action-feedback">{preferenceMessage}</p>
+                  )}
+                </section>
+              )}
+              {showTopic("api") && (
+                <section className="settings-card settings-api-keys-card">
+                  <h2>API keys</h2>
+                  <p className="settings-help">
+                    Each account key can submit captures and read, search, and
+                    export your knowledge through the Agent API. It cannot
+                    manage your account or settings.
+                  </p>
+                  <form className="settings-key-form" onSubmit={create}>
+                    <label>
+                      Key name
+                      <input
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                      />
+                    </label>
+                    <button>Create API key</button>
+                  </form>
+                  {token && (
+                    <div className="token-box">
+                      <strong>{message}</strong>
+                      <code>{token}</code>
+                      <button
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(token);
+                          setMessage("Copied to clipboard.");
+                        }}
+                      >
+                        Copy key
+                      </button>
+                    </div>
+                  )}
+                  {message && !token && (
+                    <p className="action-feedback" role="status">
+                      {message}
+                    </p>
+                  )}
+                  <div className="key-list">
+                    {keys.map((key) => (
+                      <article key={key.id}>
+                        <div>
+                          <strong>{key.name}</strong>
+                          <small>
+                            {key.prefix}… · created{" "}
+                            {new Date(key.createdAt).toLocaleDateString()} ·{" "}
+                            {key.lastUsedAt
+                              ? `last used ${new Date(key.lastUsedAt).toLocaleDateString()}`
+                              : "never used"}
+                          </small>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api(`/api/v1/api-keys/${key.id}`, {
+                                method: "DELETE",
+                              });
+                              await load();
+                              if (createdKeyId === key.id) {
+                                setToken("");
+                                setCreatedKeyId(null);
+                              }
+                              setMessage(`${key.name} was revoked.`);
+                            } catch {
+                              setMessage(
+                                `${key.name} could not be revoked. Try again.`,
+                              );
+                            }
+                          }}
+                        >
+                          Revoke
+                        </button>
+                      </article>
+                    ))}
+                    {!keys.length && <p>No account API keys yet.</p>}
+                  </div>
+                  <details className="api-examples">
+                    <summary>Agent API examples</summary>
+                    <p>
+                      Replace <code>$SOCIAL_KNOWLEDGE_API_KEY</code> with an
+                      account key.
+                    </p>
+                    <pre>{`curl -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
   "${window.location.origin}/api/v1/knowledge/search?q=lisbon%20restaurants"
 
 curl -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
@@ -1710,13 +3651,55 @@ curl -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
 curl -X POST -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
   -H "Content-Type: application/json" -d '{"include":["transcript","comments"]}' \\
   "${window.location.origin}/api/v1/knowledge/exports"`}</pre>
-          <p>
-            <a href="/openapi.json" target="_blank" rel="noreferrer">
-              OpenAPI 3.1 specification ↗
-            </a>
-          </p>
-        </details>
-      </section>
+                    <p>
+                      <a href="/openapi.json" target="_blank" rel="noreferrer">
+                        OpenAPI 3.1 specification ↗
+                      </a>
+                    </p>
+                  </details>
+                </section>
+              )}
+              {showTopic("account") && (
+                <>
+                  <section className="settings-card settings-account-card">
+                    <div className="settings-card-heading">
+                      <span className="settings-section-kicker">
+                        PROFILE & SECURITY
+                      </span>
+                      <h2>Account</h2>
+                    </div>
+                    <p className="settings-help">
+                      Your archive, API keys, connections, and exports remain
+                      private to your account.
+                    </p>
+                    <dl className="settings-account-facts">
+                      <div>
+                        <dt>Workspace</dt>
+                        <dd>{user?.username || "Personal workspace"}</dd>
+                      </div>
+                      <div>
+                        <dt>Role</dt>
+                        <dd>
+                          {user?.role === "admin" ? "Administrator" : "Member"}
+                        </dd>
+                      </div>
+                      {user?.createdAt && (
+                        <div>
+                          <dt>Member since</dt>
+                          <dd>
+                            {new Date(user.createdAt).toLocaleDateString()}
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
+                  </section>
+                  {user?.role === "admin" && <AccessManagement />}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1735,22 +3718,53 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
   });
   const [unclassifiedCount, setUnclassifiedCount] = useState(0);
   const [selected, setSelected] = useState<string>("home");
+  const [navigation, setNavigation] = useState({ entries: ["home"], index: 0 });
+  const [navigationLoading, setNavigationLoading] = useState(false);
+  const [navigationError, setNavigationError] = useState("");
+  const navigationRequest = useRef(0);
+  useEffect(() => () => { navigationRequest.current += 1; }, []);
   const [node, setNode] = useState<LibraryNodeDetail | null>(null);
-  const [markdown, setMarkdown] = useState(
-    "# Social Knowledge\n\nChoose a category or capture to explore your library.",
-  );
+  const [markdown, setMarkdown] = useState("");
   const [selectedCapture, setSelectedCapture] = useState<string | null>(null);
+  const [treeQuery, setTreeQuery] = useState("");
+  const [mobilePane, setMobilePane] = useState<"browse" | "reading">("browse");
+  const [libraryExports, setLibraryExports] = useState<LibraryExport[]>([]);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportMessage, setExportMessage] = useState("");
   async function loadTree() {
     const result = await api<{
       nodes: LibraryNode[];
       unclassifiedCount: number;
     }>("/api/v1/library/tree");
-    setNodes(result.nodes);
+    setNodes(result.nodes.filter((item) => item.captureCount > 0));
     setUnclassifiedCount(result.unclassifiedCount);
+  }
+  async function loadExports() {
+    const result = await api<{ exports: LibraryExport[] }>(
+      "/api/v1/library-exports",
+    );
+    setLibraryExports(result.exports);
   }
   useEffect(() => {
     void loadTree();
+    void loadExports();
   }, []);
+  useEffect(() => {
+    if (!libraryExports.some((item) => item.status === "pending")) {
+      if (exportMessage === "Preparing your archive…") {
+        setExportMessage(
+          libraryExports[0]?.status === "complete"
+            ? "Your archive is ready to download."
+            : libraryExports[0]?.status === "failed"
+              ? "Archive export could not be completed. You can try again."
+              : "",
+        );
+      }
+      return;
+    }
+    const timer = window.setInterval(() => void loadExports(), 2500);
+    return () => window.clearInterval(timer);
+  }, [exportMessage, libraryExports]);
   useEffect(() => {
     if (!nodes.length) return;
     try {
@@ -1762,158 +3776,236 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
       // Browsing still works when storage is unavailable.
     }
   }, [expandedNodes, nodes.length]);
-  async function openNode(id: string) {
-    const result = await api<{ node: LibraryNodeDetail; markdown: string }>(
-      `/api/v1/library/nodes/${id}`,
-    );
-    setSelected(id);
-    setNode(result.node);
-    setMarkdown(result.markdown);
-    setSelectedCapture(null);
+  async function navigateLibrary(target: string, historyIndex?: number) {
+    const request = ++navigationRequest.current;
+    setNavigationLoading(true);
+    setNavigationError("");
+    try {
+      let nextNode: LibraryNodeDetail | null = null;
+      let nextMarkdown = "";
+      let nextCapture: string | null = null;
+      if (target === "unclassified") {
+        const result = await api<{ captures: Capture[] }>("/api/v1/library/unclassified");
+        nextMarkdown = ["# Unclassified", "", "These captures need a confident placement.", "", ...result.captures.map((capture) => `- [${markdownLinkText(capture.title)}](capture:${capture.id})`)].join("\n");
+      } else if (target.startsWith("capture:")) {
+        nextCapture = target.slice(8);
+        const result = await api<{ markdown: string }>(`/api/v1/captures/${nextCapture}/markdown`);
+        nextMarkdown = result.markdown;
+      } else if (target !== "home") {
+        const result = await api<{ node: LibraryNodeDetail; markdown: string }>(`/api/v1/library/nodes/${target}`);
+        nextNode = result.node;
+        nextMarkdown = result.markdown;
+      }
+      if (request !== navigationRequest.current) return;
+      setSelected(target);
+      setNode(nextNode);
+      setMarkdown(nextMarkdown);
+      setSelectedCapture(nextCapture);
+      setMobilePane("reading");
+      setNavigation((current) => historyIndex !== undefined
+        ? { ...current, index: historyIndex }
+        : current.entries[current.index] === target
+          ? current
+          : { entries: [...current.entries.slice(0, current.index + 1), target], index: current.index + 1 });
+    } catch {
+      if (request === navigationRequest.current) setNavigationError("This page could not be loaded. Please try again.");
+    } finally {
+      if (request === navigationRequest.current) setNavigationLoading(false);
+    }
   }
-  async function openCapture(id: string) {
-    const result = await api<{ markdown: string }>(
-      `/api/v1/captures/${id}/markdown`,
-    );
-    setSelected(`capture:${id}`);
-    setSelectedCapture(id);
-    setMarkdown(result.markdown);
-    setNode(null);
-  }
-  async function openUnclassified() {
-    const result = await api<{ captures: Capture[] }>(
-      "/api/v1/library/unclassified",
-    );
-    setSelected("unclassified");
-    setNode(null);
-    setSelectedCapture(null);
-    setMarkdown(
-      [
-        "# Unclassified",
-        "",
-        "These captures need a confident placement.",
-        "",
-        ...result.captures.map(
-          (capture) => `- [${capture.title}](capture:${capture.id})`,
-        ),
-      ].join("\n"),
-    );
-  }
+  const openNode = (id: string) => navigateLibrary(id);
+  const openCapture = (id: string) => navigateLibrary(`capture:${id}`);
+  const openUnclassified = () => navigateLibrary("unclassified");
   const children = (parentId: string | null) =>
     nodes.filter((candidate) => candidate.parentId === parentId);
+  const nodeMatchesTreeQuery = (item: LibraryNode): boolean => {
+    const query = treeQuery.trim().toLocaleLowerCase();
+    if (!query) return true;
+    if (item.label.toLocaleLowerCase().includes(query)) return true;
+    return children(item.id).some(nodeMatchesTreeQuery);
+  };
   const branch = (parentId: string | null, depth = 0): ReactNode =>
-    children(parentId).map((item) => {
-      const expandable = item.childCount > 0;
-      const expanded = expandedNodes.has(item.id);
-      const branchId = `library-branch-${item.id}`;
-      return (
-        <Collapsible
-          key={item.id}
-          open={expanded}
-          onOpenChange={(open) =>
-            setExpandedNodes((current) => {
-              const next = new Set(current);
-              if (open) next.add(item.id);
-              else next.delete(item.id);
-              return next;
-            })
-          }
-        >
-          <div
-            className={`library-tree-row ${selected === item.id ? "selected" : ""}`}
-            style={{ paddingLeft: 4 + depth * 16 }}
+    children(parentId)
+      .filter(nodeMatchesTreeQuery)
+      .map((item) => {
+        const expandable = children(item.id).length > 0;
+        const expanded = expandedNodes.has(item.id);
+        const branchId = `library-branch-${item.id}`;
+        return (
+          <Collapsible
+            key={item.id}
+            open={expanded}
+            onOpenChange={(open) =>
+              setExpandedNodes((current) => {
+                const next = new Set(current);
+                if (open) next.add(item.id);
+                else next.delete(item.id);
+                return next;
+              })
+            }
           >
-            {expandable ? (
-              <CollapsibleTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="library-tree-toggle"
-                  aria-label={`${expanded ? "Collapse" : "Expand"} ${item.label}`}
-                  aria-controls={branchId}
-                >
-                  <ChevronRight aria-hidden="true" />
-                </Button>
-              </CollapsibleTrigger>
-            ) : (
-              <span className="library-tree-leaf" aria-hidden="true" />
-            )}
-            <Button
-              type="button"
-              variant="ghost"
-              className="library-tree-node"
-              onClick={() => void openNode(item.id)}
+            <div
+              className={`library-tree-row ${selected === item.id ? "selected" : ""}`}
+              style={{ paddingLeft: 4 + depth * 16 }}
             >
-              <span className="library-tree-label">
-                {expandable && expanded ? <FolderOpen /> : <Folder />}
-                <span>{item.label}</span>
-              </span>
-              <small className="library-count">{item.captureCount}</small>
-            </Button>
-          </div>
-          {expandable && (
-            <CollapsibleContent id={branchId} className="library-tree-branch">
-              {branch(item.id, depth + 1)}
-            </CollapsibleContent>
-          )}
-        </Collapsible>
-      );
-    });
+              {expandable ? (
+                <CollapsibleTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="library-tree-toggle"
+                    aria-label={`${expanded ? "Collapse" : "Expand"} ${item.label}`}
+                    aria-controls={branchId}
+                  >
+                    <ChevronRight aria-hidden="true" />
+                  </Button>
+                </CollapsibleTrigger>
+              ) : (
+                <span className="library-tree-leaf" aria-hidden="true" />
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                className="library-tree-node"
+                onClick={() => void openNode(item.id)}
+              >
+                <span className="library-tree-label">
+                  {expandable && expanded ? <FolderOpen /> : <Folder />}
+                  <span>{item.label}</span>
+                </span>
+                <small className="library-count">{item.captureCount}</small>
+              </Button>
+            </div>
+            {expandable && (
+              <CollapsibleContent id={branchId} className="library-tree-branch">
+                {branch(item.id, depth + 1)}
+              </CollapsibleContent>
+            )}
+          </Collapsible>
+        );
+      });
   async function refresh() {
     await loadTree();
     if (node) await openNode(node.id);
   }
+  const selectedTitle =
+    node?.label ??
+    (selectedCapture
+      ? "Capture note"
+      : selected === "unclassified"
+        ? "Unclassified"
+        : "Home");
+  const preparingExport = libraryExports.some(
+    (item) => item.status === "pending",
+  );
   return (
     <div className="library-page">
-      <div className="page-title">
-        <div className="eyebrow">Generated knowledge base</div>
-        <h1>Library</h1>
-        <p>
-          Browse stable Markdown notes through an organized, living hierarchy.
-        </p>
+      <div className="knowledge-page-heading">
+        <div>
+          <div className="eyebrow">Knowledge base</div>
+          <h1>{selectedTitle}</h1>
+          <p>
+            {selectedCapture
+              ? "Generated Markdown, source context, and the original capture."
+              : "Browse generated notes by category. Your saved posts remain the source."}
+          </p>
+        </div>
+        <div className="knowledge-page-actions">
+          <a className="knowledge-back-link" href="/">
+            ← Back to Inbox
+          </a>
+          <button
+            type="button"
+            className="knowledge-export-button"
+            onClick={() => setExportDialogOpen(true)}
+          >
+            Export archive
+          </button>
+        </div>
       </div>
-      <div className={`library-layout ${selected !== "home" ? "viewing" : ""}`}>
+      <div
+        className="library-mobile-switch"
+        role="tablist"
+        aria-label="Knowledge base view"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mobilePane === "browse"}
+          onClick={() => setMobilePane("browse")}
+        >
+          Browse tree
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mobilePane === "reading"}
+          onClick={() => setMobilePane("reading")}
+        >
+          Reading pane
+        </button>
+      </div>
+      <div className={`library-layout mobile-${mobilePane}`}>
         <aside className="library-sidebar" aria-label="Knowledge tree">
           <div className="library-sidebar-header">
             <div>
               <strong>Knowledge base</strong>
               <small>{nodes.length} categories</small>
             </div>
+            <div className="library-tree-actions">
+            <Button type="button" variant="ghost" className="library-collapse-all"
+              disabled={!nodes.some((item) => children(item.id).length > 0 && !expandedNodes.has(item.id))}
+              onClick={() => setExpandedNodes(new Set(nodes.filter((item) => children(item.id).length > 0).map((item) => item.id)))}>
+              Expand all
+            </Button>
             <Button
               type="button"
               variant="ghost"
               className="library-collapse-all"
-              disabled={expandedNodes.size === 0}
+              disabled={!nodes.some((item) => children(item.id).length > 0 && expandedNodes.has(item.id))}
               onClick={() => setExpandedNodes(new Set())}
             >
               Collapse all
             </Button>
+            </div>
           </div>
+          <label className="knowledge-tree-search">
+            <Search aria-hidden="true" />
+            <span className="sr-only">Search categories</span>
+            <input
+              type="search"
+              placeholder="Search categories"
+              value={treeQuery}
+              onChange={(event) => setTreeQuery(event.target.value)}
+            />
+            {treeQuery && (
+              <button
+                type="button"
+                aria-label="Clear category search"
+                onClick={() => setTreeQuery("")}
+              >
+                <X aria-hidden="true" />
+              </button>
+            )}
+          </label>
           <ScrollArea className="library-tree">
             <Button
               type="button"
               variant="ghost"
               className={`library-root-row ${selected === "home" ? "selected" : ""}`}
-              onClick={() => {
-                setSelected("home");
-                setNode(null);
-                setSelectedCapture(null);
-                setMarkdown(
-                  "# Social Knowledge\n\nChoose a domain to begin exploring.",
-                );
-              }}
+              onClick={() => void navigateLibrary("home")}
             >
               <House aria-hidden="true" />
               <span>Home</span>
               <small className="library-count">
                 {nodes
                   .filter((n) => n.parentId === null)
-                  .reduce((sum, n) => sum + n.captureCount, 0)}
+                  .reduce((sum, n) => sum + n.captureCount, 0) + unclassifiedCount}
               </small>
             </Button>
             {branch(null)}
-            <Button
+            {unclassifiedCount > 0 && <Button
               type="button"
               variant="ghost"
               className={`library-root-row ${selected === "unclassified" ? "selected" : ""}`}
@@ -1922,22 +4014,21 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
               <FileQuestion aria-hidden="true" />
               <span>Unclassified</span>
               <small className="library-count">{unclassifiedCount}</small>
-            </Button>
+            </Button>}
           </ScrollArea>
         </aside>
-        <section className="markdown-pane">
-          {selected !== "home" && (
-            <button
-              className="library-mobile-back"
-              onClick={() => {
-                setSelected("home");
-                setNode(null);
-                setSelectedCapture(null);
-              }}
-            >
-              ‹ Browse library
-            </button>
-          )}
+        <section className="markdown-pane" aria-label="Reading pane">
+          <div className="library-toolbar library-navigation">
+            <nav aria-label="Knowledge base history">
+              <button type="button" aria-label="Back in knowledge base" disabled={navigationLoading || navigation.index === 0}
+                onClick={() => void navigateLibrary(navigation.entries[navigation.index - 1]!, navigation.index - 1)}><ArrowLeft aria-hidden="true" /> Back</button>
+              <button type="button" aria-label="Forward in knowledge base" disabled={navigationLoading || navigation.index === navigation.entries.length - 1}
+                onClick={() => void navigateLibrary(navigation.entries[navigation.index + 1]!, navigation.index + 1)}><ArrowRight aria-hidden="true" /> Forward</button>
+            </nav>
+            {selectedCapture && <button type="button" onClick={() => onOpen(selectedCapture)}>Open capture</button>}
+          </div>
+          {navigationLoading && <p className="library-navigation-feedback" role="status">Loading page…</p>}
+          {navigationError && <p className="library-navigation-feedback" role="alert">{navigationError}</p>}
           {node && (
             <div className="library-toolbar">
               <div className="library-breadcrumb">
@@ -1996,37 +4087,6 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
               </div>
             </div>
           )}
-          {selectedCapture && (
-            <div className="library-toolbar">
-              <button onClick={() => onOpen(selectedCapture)}>
-                Open capture
-              </button>
-              <button
-                onClick={async () => {
-                  const label = window.prompt(
-                    `Move to category: ${nodes.map((candidate) => candidate.label).join(", ")}`,
-                  );
-                  const target = [...nodes]
-                    .reverse()
-                    .find(
-                      (candidate) =>
-                        candidate.label.toLowerCase() === label?.toLowerCase(),
-                    );
-                  if (!target) return;
-                  await api(
-                    `/api/v1/captures/${selectedCapture}/classification`,
-                    {
-                      method: "PATCH",
-                      body: JSON.stringify({ nodeId: target.id }),
-                    },
-                  );
-                  await loadTree();
-                }}
-              >
-                Move capture
-              </button>
-            </div>
-          )}
           <article className="markdown">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
@@ -2048,7 +4108,7 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
                     return (
                       <button
                         className="markdown-link"
-                        onClick={() => void openNode(href.slice(8))}
+                        onClick={() => void (href === "library:unclassified" ? openUnclassified() : openNode(href.slice(8)))}
                       >
                         {children}
                       </button>
@@ -2061,11 +4121,86 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
                 },
               }}
             >
-              {markdownForDisplay(markdown)}
+              {markdownForDisplay(
+                selected === "home"
+                  ? libraryHomeMarkdown(nodes, unclassifiedCount)
+                  : markdown,
+              )}
             </ReactMarkdown>
           </article>
         </section>
       </div>
+      {exportDialogOpen && (
+        <div
+          className="knowledge-export-scrim"
+          role="presentation"
+          onClick={() => setExportDialogOpen(false)}
+        >
+          <section
+            className="knowledge-export-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="export-archive-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div>
+              <div className="eyebrow">Portable backup</div>
+              <h2 id="export-archive-title">Download your archive</h2>
+              <p>
+                Create a complete private copy of your saved knowledge. Account
+                credentials and server configuration are excluded.
+              </p>
+            </div>
+            <ul className="knowledge-export-contents">
+              <li>Markdown notes and capture metadata</li>
+              <li>Transcripts, comments, images, audio, and video</li>
+              <li>One secure download link, available for 24 hours</li>
+            </ul>
+            {exportMessage && (
+              <p className="knowledge-export-message" role="status">
+                {exportMessage}
+              </p>
+            )}
+            {libraryExports[0]?.status === "complete" && (
+              <a
+                className="knowledge-export-ready"
+                href={`/api/v1/library-exports/${libraryExports[0].id}/download`}
+              >
+                Download ready archive
+              </a>
+            )}
+            <div className="knowledge-export-actions">
+              <button
+                type="button"
+                className="knowledge-dialog-cancel"
+                onClick={() => setExportDialogOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="knowledge-export-button"
+                disabled={preparingExport}
+                onClick={async () => {
+                  setExportMessage("Preparing your archive…");
+                  try {
+                    await api("/api/v1/library-exports", { method: "POST" });
+                    await loadExports();
+                  } catch (error) {
+                    setExportMessage(
+                      error instanceof Error
+                        ? error.message
+                        : "Archive export could not start.",
+                    );
+                  }
+                }}
+              >
+                {preparingExport ? "Preparing…" : "Prepare download"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -2077,6 +4212,7 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState("");
   const [reconciliationNotice, setReconciliationNotice] = useState("");
+  const [conversationListOpen, setConversationListOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const selectedConversationIdRef = useRef<string | null>(null);
   const activeAttemptRef = useRef<{
@@ -2237,13 +4373,14 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
         new Error(
           problem.error === "conversation_busy"
             ? "This conversation is already answering in another tab."
-            : problem.error === "ai_provider_required" || problem.error === "analysis_provider_required"
+            : problem.error === "ai_provider_required" ||
+                problem.error === "analysis_provider_required"
               ? "Choose a connected analysis provider in Settings before using Ask AI."
-            : problem.error === "invalid_message"
-              ? "Enter a question between 1 and 2,000 characters."
-              : problem.error === "invalid_request_id"
-                ? "The request identifier was invalid. Please try again."
-                : "Ask AI could not start the answer.",
+              : problem.error === "invalid_message"
+                ? "Enter a question between 1 and 2,000 characters."
+                : problem.error === "invalid_request_id"
+                  ? "The request identifier was invalid. Please try again."
+                  : "Ask AI could not start the answer.",
         ),
         problem.assistantId ? { assistantId: problem.assistantId } : {},
       );
@@ -2470,214 +4607,250 @@ function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
     "Which products have creators recommended?",
   ];
   return (
-    <div className="ask-page">
-      <aside className="conversation-sidebar">
-        <button className="new-chat" onClick={() => void createConversation()}>
-          ＋ New conversation
-        </button>
-        {conversations.map((conversation) => (
-          <button
-            key={conversation.id}
-            className={current?.id === conversation.id ? "selected" : ""}
-            onClick={() => void openConversation(conversation.id)}
-          >
-            <span>{conversation.title}</span>
-            <small>{conversation.messageCount ?? 0} messages</small>
-          </button>
-        ))}
-      </aside>
-      <section className="chat-panel">
-        <div className="chat-heading">
-          <div>
-            <div className="eyebrow">Your saved archive</div>
-            <h1>Ask AI</h1>
-          </div>
-          {current && (
-            <button
-              className="delete-chat"
-              disabled={streaming}
-              onClick={async () => {
-                if (!window.confirm("Delete this conversation?")) return;
-                await api(`/api/v1/conversations/${current.id}`, {
-                  method: "DELETE",
-                });
-                setCurrent(null);
-                selectedConversationIdRef.current = null;
-                await loadList();
-              }}
-            >
-              Delete
-            </button>
-          )}
+    <div className="ask-page-wrap">
+      <div className="ask-page-intro">
+        <div>
+          <div className="eyebrow">Your saved archive</div>
+          <h1>Ask</h1>
+          <p>Answers from your saved posts, with sources.</p>
         </div>
-        <div className="messages">
-          {!current?.messages?.length && (
-            <div className="ask-empty">
-              <h2>Ask what you’ve saved.</h2>
-              <p>
-                Answers are grounded only in your archived captures and link
-                back to their evidence.
-              </p>
-              <div className="suggestions">
-                {suggestions.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    onClick={() => void send(suggestion)}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {current?.messages?.map((message) => (
-            <article
-              className={`chat-message ${message.role} ${message.status}`}
-              key={message.id}
+      </div>
+      <div className="ask-page">
+        <aside
+          className={`conversation-sidebar ${conversationListOpen ? "open" : ""}`}
+          aria-label="Ask conversations"
+        >
+          <div className="conversation-sidebar-heading">
+            <strong>Conversations</strong>
+            <button
+              type="button"
+              className="conversation-list-toggle"
+              aria-expanded={conversationListOpen}
+              aria-controls="ask-conversation-list"
+              onClick={() => setConversationListOpen((open) => !open)}
             >
-              <div className="message-role">
-                {message.role === "user" ? "You" : "Social Knowledge"}
-              </div>
-              <div className="message-content">
-                {message.content ? (
-                  message.role === "assistant" ? (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      urlTransform={(url) =>
-                        /^(capture:|https?:|mailto:)/i.test(url) ? url : ""
-                      }
-                      components={{
-                        a: ({ href, children }) => {
-                          if (href?.startsWith("capture:")) {
-                            const source = message.sources.find(
-                              ({ id }) => id === href.slice(8),
-                            );
-                            if (source)
-                              return (
-                                <button
-                                  type="button"
-                                  className={`inline-capture-link platform-${source.platform.toLowerCase()}`}
-                                  aria-label={`Open ${source.platform} reel: ${source.title}`}
-                                  title={`Open ${source.title}`}
-                                  onClick={() => onOpen(source.id)}
-                                >
-                                  <PlatformMark platform={source.platform} />
-                                  <span>{children}</span>
-                                </button>
-                              );
-                          }
-                          return (
-                            <a href={href} target="_blank" rel="noreferrer">
-                              {children}
-                            </a>
-                          );
-                        },
-                      }}
-                    >
-                      {answerWithCaptureLinks(message.content, message.sources)}
-                    </ReactMarkdown>
-                  ) : (
-                    message.content
-                  )
-                ) : message.status === "pending" ? (
-                  <span className="typing">
-                    {message.statusText || "Searching your archive…"}
-                  </span>
-                ) : (
-                  <span>
-                    {message.status === "cancelled"
-                      ? "Answer stopped."
-                      : "Ask AI could not finish this answer."}
-                  </span>
-                )}
-              </div>
-              {message.role === "assistant" &&
-                (message.status === "failed" ||
-                  message.status === "cancelled") && (
-                  <button
-                    className="retry-answer"
-                    disabled={streaming}
-                    onClick={() => void retry(message)}
-                  >
-                    Retry
-                  </button>
-                )}
-              {message.role === "assistant" && message.sufficient === false && (
-                <small className="insufficient">
-                  The saved archive did not contain enough evidence.
-                </small>
-              )}
-              {message.sources?.length > 0 && (
-                <div className="answer-sources">
-                  <strong>Sources</strong>
-                  {message.sources.map((source) => (
+              {conversationListOpen ? "Hide" : "Browse"}
+            </button>
+          </div>
+          <button
+            className="new-chat"
+            onClick={() => void createConversation()}
+          >
+            ＋ New conversation
+          </button>
+          <div id="ask-conversation-list" className="conversation-list">
+            {conversations.map((conversation) => (
+              <button
+                key={conversation.id}
+                className={current?.id === conversation.id ? "selected" : ""}
+                onClick={() => {
+                  setConversationListOpen(false);
+                  void openConversation(conversation.id);
+                }}
+              >
+                <span>{conversation.title}</span>
+                <small>{conversation.messageCount ?? 0} messages</small>
+              </button>
+            ))}
+          </div>
+        </aside>
+        <section className="chat-panel">
+          <div className="chat-heading">
+            <div>
+              <div className="eyebrow">Your saved archive</div>
+              <h1>Ask AI</h1>
+            </div>
+            {current && (
+              <button
+                className="delete-chat"
+                disabled={streaming}
+                onClick={async () => {
+                  if (!window.confirm("Delete this conversation?")) return;
+                  await api(`/api/v1/conversations/${current.id}`, {
+                    method: "DELETE",
+                  });
+                  setCurrent(null);
+                  selectedConversationIdRef.current = null;
+                  await loadList();
+                }}
+              >
+                Delete
+              </button>
+            )}
+          </div>
+          <div className="messages">
+            {!current?.messages?.length && (
+              <div className="ask-empty">
+                <h2>Ask what you’ve saved.</h2>
+                <p>
+                  Answers are grounded only in your archived captures and link
+                  back to their evidence.
+                </p>
+                <div className="suggestions">
+                  {suggestions.map((suggestion) => (
                     <button
-                      key={source.id}
-                      aria-label={`Open ${source.platform} reel: ${source.title}`}
-                      onClick={() => onOpen(source.id)}
+                      key={suggestion}
+                      onClick={() => void send(suggestion)}
                     >
-                      <span
-                        className={`source-number platform-${source.platform.toLowerCase()}`}
-                      >
-                        <PlatformMark platform={source.platform} />
-                        <span>{source.citation}</span>
-                      </span>
-                      <span>
-                        <b>{source.title}</b>
-                        <small>
-                          {source.breadcrumb.join(" › ") || source.platform}
-                        </small>
-                      </span>
+                      {suggestion}
                     </button>
                   ))}
                 </div>
-              )}
-            </article>
-          ))}
-        </div>
-        {error && (
-          <p className="chat-error" role="alert">
-            {error}
-          </p>
-        )}
-        {reconciliationNotice && (
-          <p className="chat-error" role="status">
-            {reconciliationNotice}
-          </p>
-        )}
-        <form
-          className="chat-composer"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void send();
-          }}
-        >
-          <textarea
-            aria-label="Ask your archive"
-            placeholder="Ask about your saved places, products, recommendations…"
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void send();
-              }
+              </div>
+            )}
+            {current?.messages?.map((message) => (
+              <article
+                className={`chat-message ${message.role} ${message.status}`}
+                key={message.id}
+              >
+                <div className="message-role">
+                  {message.role === "user" ? "You" : "Social Knowledge"}
+                </div>
+                <div className="message-content">
+                  {message.content ? (
+                    message.role === "assistant" ? (
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        urlTransform={(url) =>
+                          /^(capture:|https?:|mailto:)/i.test(url) ? url : ""
+                        }
+                        components={{
+                          a: ({ href, children }) => {
+                            if (href?.startsWith("capture:")) {
+                              const source = message.sources.find(
+                                ({ id }) => id === href.slice(8),
+                              );
+                              if (source)
+                                return (
+                                  <button
+                                    type="button"
+                                    className={`inline-capture-link platform-${source.platform.toLowerCase()}`}
+                                    aria-label={`Open ${source.platform} reel: ${source.title}`}
+                                    title={`Open ${source.title}`}
+                                    onClick={() => onOpen(source.id)}
+                                  >
+                                    <PlatformMark platform={source.platform} />
+                                    <span>{children}</span>
+                                  </button>
+                                );
+                            }
+                            return (
+                              <a href={href} target="_blank" rel="noreferrer">
+                                {children}
+                              </a>
+                            );
+                          },
+                        }}
+                      >
+                        {answerWithCaptureLinks(
+                          message.content,
+                          message.sources,
+                        )}
+                      </ReactMarkdown>
+                    ) : (
+                      message.content
+                    )
+                  ) : message.status === "pending" ? (
+                    <span className="typing">
+                      {message.statusText || "Searching your archive…"}
+                    </span>
+                  ) : (
+                    <span>
+                      {message.status === "cancelled"
+                        ? "Answer stopped."
+                        : "Ask AI could not finish this answer."}
+                    </span>
+                  )}
+                </div>
+                {message.role === "assistant" &&
+                  (message.status === "failed" ||
+                    message.status === "cancelled") && (
+                    <button
+                      className="retry-answer"
+                      disabled={streaming}
+                      onClick={() => void retry(message)}
+                    >
+                      Retry
+                    </button>
+                  )}
+                {message.role === "assistant" &&
+                  message.sufficient === false && (
+                    <small className="insufficient">
+                      The saved archive did not contain enough evidence.
+                    </small>
+                  )}
+                {message.sources?.length > 0 && (
+                  <div className="answer-sources">
+                    <strong>Sources</strong>
+                    {message.sources.map((source) => (
+                      <button
+                        key={source.id}
+                        aria-label={`Open ${source.platform} reel: ${source.title}`}
+                        onClick={() => onOpen(source.id)}
+                      >
+                        <span
+                          className={`source-number platform-${source.platform.toLowerCase()}`}
+                        >
+                          <PlatformMark platform={source.platform} />
+                          <span>{source.citation}</span>
+                        </span>
+                        <span>
+                          <b>{source.title}</b>
+                          <small>
+                            {source.breadcrumb.join(" › ") || source.platform}
+                          </small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+          {error && (
+            <p className="chat-error" role="alert">
+              {error}
+            </p>
+          )}
+          {reconciliationNotice && (
+            <p className="chat-error" role="status">
+              {reconciliationNotice}
+            </p>
+          )}
+          <form
+            className="chat-composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void send();
             }}
-          />
-          <button
-            type={streaming ? "button" : "submit"}
-            className={streaming ? "stop-answer" : ""}
-            disabled={!streaming && !question.trim()}
-            onClick={streaming ? () => abortRef.current?.abort() : undefined}
           >
-            {streaming ? "Stop" : "Send"}
-          </button>
-        </form>
-        <small className="grounding-note">
-          Answers use only your saved archive. Open sources to verify creator
-          claims.
-        </small>
-      </section>
+            <textarea
+              aria-label="Ask your archive"
+              placeholder="Ask about your saved places, products, recommendations…"
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void send();
+                }
+              }}
+            />
+            <button
+              type={streaming ? "button" : "submit"}
+              className={streaming ? "stop-answer" : ""}
+              disabled={!streaming && !question.trim()}
+              onClick={streaming ? () => abortRef.current?.abort() : undefined}
+            >
+              {streaming ? "Stop" : "Send"}
+            </button>
+          </form>
+          <small className="grounding-note">
+            Answers use only your saved archive. Open sources to verify creator
+            claims.
+          </small>
+        </section>
+      </div>
     </div>
   );
 }
@@ -2698,26 +4871,48 @@ function App() {
       );
     return token;
   });
-  const initialTab = new URLSearchParams(window.location.search).get("tab");
-  const [tab, setTab] = useState<
-    "inbox" | "library" | "ask" | "activity" | "capture" | "settings"
-  >(
-    initialTab === "library" ||
-      initialTab === "ask" ||
-      initialTab === "activity" ||
-      initialTab === "capture" ||
-      initialTab === "settings"
-      ? initialTab
-      : "inbox",
-  );
+  const [tab, setTab] = useState<AppTab>(tabFromLocation);
   const highlightedJob = new URLSearchParams(window.location.search).get("job");
   const [captures, setCaptures] = useState<Capture[]>([]);
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [activityJobs, setActivityJobs] = useState<ActivityJob[]>([]);
+  const [activityNextCursor, setActivityNextCursor] = useState<string | null>(
+    null,
+  );
+  const [activityCounts, setActivityCounts] = useState<ActivityCounts>({
+    active: 0,
+    queued: 0,
+    failed: 0,
+    savedToday: 0,
+    recentEvents: 0,
+  });
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityLoadingMore, setActivityLoadingMore] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const activityRequest = useRef(0);
+  const [failedJobs, setFailedJobs] = useState<ActivityJob[]>([]);
+  const [failedNextCursor, setFailedNextCursor] = useState<string | null>(null);
+  const [failedTotal, setFailedTotal] = useState(0);
+  const [failedError, setFailedError] = useState(false);
+  const [failedLoadingMore, setFailedLoadingMore] = useState(false);
+  const failedRequest = useRef(0);
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const [platform, setPlatform] = useState("");
   const [category, setCategory] = useState("");
   const [topic, setTopic] = useState("");
+  const [inboxView, setInboxView] = useState<InboxView>(() => {
+    try {
+      return window.localStorage.getItem("social-knowledge:inbox-view") ===
+        "table"
+        ? "table"
+        : "tiles";
+    } catch {
+      return "tiles";
+    }
+  });
+  const [sort, setSort] = useState<InboxSortKey>("savedAt");
+  const [direction, setDirection] = useState<"asc" | "desc">("desc");
+  const [filterBuilderOpen, setFilterBuilderOpen] = useState(false);
   const [facets, setFacets] = useState<CaptureFacets>({
     categories: [],
     topics: [],
@@ -2727,17 +4922,6 @@ function App() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [inboxError, setInboxError] = useState<string | null>(null);
   const inboxRequest = useRef(0);
-  const [inboxAnalytics, setInboxAnalytics] = useState<InboxAnalytics | null>(
-    null,
-  );
-  const [loadingAnalytics, setLoadingAnalytics] = useState(true);
-  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
-  const [analyticsStale, setAnalyticsStale] = useState(false);
-  const analyticsRequest = useRef(0);
-  const analyticsLoaded = useRef(false);
-  const analyticsRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
   const liveRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inboxFilters = useRef({
     search: "",
@@ -2745,12 +4929,28 @@ function App() {
     category: "",
     topic: "",
   });
+  const inboxPresentation = useRef<{
+    sort: InboxSortKey;
+    direction: "asc" | "desc";
+  }>({ sort: "savedAt", direction: "desc" });
   const [detail, setDetail] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [captureUrl, setCaptureUrl] = useState("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
+  const [captureError, setCaptureError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [jobDetails, setJobDetails] = useState<JobDetails | null>(null);
+  const [captureSubmitted, setCaptureSubmitted] = useState(false);
+  const [activityFilter, setActivityFilter] = useState<"active" | "all">("active");
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+  const [jobDetails, setJobDetails] = useState<ActivityDetails | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState(false);
+  const detailsRequest = useRef(0);
+  const lastNewestActive = useRef<string | null>(null);
+  const [retryPending, setRetryPending] = useState(false);
+  const [retryingIds, setRetryingIds] = useState<string[]>([]);
+  const [copyFeedback, setCopyFeedback] = useState("");
   async function check() {
     try {
       const result = await api<{ user: AccountUser }>("/api/auth/me");
@@ -2781,6 +4981,8 @@ function App() {
     if (filters.platform) query.set("platform", filters.platform);
     if (filters.category) query.set("nodeId", filters.category);
     if (filters.topic) query.set("topic", filters.topic);
+    query.set("sort", inboxPresentation.current.sort);
+    query.set("direction", inboxPresentation.current.direction);
     if (cursor) query.set("cursor", cursor);
     try {
       const page = await api<{
@@ -2812,42 +5014,92 @@ function App() {
       }
     }
   }
-  async function loadInboxAnalytics() {
-    const requestId = ++analyticsRequest.current;
-    setAnalyticsError(null);
-    setLoadingAnalytics(true);
+  async function loadActivityPage(
+    filter: "active" | "all" = activityFilter,
+    append = false,
+  ) {
+    const requestId = ++activityRequest.current;
+    const cursor = append ? activityNextCursor : null;
+    if (append && !cursor) return;
+    if (append) setActivityLoadingMore(true);
+    else {
+      setActivityLoading(true);
+      setActivityError(null);
+      setActivityNextCursor(null);
+    }
+    const query = new URLSearchParams({
+      limit: "100",
+      filter,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
+    if (cursor) query.set("cursor", cursor);
     try {
-      const result = await api<InboxAnalytics>("/api/v1/inbox-analytics");
-      if (requestId !== analyticsRequest.current) return;
-      setInboxAnalytics(result);
-      setAnalyticsError(null);
-      setAnalyticsStale(false);
-      analyticsLoaded.current = true;
+      const page = await api<ActivityPage>(`/api/v1/jobs?${query}`);
+      if (requestId !== activityRequest.current) return;
+      const jobs = page.jobs.filter((job) =>
+        filter === "active"
+          ? job.status !== "failed" && job.status !== "complete"
+          : true,
+      );
+      setActivityJobs((current) => {
+        if (!append) return jobs;
+        const seen = new Set(current.map((job) => job.id));
+        return [...current, ...jobs.filter((job) => !seen.has(job.id))];
+      });
+      setActivityNextCursor(page.nextCursor);
+      setActivityCounts(page.counts);
     } catch {
-      if (requestId !== analyticsRequest.current) return;
-      setAnalyticsError("Unable to refresh inbox summary. Try again.");
-      setAnalyticsStale(analyticsLoaded.current);
+      if (requestId === activityRequest.current)
+        setActivityError("Unable to load capture activity. Try again.");
     } finally {
-      if (requestId === analyticsRequest.current) setLoadingAnalytics(false);
+      if (requestId === activityRequest.current) {
+        if (append) setActivityLoadingMore(false);
+        else setActivityLoading(false);
+      }
     }
   }
-  function scheduleAnalyticsRefresh() {
-    if (analyticsRefreshTimer.current) return;
-    analyticsRefreshTimer.current = setTimeout(() => {
-      analyticsRefreshTimer.current = null;
-      void loadInboxAnalytics();
-    }, 250);
+  async function loadFailedJobs(append = false) {
+    const requestId = ++failedRequest.current;
+    const cursor = append ? failedNextCursor : null;
+    if (append && !cursor) return;
+    if (append) setFailedLoadingMore(true);
+    else setFailedNextCursor(null);
+    const query = new URLSearchParams({ limit: "50" });
+    if (cursor) query.set("cursor", cursor);
+    try {
+      const page = await api<FailedActivityPage>(
+        `/api/v1/jobs/failed?${query}`,
+      );
+      if (requestId !== failedRequest.current) return;
+      setFailedJobs((current) => {
+        if (!append) return page.failures;
+        const seen = new Set(current.map((job) => job.id));
+        return [...current, ...page.failures.filter((job) => !seen.has(job.id))];
+      });
+      setFailedNextCursor(page.nextCursor);
+      setFailedTotal(page.total);
+      setFailedError(false);
+    } catch {
+      if (requestId === failedRequest.current && !append) {
+        setFailedJobs([]);
+        setFailedError(true);
+      }
+    } finally {
+      if (requestId === failedRequest.current && append)
+        setFailedLoadingMore(false);
+    }
   }
   async function loadSupportingData() {
-    const [j, f] = await Promise.all([
-      api<{ jobs: Job[] }>("/api/v1/jobs?limit=100"),
-      api<CaptureFacets>("/api/v1/capture-facets"),
-    ]);
-    setJobs(j.jobs);
-    setFacets(f);
+    const facets = await api<CaptureFacets>("/api/v1/capture-facets");
+    setFacets(facets);
   }
   async function load() {
-    await Promise.all([loadInboxPage(), loadSupportingData()]);
+    await Promise.all([
+      loadInboxPage(),
+      loadSupportingData(),
+      loadActivityPage(),
+      loadFailedJobs(),
+    ]);
   }
   function scheduleLiveRefresh() {
     if (liveRefreshTimer.current) return;
@@ -2867,64 +5119,206 @@ function App() {
       category,
       topic,
     };
+    inboxPresentation.current = { sort, direction };
     void loadInboxPage();
-  }, [authState, deferredSearch, platform, category, topic]);
+  }, [authState, deferredSearch, platform, category, topic, sort, direction]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("social-knowledge:inbox-view", inboxView);
+    } catch {
+      // Keep this preference optional when storage is unavailable.
+    }
+  }, [inboxView]);
   useEffect(() => {
     if (authState !== "ready") return;
     void loadSupportingData();
-    void loadInboxAnalytics();
     const stream = new EventSource("/api/v1/events");
-    stream.onmessage = (message) => {
-      scheduleLiveRefresh();
-      try {
-        const event = JSON.parse(message.data) as {
-          type?: string;
-          payload?: { status?: string };
-        };
-        if (
-          event.type === "capture" ||
-          (event.type === "job" &&
-            ["complete", "failed", "queued"].includes(
-              event.payload?.status ?? "",
-            ))
-        ) {
-          scheduleAnalyticsRefresh();
-        }
-      } catch {
-        // Keep the existing live refresh behavior for malformed event data.
-      }
-    };
+    stream.onmessage = () => scheduleLiveRefresh();
     return () => {
       stream.close();
-      if (analyticsRefreshTimer.current) {
-        clearTimeout(analyticsRefreshTimer.current);
-        analyticsRefreshTimer.current = null;
-      }
       if (liveRefreshTimer.current) {
         clearTimeout(liveRefreshTimer.current);
         liveRefreshTimer.current = null;
       }
-      analyticsRequest.current += 1;
     };
   }, [authState]);
   useEffect(() => {
-    if (authState === "ready") return;
-    analyticsRequest.current += 1;
-    analyticsLoaded.current = false;
-    setInboxAnalytics(null);
-    setLoadingAnalytics(true);
-    setAnalyticsError(null);
-    setAnalyticsStale(false);
+    if (authState !== "ready") return;
+    void loadActivityPage(activityFilter);
+  }, [authState, activityFilter]);
+  useEffect(() => {
+    if (authState !== "ready") return;
+    void loadFailedJobs();
   }, [authState]);
   const hasInboxFilters = Boolean(search || platform || category || topic);
-  const counts = useMemo(
-    () => ({
-      active: jobs.filter((j) => !["complete", "failed"].includes(j.status))
-        .length,
-      failed: jobs.filter((j) => j.status === "failed").length,
-    }),
-    [jobs],
+  const activeCategory =
+    facets.categories.find((facet) => facet.id === category)?.label ?? null;
+  const selectedSort = inboxSortOptions.find((option) => option.key === sort)!;
+  const sortValue = `${sort}:${direction}`;
+  const applySort = (nextSort: InboxSortKey) => {
+    if (nextSort === sort) {
+      setDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSort(nextSort);
+    setDirection(nextSort === "savedAt" ? "desc" : "asc");
+  };
+  const activeJobCount = activityCounts.active;
+  const visibleActivityJobs = useMemo(
+    () =>
+      [...activityJobs].sort(
+        (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+      ),
+    [activityJobs],
   );
+  const inProgressJobs = visibleActivityJobs.filter(
+    (job) =>
+      job.status !== "queued" &&
+      job.status !== "failed" &&
+      job.status !== "complete",
+  );
+  const queuedJobs = visibleActivityJobs.filter(
+    (job) => job.status === "queued",
+  );
+  const newestActiveId = inProgressJobs[0]?.id ?? queuedJobs[0]?.id ?? null;
+  const attentionTotal = Math.max(activityCounts.failed, failedTotal);
+  useEffect(() => {
+    if (activityFilter !== "active") return;
+    if (newestActiveId && newestActiveId !== lastNewestActive.current) {
+      setExpandedJobId(newestActiveId);
+    }
+    lastNewestActive.current = newestActiveId;
+  }, [activityFilter, newestActiveId]);
+  useEffect(() => {
+    if (!expandedJobId || tab !== "activity") return;
+    const requestId = ++detailsRequest.current;
+    setDetailsLoading(true);
+    setDetailsError(false);
+    void api<ActivityDetails>(`/api/v1/jobs/${expandedJobId}`)
+      .then((details) => {
+        if (requestId === detailsRequest.current) setJobDetails(details);
+      })
+      .catch(() => {
+        if (requestId === detailsRequest.current) setDetailsError(true);
+      })
+      .finally(() => {
+        if (requestId === detailsRequest.current) setDetailsLoading(false);
+      });
+    return () => {
+      detailsRequest.current += 1;
+    };
+  }, [expandedJobId, tab, activityJobs.find((job) => job.id === expandedJobId)?.updatedAt]);
+  async function retryJob(job: ActivityJob) {
+    if (retryPending || retryingIds.includes(job.id)) return;
+    setRetryingIds((current) => [...current, job.id]);
+    try {
+      setMessage("Retrying capture…");
+      await api(`/api/v1/jobs/${job.id}/retry`, { method: "POST" });
+      setMessage("Capture re-queued successfully.");
+      await load();
+    } catch {
+      setMessage("Retry failed. Check the capture setup and try again.");
+    } finally {
+      setRetryingIds((current) => current.filter((id) => id !== job.id));
+    }
+  }
+  async function retryAll() {
+    if (retryPending || attentionTotal === 0) return;
+    setRetryPending(true);
+    setMessage("Retrying failed captures…");
+    try {
+      const result = await api<{ requested: number; retried: number }>(
+        "/api/v1/jobs/retry-failed",
+        { method: "POST" },
+      );
+      setMessage(`${result.retried} captures re-queued.`);
+      await load();
+    } catch {
+      setMessage("Retry all failed. Check the capture setup and try again.");
+    } finally {
+      setRetryPending(false);
+    }
+  }
+  async function copyActivityLogs(events: ActivityEvent[]) {
+    const safeEvents = events
+      .map(safeActivityEvent)
+      .filter((event): event is NonNullable<typeof event> => event !== null);
+    const text = safeEvents
+      .map((event) =>
+        [
+          formatEventTime(event.createdAt),
+          event.label,
+          event.attempt ? `Attempt ${event.attempt}` : null,
+          event.message,
+          formatEventDuration(event),
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      )
+      .join("\n");
+    if (!text) {
+      setCopyFeedback("No safe logs available to copy.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyFeedback("Safe logs copied.");
+    } catch {
+      setCopyFeedback("Couldn’t copy logs. Select and copy them manually.");
+    }
+  }
+  const profileInitial = user?.username.slice(0, 1).toUpperCase() || "S";
+  const navigateTo = (
+    nextTab: AppTab,
+    historyMode: "push" | "replace" = "push",
+  ) => {
+    if (nextTab === "capture") {
+      setMessage("");
+      setCaptureError(false);
+      setCaptureSubmitted(false);
+    }
+    setTab(nextTab);
+    setMobileMenuOpen(false);
+    const nextUrl = new URL(window.location.href);
+    if (nextTab === "inbox") nextUrl.searchParams.delete("tab");
+    else nextUrl.searchParams.set("tab", nextTab);
+    const path = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
+    if (
+      path !==
+      `${window.location.pathname}${window.location.search}${window.location.hash}`
+    ) {
+      window.history[historyMode === "replace" ? "replaceState" : "pushState"](
+        window.history.state,
+        "",
+        path,
+      );
+    }
+  };
+  useEffect(() => {
+    const restore = () => {
+      const nextTab = tabFromLocation();
+      if (nextTab === "capture") {
+        setCaptureSubmitted(false);
+        setMessage("");
+      }
+      setTab(nextTab);
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
+  useEffect(() => {
+    if (tab !== "capture") return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") navigateTo("inbox", "replace");
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [tab]);
+  const signOut = async () => {
+    await api("/api/auth/logout", { method: "POST" });
+    setUser(null);
+    setAuthState("login");
+  };
   if (authState === "loading")
     return (
       <main className="auth">
@@ -2955,12 +5349,13 @@ function App() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     setSubmitting(true);
+    setCaptureError(false);
     setMessage("Submitting…");
     try {
       const result = await api<{
         created: boolean;
         retried?: boolean;
-        job: Job;
+        job: ActivityJob;
       }>("/api/v1/jobs", {
         method: "POST",
         body: JSON.stringify({ url: captureUrl, note: note || undefined }),
@@ -2974,11 +5369,16 @@ function App() {
       );
       setCaptureUrl("");
       setNote("");
-      setTab("activity");
+      setCaptureSubmitted(true);
       await load();
     } catch (e) {
       const errorCode = (e as { body?: { error?: string } }).body?.error;
-      const providerRequired = ["ai_provider_required", "analysis_provider_required", "transcription_required"].includes(errorCode ?? "");
+      const providerRequired = [
+        "ai_provider_required",
+        "analysis_provider_required",
+        "transcription_required",
+      ].includes(errorCode ?? "");
+      setCaptureError(true);
       setMessage(
         errorCode === "transcription_required"
           ? "Choose a connected OpenAI transcription model in Settings before capturing."
@@ -2986,471 +5386,729 @@ function App() {
             ? "Choose a connected analysis provider in Settings before capturing."
             : providerRequired
               ? "Finish AI processing setup before capturing."
-          : e instanceof Error
-            ? e.message
-            : "Submission failed",
+              : errorCode === "invalid_url" || errorCode === "invalid_request"
+                ? "Enter a valid Facebook or Instagram post URL."
+                : e instanceof Error
+                  ? e.message
+                  : "Submission failed",
       );
-      setTab(providerRequired ? "settings" : "activity");
+      if (providerRequired) navigateTo("settings", "replace");
     } finally {
       setSubmitting(false);
     }
   }
   return (
-    <>
-      <header>
-        <div>
-          <span className="logo">◉</span>
-          <strong>Social Knowledge</strong>
+    <div className="app-frame">
+      <aside className="app-sidebar">
+        <div className="app-sidebar-brand">
+          <span className="app-wordmark">social knowledge</span>
+          <span className="app-workspace-label">Private archive</span>
         </div>
-        <nav>
-          {(
-            [
-              "inbox",
-              "library",
-              "ask",
-              "activity",
-              "capture",
-              "settings",
-            ] as const
-          ).map((x) => (
-            <button
-              className={tab === x ? "active" : ""}
-              onClick={() => setTab(x)}
-              key={x}
-            >
-              {x}
-              {x === "activity" && counts.active + counts.failed > 0
-                ? ` ${counts.active + counts.failed}`
-                : ""}
-            </button>
-          ))}
-        </nav>
-        <button
-          className="logout"
-          onClick={async () => {
-            await api("/api/auth/logout", { method: "POST" });
-            setUser(null);
-            setAuthState("login");
-          }}
-        >
-          Sign out
-        </button>
-      </header>
-      <main className="shell">
-        {tab === "inbox" && (
-          <>
-            <div className="hero">
-              <div>
-                <div className="eyebrow">Your private archive</div>
-                <h1>Ideas worth keeping.</h1>
-                <p>
-                  Search the durable knowledge extracted from every saved social
-                  post.
-                </p>
+        <AppNavigation
+          tab={tab}
+          activeCount={activeJobCount}
+          onNavigate={navigateTo}
+        />
+        <div className="app-profile">
+          <button
+            type="button"
+            className="app-account-trigger"
+            aria-label="Open account menu"
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen(true)}
+          >
+            <span className="app-avatar" aria-hidden="true">{profileInitial}</span>
+            <span className="app-profile-copy">
+              <strong>{user?.username || "Personal archive"}</strong>
+              <small>Personal workspace</small>
+            </span>
+            <ChevronDown aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="app-profile-settings"
+            aria-label="Open Settings"
+            onClick={() => navigateTo("settings")}
+          >
+            <SettingsIcon aria-hidden="true" />
+          </button>
+        </div>
+      </aside>
+      <section className="app-workspace">
+        <header className="app-topbar">
+          <button
+            type="button"
+            className="app-menu-trigger"
+            aria-label="Open account menu"
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen(true)}
+          >
+            <span className="app-avatar" aria-hidden="true">{profileInitial}</span>
+            <ChevronRight aria-hidden="true" />
+          </button>
+          <span className="app-mobile-wordmark">social knowledge</span>
+          {(tab === "inbox" || tab === "capture") && <button
+            type="button"
+            className="app-capture"
+            aria-label="Capture a post"
+            onClick={() => navigateTo("capture")}
+          >
+            <Plus aria-hidden="true" />
+            <span>Capture link</span>
+          </button>}
+        </header>
+        <main className="shell">
+          {(tab === "inbox" || tab === "capture") && (
+            <section className="inbox-page" aria-labelledby="inbox-title">
+              <div className="inbox-hero">
+                <div className="eyebrow">Your archive</div>
+                <h1 id="inbox-title">Inbox</h1>
+                <p>The posts you chose to keep, ready when you need them.</p>
+                <button
+                  type="button"
+                  className="inbox-mobile-capture"
+                  aria-label="Capture a post"
+                  onClick={() => navigateTo("capture")}
+                >
+                  <Plus aria-hidden="true" /> Capture
+                </button>
               </div>
-            </div>
-            <section
-              className="inbox-analytics"
-              aria-label="Inbox summary"
-              aria-busy={loadingAnalytics}
-            >
-              {loadingAnalytics && !inboxAnalytics ? (
-                <>
-                  <div className="analytics-cards" aria-hidden="true">
-                    {[
-                      "Total captures",
-                      "Saved in 24 hours",
-                      "Failed imports",
-                    ].map((label) => (
-                      <div
-                        className="analytics-card analytics-skeleton"
-                        key={label}
-                      >
-                        <span>{label}</span>
-                        <strong />
-                      </div>
-                    ))}
+              <section
+                className="inbox-collection"
+                aria-labelledby="captures-heading"
+              >
+                <header className="inbox-collection-heading">
+                  <div>
+                    <h2 id="captures-heading">Captures</h2>
                   </div>
-                  <span className="sr-only">Loading inbox summary…</span>
-                </>
-              ) : inboxAnalytics ? (
-                <>
-                  <div className="analytics-cards">
-                    {(
-                      [
-                        ["Total captures", inboxAnalytics.totalCaptures],
-                        [
-                          "Saved in 24 hours",
-                          inboxAnalytics.capturesLast24Hours,
-                        ],
-                        ["Failed imports", inboxAnalytics.failedImports],
-                      ] as const
-                    ).map(([label, value]) => {
-                      const formatted = value.toLocaleString();
-                      return (
-                        <div
-                          className="analytics-card"
-                          key={label}
-                          role="group"
-                          aria-label={`${label}: ${formatted}`}
+                </header>
+                <div className="inbox-filter-panel">
+                  <div className="inbox-toolbar">
+                    <label className="filter-search">
+                      <Search aria-hidden="true" />
+                      <span className="sr-only">Search your archive</span>
+                      <input
+                        placeholder="Search titles, notes, or creators"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                      />
+                      {search && (
+                        <button
+                          type="button"
+                          aria-label="Clear search"
+                          onClick={() => setSearch("")}
                         >
-                          <span>{label}</span>
-                          <strong>{formatted}</strong>
-                        </div>
+                          <X aria-hidden="true" />
+                        </button>
+                      )}
+                    </label>
+                    <div className="inbox-toolbar-actions">
+                      <button
+                        type="button"
+                        className="inbox-filter-trigger"
+                        aria-expanded={filterBuilderOpen}
+                        aria-controls="inbox-filter-builder"
+                        onClick={() => setFilterBuilderOpen(true)}
+                      >
+                        + Add filter
+                      </button>
+                      <label className="inbox-sort-control">
+                        <span className="sr-only">Sort captures</span>
+                        <select
+                          aria-label="Sort captures"
+                          value={sortValue}
+                          onChange={(event) => {
+                            const [nextSort, nextDirection] =
+                              event.target.value.split(":") as [
+                                InboxSortKey,
+                                "asc" | "desc",
+                              ];
+                            setSort(nextSort);
+                            setDirection(nextDirection);
+                          }}
+                        >
+                          {inboxSortOptions.flatMap((option) => [
+                            <option
+                              key={`${option.key}:desc`}
+                              value={`${option.key}:desc`}
+                            >
+                              {option.descending}
+                            </option>,
+                            <option
+                              key={`${option.key}:asc`}
+                              value={`${option.key}:asc`}
+                            >
+                              {option.ascending}
+                            </option>,
+                          ])}
+                        </select>
+                      </label>
+                      <div
+                        className="inbox-view-toggle"
+                        role="group"
+                        aria-label="Capture view"
+                      >
+                        <button
+                          type="button"
+                          className={inboxView === "tiles" ? "active" : ""}
+                          aria-pressed={inboxView === "tiles"}
+                          onClick={() => setInboxView("tiles")}
+                        >
+                          <span aria-hidden="true">▦</span>
+                          <span>Tiles</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={inboxView === "table" ? "active" : ""}
+                          aria-pressed={inboxView === "table"}
+                          onClick={() => setInboxView("table")}
+                        >
+                          <span aria-hidden="true">☷</span>
+                          <span>Table</span>
+                        </button>
+                      </div>
+                    </div>
+                    {filterBuilderOpen && (
+                      <div
+                        className="inbox-filter-scrim"
+                        onMouseDown={(event) => {
+                          if (event.target === event.currentTarget)
+                            setFilterBuilderOpen(false);
+                        }}
+                      >
+                        <section
+                          className="inbox-filter-builder"
+                          id="inbox-filter-builder"
+                          role="dialog"
+                          aria-modal="true"
+                          aria-labelledby="inbox-filter-heading"
+                        >
+                          <header>
+                            <div>
+                              <span className="eyebrow">Filter captures</span>
+                              <h3 id="inbox-filter-heading">Add filter</h3>
+                            </div>
+                            <button
+                              type="button"
+                              aria-label="Close filters"
+                              onClick={() => setFilterBuilderOpen(false)}
+                            >
+                              <X aria-hidden="true" />
+                            </button>
+                          </header>
+                          <div className="inbox-filter-fields">
+                            <label>
+                              <span>Platform</span>
+                              <select
+                                value={platform}
+                                onChange={(event) =>
+                                  setPlatform(event.target.value)
+                                }
+                              >
+                                <option value="">Any platform</option>
+                                <option value="facebook">Facebook</option>
+                                <option value="instagram">Instagram</option>
+                              </select>
+                            </label>
+                            <label>
+                              <span>Category</span>
+                              <select
+                                value={category}
+                                onChange={(event) =>
+                                  setCategory(event.target.value)
+                                }
+                              >
+                                <option value="">Any category</option>
+                                {facets.categories.map((facet) => (
+                                  <option value={facet.id} key={facet.id}>
+                                    {facet.label} ({facet.count})
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              <span>Topic</span>
+                              <select
+                                value={topic}
+                                onChange={(event) =>
+                                  setTopic(event.target.value)
+                                }
+                              >
+                                <option value="">Any topic</option>
+                                {facets.topics.map((facet) => (
+                                  <option value={facet.label} key={facet.label}>
+                                    {facet.label} ({facet.count})
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                          {hasInboxFilters && (
+                            <button
+                              type="button"
+                              className="inbox-clear-builder"
+                              onClick={() => {
+                                setSearch("");
+                                setPlatform("");
+                                setCategory("");
+                                setTopic("");
+                              }}
+                            >
+                              Clear filters
+                            </button>
+                          )}
+                        </section>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {hasInboxFilters && (
+                  <div
+                    className="inbox-active-filters"
+                    aria-label="Active filters"
+                  >
+                    {platform && (
+                      <button type="button" onClick={() => setPlatform("")}>
+                        Platform: {platform.slice(0, 1).toUpperCase()}
+                        {platform.slice(1)} <X aria-hidden="true" />
+                      </button>
+                    )}
+                    {activeCategory && (
+                      <button type="button" onClick={() => setCategory("")}>
+                        Category: {activeCategory} <X aria-hidden="true" />
+                      </button>
+                    )}
+                    {topic && (
+                      <button type="button" onClick={() => setTopic("")}>
+                        Topic: {topic} <X aria-hidden="true" />
+                      </button>
+                    )}
+                    {search && (
+                      <button type="button" onClick={() => setSearch("")}>
+                        Search: {search} <X aria-hidden="true" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="inbox-clear-all"
+                      onClick={() => {
+                        setSearch("");
+                        setPlatform("");
+                        setCategory("");
+                        setTopic("");
+                      }}
+                    >
+                      Clear filters
+                    </button>
+                  </div>
+                )}
+                {!loadingInbox && !inboxError && (
+                  <p className="capture-count-context" aria-live="polite">
+                    {captures.length.toLocaleString()} capture
+                    {captures.length === 1 ? "" : "s"} loaded ·{" "}
+                    {selectedSort.label}{" "}
+                    {direction === "asc" ? "ascending" : "descending"}
+                  </p>
+                )}
+                {loadingInbox ? (
+                  <InboxLoadingCards />
+                ) : captures.length > 0 ? (
+                  inboxView === "tiles" ? (
+                    <div className="inbox-tile-grid">
+                      {captures.map((capture) => (
+                        <CaptureCard
+                          capture={capture}
+                          categoryLabel={capture.categoryLabel ?? null}
+                          onOpen={setDetail}
+                          key={capture.id}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="inbox-table-wrap">
+                        <table className="inbox-capture-table">
+                          <caption className="sr-only">
+                            Captures sorted by{" "}
+                            {selectedSort.label.toLowerCase()}. Select a title
+                            to open its details.
+                          </caption>
+                          <thead>
+                            <tr>
+                              {inboxSortOptions.map((option) => (
+                                <th scope="col" key={option.key}>
+                                  <button
+                                    type="button"
+                                    className={
+                                      sort === option.key ? "active" : ""
+                                    }
+                                    onClick={() => applySort(option.key)}
+                                  >
+                                    {option.label}
+                                    <span aria-hidden="true">
+                                      {sort === option.key
+                                        ? direction === "asc"
+                                          ? "↑"
+                                          : "↓"
+                                        : "↕"}
+                                    </span>
+                                  </button>
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {captures.map((capture) => (
+                              <CaptureTableRow
+                                capture={capture}
+                                categoryLabel={capture.categoryLabel ?? null}
+                                onOpen={setDetail}
+                                key={capture.id}
+                              />
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div
+                        className="inbox-mobile-rows"
+                        aria-label="Capture table rows"
+                      >
+                        {captures.map((capture) => (
+                          <CaptureMobileRow
+                            capture={capture}
+                            categoryLabel={capture.categoryLabel ?? null}
+                            onOpen={setDetail}
+                            key={capture.id}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )
+                ) : null}
+                {inboxError && (
+                  <div className="pagination-feedback" role="alert">
+                    <span>{inboxError}</span>
+                    <button
+                      type="button"
+                      onClick={() => void loadInboxPage(Boolean(nextCursor))}
+                      disabled={loadingInbox || loadingMore}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+                {nextCursor && !inboxError && (
+                  <div className="pagination-controls">
+                    <button
+                      type="button"
+                      className="load-more"
+                      onClick={() => void loadInboxPage(true)}
+                      disabled={loadingMore}
+                    >
+                      {loadingMore ? "Loading more…" : "Load more"}
+                    </button>
+                  </div>
+                )}
+                {!loadingInbox && !captures.length && (
+                  <div className="empty">
+                    <h2>
+                      {hasInboxFilters
+                        ? "No captures found"
+                        : "Your inbox is ready"}
+                    </h2>
+                    <p>
+                      {hasInboxFilters
+                        ? "Try another search or clear your filters."
+                        : "Completed captures will appear here."}
+                    </p>
+                    {hasInboxFilters && (
+                      <button
+                        type="button"
+                        className="inbox-empty-clear"
+                        onClick={() => {
+                          setSearch("");
+                          setPlatform("");
+                          setCategory("");
+                          setTopic("");
+                        }}
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </div>
+                )}
+              </section>
+            </section>
+          )}
+          {tab === "activity" && (
+            <div className="activity-view">
+              <header className="activity-heading">
+                <span className="activity-eyebrow">Activity</span>
+                <h1>Capture activity</h1>
+                <p>Live progress across every source.</p>
+              </header>
+              <section className="activity-summary" aria-label="Activity summary">
+                {[
+                  ["active", activityCounts.active, "Active"],
+                  ["queued", activityCounts.queued, "Queued"],
+                  ["attention", activityCounts.failed, "Attention"],
+                  ["saved", activityCounts.savedToday, "Saved today"],
+                ].map(([kind, value, label]) => (
+                  <div className={`activity-kpi ${kind}`} key={kind}>
+                    <span aria-hidden="true" />
+                    <strong>{value}</strong>
+                    <small>{label}</small>
+                  </div>
+                ))}
+                <p>{activityCounts.recentEvents} events in the last 10 minutes</p>
+              </section>
+              {message && <p className="activity-feedback" role="status">{message}</p>}
+              <section className="activity-table" aria-label="Capture activity">
+                <div className="activity-table-heading">
+                  <div>
+                    <h2>Captures</h2>
+                    <span>Click a row to inspect logs</span>
+                  </div>
+                  <div className="activity-filters" role="group" aria-label="Activity filter">
+                    <button type="button" aria-pressed={activityFilter === "active"} onClick={() => setActivityFilter("active")}>Active</button>
+                    <button type="button" aria-pressed={activityFilter === "all"} onClick={() => setActivityFilter("all")}>All</button>
+                  </div>
+                </div>
+                <div className="activity-table-columns" aria-hidden="true">
+                  <span>Capture</span><span>Progress</span><span>Status</span><span>Updated</span><span />
+                </div>
+                {activityLoading && visibleActivityJobs.length === 0 ? (
+                  <p className="activity-empty">Loading capture activity…</p>
+                ) : activityError ? (
+                  <p className="activity-empty" role="alert">{activityError}</p>
+                ) : visibleActivityJobs.length === 0 ? (
+                  <p className="activity-empty">{activityFilter === "active" ? "No captures processing now." : "No captures yet."}</p>
+                ) : (
+                  <div className="activity-list">
+                    {visibleActivityJobs.map((job) => {
+                      const expanded = expandedJobId === job.id;
+                      const events = expanded && jobDetails?.job.id === job.id ? jobDetails.events : [];
+                      const safeEvents = events
+                        .map(safeActivityEvent)
+                        .filter((event): event is ActivityEvent => event !== null);
+                      return (
+                        <article className={`activity-card ${expanded ? "expanded" : ""} ${highlightedJob === job.id ? "highlighted" : ""}`} key={job.id}>
+                          <button type="button" className="activity-row-trigger" aria-expanded={expanded} aria-controls={`activity-log-${job.id}`} onClick={() => setExpandedJobId(expanded ? null : job.id)}>
+                            <span className="activity-row-copy"><span className={`activity-source-dot ${platformFor(job.normalizedUrl)}`} aria-hidden="true" /><span><strong>{job.displayTitle || sourceReference(job.normalizedUrl)}</strong><small>{sourceLabel(job.normalizedUrl)}</small></span></span>
+                            <span className="activity-stages" aria-label="Processing stages">
+                              {activityStages.map((stage) => {
+                                const stageState = job.stages.find((item) => item.name === stage);
+                                const state = stageState?.state ?? "queued";
+                                const duration = formatStageDuration(stageState);
+                                return <span className={`activity-stage ${state}`} title={`${activityStageCopy[stage]} · ${duration}`} aria-label={`${activityStageCopy[stage]}: ${state}, ${duration}`} key={stage}><span className="activity-stage-marker" /><span className="activity-stage-label">{activityStageCopy[stage]}</span></span>;
+                              })}
+                            </span>
+                            <span className={`activity-status ${job.status === "failed" ? "failed" : ""}`}>{job.status === "failed" ? failureFor(job).title : activityStatusCopy[job.status] || "Processing"}</span>
+                            <time className="activity-updated" dateTime={job.updatedAt}>{formatActivityTime(job.updatedAt)}</time>
+                            <ChevronDown className="activity-row-chevron" aria-hidden="true" />
+                          </button>
+                          {expanded && (
+                            <div className="activity-inline-log" id={`activity-log-${job.id}`}>
+                              <div className="activity-inline-log-heading"><div><strong>Processing logs</strong><span>{(job.attempts > 0 || (job.status !== "failed" && safeEvents.some((event) => event.state === "failed"))) ? "Includes previous attempts" : "Current capture"}</span></div><button type="button" onClick={() => void copyActivityLogs(events)}><Copy aria-hidden="true" /> Copy logs</button></div>
+                              {copyFeedback && <p className="activity-copy-feedback" role="status">{copyFeedback}</p>}
+                              {detailsLoading && events.length === 0 ? <p>Loading logs…</p> : detailsError ? <p role="alert">Logs are unavailable. Close and reopen this capture to retry.</p> : safeEvents.length > 0 ? (
+                                <ol tabIndex={0} aria-label="Processing log entries">
+                                  {safeEvents.map((event) => <li key={event.id}><span className={`activity-log-dot ${event.state}`} aria-hidden="true" /><time className="activity-log-time" dateTime={event.createdAt}>{formatEventTime(event.createdAt)}</time><strong>{event.label}{event.attempt && <small className="activity-log-attempt">Attempt {event.attempt}</small>}</strong><span className="activity-log-message">{event.message || "—"}</span><span className="activity-log-duration">{formatEventDuration(event)}</span></li>)}
+                                </ol>
+                              ) : <p>Safe processing events will appear here.</p>}
+                              <div className="activity-stage-durations" aria-label="Stage durations">
+                                {activityStages.map((stage) => {
+                                  const stageState = job.stages.find((item) => item.name === stage);
+                                  const duration = formatStageDuration(stageState);
+                                  return <span key={stage}><strong>{activityStageCopy[stage]}</strong> {duration}</span>;
+                                })}
+                              </div>
+                              <p className="activity-log-touch-hint">Stage durations are shown here for touch access.</p>
+                            </div>
+                          )}
+                        </article>
                       );
                     })}
                   </div>
-                  {analyticsError && (
-                    <div className="analytics-feedback" role="alert">
-                      <span>
-                        {analyticsStale
-                          ? "Summary temporarily stale."
-                          : analyticsError}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={loadingAnalytics}
-                        onClick={() => void loadInboxAnalytics()}
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="analytics-feedback" role="alert">
-                  <span>{analyticsError ?? "Inbox summary unavailable."}</span>
-                  <button
-                    type="button"
-                    disabled={loadingAnalytics}
-                    onClick={() => void loadInboxAnalytics()}
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-            </section>
-            <div className="inbox-filter-panel">
-              <div className="filter-toolbar">
-                <label className="filter-search">
-                  <Search aria-hidden="true" />
-                  <span className="sr-only">Search your archive</span>
-                  <input
-                    placeholder="Search titles, transcripts, places…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                  {search && (
-                    <button
-                      type="button"
-                      aria-label="Clear search"
-                      onClick={() => setSearch("")}
-                    >
-                      <X aria-hidden="true" />
-                    </button>
-                  )}
-                </label>
-                <label className="platform-filter">
-                  <SlidersHorizontal aria-hidden="true" />
-                  <span className="sr-only">Filter by platform</span>
-                  <select
-                    value={platform}
-                    onChange={(e) => setPlatform(e.target.value)}
-                  >
-                    <option value="">All platforms</option>
-                    <option value="facebook">Facebook</option>
-                    <option value="instagram">Instagram</option>
-                  </select>
-                </label>
-                {hasInboxFilters && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="clear-filters"
-                    onClick={() => {
-                      setSearch("");
-                      setPlatform("");
-                      setCategory("");
-                      setTopic("");
-                    }}
-                  >
-                    <X aria-hidden="true" /> Clear
-                  </Button>
                 )}
-              </div>
-              {!!facets.categories.length && (
-                <div className="filter-group">
-                  <span>Categories</span>
-                  <div className="filter-pills">
+                {activityNextCursor && <button type="button" className="activity-load-more" disabled={activityLoadingMore} onClick={() => void loadActivityPage(activityFilter, true)}>{activityLoadingMore ? "Loading…" : "Load more captures"}</button>}
+              </section>
+              <section className="activity-attention" aria-labelledby="attention-title">
+                <div className="activity-attention-heading">
+                  <div><h2 id="attention-title">Needs attention</h2><span>{attentionTotal} {attentionTotal === 1 ? "item" : "items"}</span><small>Highest priority first</small></div>
+                  <button type="button" onClick={() => void retryAll()} disabled={retryPending || attentionTotal === 0}><RotateCw aria-hidden="true" />{retryPending ? "Retrying…" : "Retry all"}</button>
+                </div>
+                <div className="activity-attention-list" role="list">
+                  {failedError ? <p role="alert">Unable to load failures. <button type="button" onClick={() => void loadFailedJobs()}>Retry list</button></p> : failedJobs.length === 0 ? <p>Nothing needs attention.</p> : failedJobs.map((job) => (
+                    <div className="activity-attention-item" role="listitem" key={job.id}>
+                      <span className="activity-attention-dot" aria-hidden="true" />
+                      <div><strong>{job.displayTitle || sourceReference(job.normalizedUrl)}</strong><small>{sourceLabel(job.normalizedUrl)} · {failureFor(job).message}</small></div>
+                      <span className="activity-retry-count">{job.attempts} manual {job.attempts === 1 ? "retry" : "retries"}</span>
+                      <button type="button" disabled={retryPending || retryingIds.includes(job.id)} onClick={() => void retryJob(job)}>{retryingIds.includes(job.id) ? "Retrying…" : "Retry"}</button>
+                    </div>
+                  ))}
+                  {failedNextCursor && <button type="button" className="activity-failed-more" disabled={failedLoadingMore} onClick={() => void loadFailedJobs(true)}>{failedLoadingMore ? "Loading…" : "Load more"}</button>}
+                </div>
+              </section>
+            </div>
+          )}
+          {tab === "library" && <Library onOpen={setDetail} />}
+          {tab === "ask" && <AskAI onOpen={setDetail} />}
+          {tab === "capture" && (
+            <div
+              className="capture-overlay"
+              role="presentation"
+              onClick={() => navigateTo("inbox", "replace")}
+            >
+              <section
+                className="capture-panel"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="capture-title"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="capture-close"
+                  aria-label="Close capture"
+                  onClick={() => navigateTo("inbox", "replace")}
+                >
+                  ×
+                </button>
+                <div className="capture-eyebrow">New capture</div>
+                <div className="capture-intro">
+                  <h1 id="capture-title">
+                    {captureSubmitted ? "Post submitted" : "Capture a post"}
+                  </h1>
+                  <p>
+                    {captureSubmitted
+                      ? "Your post is in the processing queue."
+                      : "Paste a post link to save it in your archive."}
+                  </p>
+                </div>
+                {captureSubmitted ? (
+                  <div className="capture-success">
+                    <p role="status">{message}</p>
                     <button
                       type="button"
-                      className={!category ? "active" : ""}
-                      onClick={() => setCategory("")}
+                      onClick={() => navigateTo("activity", "replace")}
                     >
-                      All
+                      View activity
                     </button>
-                    {facets.categories.map((facet) => (
+                  </div>
+                ) : (
+                  <form onSubmit={submit}>
+                    <label>
+                      Post URL
+                      <input
+                        type="url"
+                        required
+                        value={captureUrl}
+                        onChange={(e) => setCaptureUrl(e.target.value)}
+                        placeholder="https://www.instagram.com/reel/..."
+                        autoFocus
+                      />
+                      <small>
+                        Supports public and connected-account posts.
+                      </small>
+                    </label>
+                    <label>
+                      <span>
+                        Why are you saving it?{" "}
+                        <span className="capture-optional">Optional</span>
+                      </span>
+                      <textarea
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        placeholder="Add a note for your future self"
+                      />
+                    </label>
+                    <p className="capture-hint">
+                      We'll show progress in Activity.
+                    </p>
+                    <div className="capture-actions">
                       <button
                         type="button"
-                        key={facet.id}
-                        className={category === facet.id ? "active" : ""}
-                        aria-pressed={category === facet.id}
-                        onClick={() =>
-                          setCategory((current) =>
-                            current === facet.id ? "" : facet.id,
-                          )
-                        }
+                        className="capture-cancel"
+                        onClick={() => navigateTo("inbox", "replace")}
                       >
-                        {facet.label}
-                        <small>{facet.count}</small>
+                        Cancel
                       </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {!!facets.topics.length && (
-                <div className="filter-group secondary">
-                  <span>Topics</span>
-                  <div className="filter-pills">
-                    {facets.topics.map((facet) => (
-                      <button
-                        type="button"
-                        key={facet.label}
-                        className={topic === facet.label ? "active" : ""}
-                        aria-pressed={topic === facet.label}
-                        onClick={() =>
-                          setTopic((current) =>
-                            current === facet.label ? "" : facet.label,
-                          )
-                        }
-                      >
-                        {facet.label}
-                        <small>{facet.count}</small>
+                      <button disabled={submitting}>
+                        {submitting ? "Submitting…" : "Capture post"}
                       </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            {!loadingInbox && !inboxError && (
-              <p className="capture-count-context" aria-live="polite">
-                {captures.length.toLocaleString()} captures loaded
-              </p>
-            )}
-            <div className="grid">
-              {captures.map((c) => (
-                <CaptureCard capture={c} onOpen={setDetail} key={c.id} />
-              ))}
-            </div>
-            {inboxError && (
-              <div className="pagination-feedback" role="alert">
-                <span>{inboxError}</span>
-                <button
-                  type="button"
-                  onClick={() => void loadInboxPage(Boolean(nextCursor))}
-                  disabled={loadingInbox || loadingMore}
-                >
-                  Retry
-                </button>
-              </div>
-            )}
-            {nextCursor && !inboxError && (
-              <div className="pagination-controls">
-                <button
-                  type="button"
-                  className="load-more"
-                  onClick={() => void loadInboxPage(true)}
-                  disabled={loadingMore}
-                >
-                  {loadingMore ? "Loading more…" : "Load more"}
-                </button>
-              </div>
-            )}
-            {!loadingInbox && !captures.length && (
-              <div className="empty">
-                <h2>
-                  {hasInboxFilters
-                    ? "No matching captures"
-                    : "Your inbox is ready"}
-                </h2>
-                <p>
-                  {hasInboxFilters
-                    ? "Try removing a filter or using a broader keyword."
-                    : "Completed captures will appear here."}
-                </p>
-              </div>
-            )}
-          </>
-        )}
-        {tab === "activity" && (
-          <>
-            <div className="page-title">
-              <h1>Activity</h1>
-              <p>Live processing history and recoverable failures.</p>
-            </div>
-            {message && (
-              <p className="action-feedback" role="status">
-                {message}
-              </p>
-            )}
-            <div className="job-list">
-              {jobs.map((job) => (
-                <article
-                  key={job.id}
-                  className={highlightedJob === job.id ? "highlighted" : ""}
-                >
-                  <div>
-                    <div className="job-heading">
-                      <PlatformIcon url={job.normalizedUrl} />
-                      {job.status !== "complete" && (
-                        <span className={`status ${job.status}`}>
-                          {stageCopy[job.status] || job.status}
-                        </span>
-                      )}
-                      <strong>
-                        {job.displayTitle || sourceReference(job.normalizedUrl)}
-                      </strong>
                     </div>
-                    <small>
-                      {sourceReference(job.normalizedUrl)} ·{" "}
-                      {new Date(job.createdAt).toLocaleString()} ·{" "}
-                      {job.attempts ? `attempt ${job.attempts}` : "not started"}
-                    </small>
-                    {job.status === "complete" ? (
-                      <div className="complete-summary" role="status">
-                        <span aria-hidden="true">✓</span>
-                        Complete
-                      </div>
-                    ) : (
-                      <div
-                        className="stage-breadcrumbs"
-                        aria-label={`Capture stage: ${stageCopy[job.status] || job.status}`}
+                    {message && (
+                      <p
+                        className={`capture-feedback ${captureError ? "error" : ""}`}
+                        role={captureError ? "alert" : "status"}
                       >
-                        {stages.slice(0, -1).map((stage, index) => {
-                          const current = stages.indexOf(job.status);
-                          const reached = job.reachedStages?.includes(stage);
-                          const state =
-                            current === index
-                              ? "current"
-                              : reached || current > index
-                                ? "reached"
-                                : "pending";
-                          return (
-                            <span
-                              className={state}
-                              key={stage}
-                              title={stageCopy[stage]}
-                            >
-                              {state === "reached" ? "✓" : index + 1}{" "}
-                              {stageCopy[stage]}
-                            </span>
-                          );
-                        })}
-                        <span
-                          className={`completion-chip ${job.status === "failed" ? "failed" : "pending"}`}
-                        >
-                          {job.status === "failed" ? "! Failed" : "8 Complete"}
-                        </span>
-                      </div>
+                        {message}
+                      </p>
                     )}
-                    {job.status === "failed" &&
-                      (() => {
-                        const failure = failureFor(job);
-                        return (
-                          <div className="failure-card">
-                            <strong>{failure.title}</strong>
-                            <p>{failure.message}</p>
-                            {(job.errorDetail || job.error) && (
-                              <details>
-                                <summary>Technical diagnostic</summary>
-                                <code>{job.errorDetail || job.error}</code>
-                              </details>
-                            )}
-                          </div>
-                        );
-                      })()}
-                  </div>
-                  <div className="job-actions">
-                    <button
-                      className="info-button"
-                      aria-label={`View details for ${job.displayTitle || sourceLabel(job.normalizedUrl)}`}
-                      title="View processing details"
-                      onClick={async () =>
-                        setJobDetails(
-                          await api<JobDetails>(`/api/v1/jobs/${job.id}`),
-                        )
-                      }
-                    >
-                      i
-                    </button>
-                    {job.status === "failed" && (
-                      <button
-                        onClick={async () => {
-                          try {
-                            setMessage("Retrying capture…");
-                            await api(`/api/v1/jobs/${job.id}/retry`, {
-                              method: "POST",
-                            });
-                            setMessage("Capture re-queued successfully.");
-                            await load();
-                          } catch (error) {
-                            setMessage(
-                              error instanceof Error
-                                ? error.message
-                                : "Retry failed",
-                            );
-                          }
-                        }}
-                      >
-                        Retry
-                      </button>
-                    )}
-                  </div>
-                </article>
-              ))}
+                  </form>
+                )}
+              </section>
             </div>
-          </>
-        )}
-        {tab === "library" && <Library onOpen={setDetail} />}
-        {tab === "ask" && <AskAI onOpen={setDetail} />}
-        {tab === "capture" && (
-          <div className="capture-panel">
-            <div className="eyebrow">Manual capture</div>
-            <h1>Save a social post</h1>
-            <form onSubmit={submit}>
-              <label>
-                Facebook or Instagram URL
-                <input
-                  type="url"
-                  required
-                  value={captureUrl}
-                  onChange={(e) => setCaptureUrl(e.target.value)}
-                />
-              </label>
-              <label>
-                Why are you saving it?
-                <textarea
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                />
-              </label>
-              <button disabled={submitting}>
-                {submitting ? "Submitting…" : "Capture"}
-              </button>
-              <p>{message}</p>
-            </form>
-          </div>
-        )}
-        {tab === "settings" && <Settings user={user} />}
-      </main>
-      {detail && <Detail id={detail} onClose={() => setDetail(null)} />}
-      {jobDetails && (
-        <JobInfoModal
-          details={jobDetails}
-          onClose={() => setJobDetails(null)}
-        />
+          )}
+          {tab === "settings" && <Settings user={user} />}
+        </main>
+      </section>
+      {mobileMenuOpen && (
+        <div
+          className="app-account-menu-layer"
+          role="presentation"
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <section
+            className="app-account-menu"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="account-menu-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="app-account-menu-heading">
+              <div>
+                <span className="app-avatar" aria-hidden="true">
+                  {profileInitial}
+                </span>
+                <span>
+                  <strong id="account-menu-title">
+                    {user?.username || "Personal archive"}
+                  </strong>
+                  <small>Personal workspace</small>
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="app-account-menu-item"
+              onClick={() => navigateTo("settings")}
+            >
+              <UserRound aria-hidden="true" />
+              Profile
+            </button>
+            <button
+              type="button"
+              className="app-account-menu-item"
+              onClick={() => navigateTo("settings")}
+            >
+              <SettingsIcon aria-hidden="true" />
+              Settings
+            </button>
+            <button
+              type="button"
+              className="app-account-menu-item account-menu-signout"
+              onClick={() => void signOut()}
+            >
+              <LogOut aria-hidden="true" />
+              Log out
+            </button>
+          </section>
+        </div>
       )}
-    </>
+      {detail && <Detail id={detail} onClose={() => setDetail(null)} />}
+    </div>
   );
 }
 createRoot(document.getElementById("root")!).render(<App />);

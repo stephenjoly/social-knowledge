@@ -75,6 +75,7 @@ export class JobWorker {
           (job.analysisProvider === "cerebras"
             ? this.config.cerebrasAnalysisModel
             : this.config.analysisModel),
+        job.analysisThinkingLevel,
       );
 
       const log = this.logger.child({

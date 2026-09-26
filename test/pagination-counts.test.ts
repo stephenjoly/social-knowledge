@@ -3,12 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
-import { JobStore } from "../src/db.js";
+import { JobStore, type CaptureCursor } from "../src/db.js";
 import { EventHub } from "../src/events.js";
+import type { LibraryClassification } from "../src/library.js";
 import { testConfig } from "./helpers.js";
 
-const classification = {
-  primaryDomain: "Travel" as const,
+const classification: LibraryClassification = {
+  primaryDomain: "Travel",
   country: "Portugal",
   city: "Lisbon",
   subcategory: "Restaurants" as const,
@@ -25,6 +26,8 @@ function addCapture(
     sourceType?: "video" | "image" | "carousel" | "mixed";
     topics?: string[];
     classify?: boolean;
+    classification?: LibraryClassification;
+    title?: string;
     createdAt?: string;
   } = {},
 ) {
@@ -40,7 +43,7 @@ function addCapture(
     sourceType: options.sourceType ?? "video",
     sourceId: `pagination-${index}`,
     platform,
-    title: `Capture ${index}`,
+    title: options.title ?? `Capture ${index}`,
     creator: `creator-${index}`,
     creatorUrl: null,
     description: null,
@@ -50,7 +53,7 @@ function addCapture(
     translationLanguage: null,
     comments: [],
     analysis: {
-      title: `Capture ${index}`,
+      title: options.title ?? `Capture ${index}`,
       synopsis: "Synopsis",
       whyUseful: null,
       takeaways: [],
@@ -59,7 +62,7 @@ function addCapture(
       recommendations: [],
       claimsNeedingVerification: [],
       evidence: [],
-      classification,
+      classification: options.classification ?? classification,
     },
     publishedAt: null,
     durationSeconds: null,
@@ -70,7 +73,11 @@ function addCapture(
     store.database
       .prepare("UPDATE captures SET created_at=? WHERE id=?")
       .run(options.createdAt, capture.id);
-  if (options.classify) store.assignClassification(capture.id, classification);
+  if (options.classify)
+    store.assignClassification(
+      capture.id,
+      options.classification ?? classification,
+    );
   return capture;
 }
 
@@ -100,7 +107,7 @@ describe("capture pagination and count queries", () => {
     ).map((row) => row.id);
 
     const pageIds: string[] = [];
-    let cursor = undefined as { createdAt: string; id: string } | undefined;
+    let cursor = undefined as CaptureCursor | undefined;
     for (;;) {
       const page = store.listCaptures({
         userId: owner.id,
@@ -117,6 +124,140 @@ describe("capture pagination and count queries", () => {
 
     expect(pageIds).toEqual(expected);
     expect(new Set(pageIds).size).toBe(captures.length);
+  });
+
+  it("sorts every Inbox column across pages with nulls, multi-values, filters, and owners", () => {
+    const store = new JobStore(":memory:");
+    stores.push(store);
+    const owner = store.createUser("sort-owner", "hash");
+    const other = store.createUser("sort-other", "hash");
+    const createdAt = "2025-01-01T00:00:00.000Z";
+    const travel = addCapture(store, owner.id, "sort-travel", {
+      title: "Zulu",
+      platform: "facebook",
+      topics: ["beta", "Zulu"],
+      classify: true,
+      createdAt,
+    });
+    const technology = addCapture(store, owner.id, "sort-technology", {
+      title: "Alpha",
+      platform: "instagram",
+      topics: ["Zulu", "Alpha"],
+      classify: true,
+      classification: {
+        primaryDomain: "Technology & Tools",
+        country: null,
+        city: null,
+        subcategory: "Technology",
+        secondaryTopics: [],
+        confidence: 0.9,
+      },
+      createdAt,
+    });
+    const sameTopic = addCapture(store, owner.id, "sort-same-topic", {
+      title: "Beta",
+      platform: "facebook",
+      topics: ["alpha"],
+      classify: true,
+      createdAt,
+    });
+    const empty = addCapture(store, owner.id, "sort-empty", {
+      title: "",
+      platform: "instagram",
+      topics: [],
+      createdAt,
+    });
+    store.database
+      .prepare("UPDATE captures SET platform='',creator=NULL WHERE id=?")
+      .run(empty.id);
+    addCapture(store, other.id, "sort-other", {
+      title: "Before every owner result",
+      platform: "facebook",
+      topics: ["aaa"],
+      classify: true,
+      classification: {
+        primaryDomain: "Learning",
+        country: null,
+        city: null,
+        subcategory: "Guides",
+        secondaryTopics: [],
+        confidence: 0.9,
+      },
+      createdAt,
+    });
+    const learning = store
+      .libraryTree()
+      .find((node) => node.kind === "domain" && node.label === "Learning")!;
+    store.moveCapture(sameTopic.id, learning.id);
+    const sourceOrder = [travel, sameTopic].sort((left, right) =>
+      right.id.localeCompare(left.id),
+    );
+    const sourceLast = sourceOrder[0]!;
+    const sourceFirst = sourceOrder[1]!;
+    store.database
+      .prepare("UPDATE captures SET creator='Zulu creator' WHERE id=?")
+      .run(sourceLast.id);
+    store.database
+      .prepare("UPDATE captures SET creator='Alpha creator' WHERE id=?")
+      .run(sourceFirst.id);
+
+    const pages = (sort: { key: "title" | "savedAt" | "source" | "category" | "topic"; direction: "asc" | "desc" }, platform?: string) => {
+      const ids: string[] = [];
+      let cursor: CaptureCursor | undefined;
+      do {
+        const page = store.listCaptures({
+          userId: owner.id,
+          limit: 1,
+          sort,
+          ...(platform ? { platform } : {}),
+          ...(cursor ? { cursor } : {}),
+        });
+        ids.push(...page.captures.map((capture) => capture.id));
+        cursor = page.nextCursor ?? undefined;
+      } while (cursor);
+      return ids;
+    };
+
+    expect(pages({ key: "title", direction: "asc" })).toEqual([
+      technology.id,
+      sameTopic.id,
+      travel.id,
+      empty.id,
+    ]);
+    expect(pages({ key: "title", direction: "desc" })).toEqual([
+      travel.id,
+      sameTopic.id,
+      technology.id,
+      empty.id,
+    ]);
+    expect(pages({ key: "savedAt", direction: "asc" })).toEqual(
+      [travel, technology, sameTopic, empty]
+        .map((capture) => capture.id)
+        .sort((left, right) => right.localeCompare(left)),
+    );
+    expect(pages({ key: "source", direction: "asc" })).toEqual([
+      sourceFirst.id,
+      sourceLast.id,
+      technology.id,
+      empty.id,
+    ]);
+    expect(pages({ key: "category", direction: "asc" })).toEqual([
+      sameTopic.id,
+      technology.id,
+      travel.id,
+      empty.id,
+    ]);
+    expect(pages({ key: "topic", direction: "asc" })).toEqual([
+      ...[technology.id, sameTopic.id].sort((left, right) =>
+        right.localeCompare(left),
+      ),
+      travel.id,
+      empty.id,
+    ]);
+    expect(pages({ key: "topic", direction: "asc" }, "facebook")).toEqual([
+      sameTopic.id,
+      travel.id,
+    ]);
   });
 
   it("keeps filters and ownership constraints on every page", () => {
@@ -211,21 +352,28 @@ describe("capture pagination and count queries", () => {
     );
   });
 
-  it("computes owner-scoped inbox analytics at the inclusive cutoff", () => {
+  it("computes owner-scoped rolling Inbox analytics at inclusive cutoffs", () => {
     const store = new JobStore(":memory:");
     stores.push(store);
     const owner = store.createUser("analytics-owner", "hash");
     const other = store.createUser("analytics-other", "hash");
-    const cutoff = "2026-09-09T12:00:00.000Z";
+    const last24HoursCutoff = "2026-09-09T12:00:00.000Z";
+    const last7DaysCutoff = "2026-09-03T12:00:00.000Z";
 
     addCapture(store, owner.id, "analytics-before", {
       createdAt: "2026-09-09T11:59:59.999Z",
     });
     addCapture(store, owner.id, "analytics-exact", {
-      createdAt: cutoff,
+      createdAt: last24HoursCutoff,
     });
     addCapture(store, owner.id, "analytics-after", {
       createdAt: "2026-09-10T11:00:00.000Z",
+    });
+    addCapture(store, owner.id, "analytics-seven-day-exact", {
+      createdAt: last7DaysCutoff,
+    });
+    addCapture(store, owner.id, "analytics-seven-day-before", {
+      createdAt: "2026-09-03T11:59:59.999Z",
     });
     addCapture(store, other.id, "analytics-other-capture", {
       createdAt: "2026-09-10T11:30:00.000Z",
@@ -260,25 +408,37 @@ describe("capture pagination and count queries", () => {
     }).job;
     store.setStatus(otherFailed.id, "failed");
 
-    expect(store.inboxAnalytics(owner.id, cutoff)).toEqual({
-      totalCaptures: 3,
+    expect(
+      store.inboxAnalytics(owner.id, last24HoursCutoff, last7DaysCutoff),
+    ).toEqual({
+      totalCaptures: 5,
       capturesLast24Hours: 2,
+      capturesLast7Days: 4,
       failedImports: 1,
     });
-    expect(store.inboxAnalytics(other.id, cutoff)).toEqual({
+    expect(
+      store.inboxAnalytics(other.id, last24HoursCutoff, last7DaysCutoff),
+    ).toEqual({
       totalCaptures: 1,
       capturesLast24Hours: 1,
+      capturesLast7Days: 1,
       failedImports: 1,
     });
     const empty = store.createUser("analytics-empty", "hash");
-    expect(store.inboxAnalytics(empty.id, cutoff)).toEqual({
+    expect(
+      store.inboxAnalytics(empty.id, last24HoursCutoff, last7DaysCutoff),
+    ).toEqual({
       totalCaptures: 0,
       capturesLast24Hours: 0,
+      capturesLast7Days: 0,
       failedImports: 0,
     });
 
     expect(store.retry(failed.id)).toBe(true);
-    expect(store.inboxAnalytics(owner.id, cutoff).failedImports).toBe(0);
+    expect(
+      store.inboxAnalytics(owner.id, last24HoursCutoff, last7DaysCutoff)
+        .failedImports,
+    ).toBe(0);
   });
 
   it("returns opaque cursors and exact unclassified counts through the browser API", async () => {
@@ -314,12 +474,29 @@ describe("capture pagination and count queries", () => {
       ";",
     )[0];
     const owner = store.getUserByUsername("api-owner")!;
-    addCapture(store, owner.id, "api-1", {
+    const categorized = addCapture(store, owner.id, "api-1", {
+      classify: true,
       createdAt: "2025-01-02T00:00:00.000Z",
     });
-    addCapture(store, owner.id, "api-2", {
+    const unclassified = addCapture(store, owner.id, "api-2", {
       createdAt: "2025-01-01T00:00:00.000Z",
     });
+    const other = store.createUser("api-category-other", "hash");
+    addCapture(store, other.id, "api-learning-root", {
+      classify: true,
+      classification: {
+        primaryDomain: "Learning",
+        country: null,
+        city: null,
+        subcategory: "Guides",
+        secondaryTopics: [],
+        confidence: 0.9,
+      },
+    });
+    const learning = store
+      .libraryTree()
+      .find((node) => node.kind === "domain" && node.label === "Learning")!;
+    store.moveCapture(categorized.id, learning.id);
 
     const first = await app.inject({
       method: "GET",
@@ -327,6 +504,9 @@ describe("capture pagination and count queries", () => {
       headers: { cookie: cookie! },
     });
     expect(first.statusCode).toBe(200);
+    expect(first.json().captures).toMatchObject([
+      { id: categorized.id, categoryLabel: "Learning" },
+    ]);
     expect(first.json().nextCursor).toEqual(expect.any(String));
     expect(first.json().nextCursor).not.toBe("2025-01-02T00:00:00.000Z");
     const second = await app.inject({
@@ -335,8 +515,12 @@ describe("capture pagination and count queries", () => {
       headers: { cookie: cookie! },
     });
     expect(second.statusCode).toBe(200);
-    expect(second.json().captures).toHaveLength(1);
-    expect(second.json().captures[0].id).not.toBe(first.json().captures[0].id);
+    expect(second.json().captures).toEqual([
+      expect.objectContaining({
+        id: unclassified.id,
+        categoryLabel: null,
+      }),
+    ]);
 
     const invalid = await app.inject({
       method: "GET",
@@ -345,12 +529,56 @@ describe("capture pagination and count queries", () => {
     });
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json()).toEqual({ error: "invalid_cursor" });
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/v1/captures?sort=creator",
+          headers: { cookie: cookie! },
+        })
+      ).json(),
+    ).toEqual({ error: "invalid_request" });
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/v1/captures?direction=sideways",
+          headers: { cookie: cookie! },
+        })
+      ).json(),
+    ).toEqual({ error: "invalid_request" });
+    const sorted = await app.inject({
+      method: "GET",
+      url: "/api/v1/captures?limit=1&sort=title&direction=asc",
+      headers: { cookie: cookie! },
+    });
+    expect(sorted.statusCode).toBe(200);
+    const sortedNext = sorted.json().nextCursor;
+    expect(sortedNext).toEqual(expect.any(String));
+    const sortedSecond = await app.inject({
+      method: "GET",
+      url: `/api/v1/captures?limit=1&sort=title&direction=asc&cursor=${encodeURIComponent(sortedNext)}`,
+      headers: { cookie: cookie! },
+    });
+    expect(sortedSecond.statusCode).toBe(200);
+    expect(sortedSecond.json().captures[0].id).not.toBe(
+      sorted.json().captures[0].id,
+    );
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/api/v1/captures?sort=source&direction=asc&cursor=${encodeURIComponent(sortedNext)}`,
+          headers: { cookie: cookie! },
+        })
+      ).json(),
+    ).toEqual({ error: "invalid_cursor" });
     const tree = await app.inject({
       method: "GET",
       url: "/api/v1/library/tree",
       headers: { cookie: cookie! },
     });
-    expect(tree.json().unclassifiedCount).toBe(2);
+    expect(tree.json().unclassifiedCount).toBe(1);
   });
 
   it("serves authenticated account-wide inbox analytics independently of capture queries", async () => {
@@ -420,6 +648,16 @@ describe("capture pagination and count queries", () => {
       sourceHash: "api-failed",
     }).job;
     store.setStatus(failed.id, "failed");
+    store.fail(
+      failed.id,
+      {
+        code: "processing_failed",
+        title: "Media processing failed",
+        message: "synthetic-secret /private/internal/cookie.txt",
+        diagnostic: "synthetic-secret /private/internal/cookie.txt",
+      },
+      0,
+    );
     const otherFailed = store.createOrGet({
       ownerUserId: other.id,
       sourceUrl: "https://www.instagram.com/reel/api-other-failed",
@@ -427,6 +665,37 @@ describe("capture pagination and count queries", () => {
       sourceHash: "api-other-failed",
     }).job;
     store.setStatus(otherFailed.id, "failed");
+    const activityList = await app.inject({
+      method: "GET",
+      url: "/api/v1/jobs?limit=100",
+      headers: { cookie: cookie! },
+    });
+    expect(activityList.json().jobs).toHaveLength(3);
+    expect(activityList.body).not.toContain(otherFailed.id);
+    expect(activityList.body).not.toContain("synthetic-secret");
+    expect(activityList.body).not.toContain("/private/internal");
+    expect(activityList.json().jobs[0].stages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "added", durationMs: expect.any(Number) }),
+      ]),
+    );
+    const activityDetail = await app.inject({
+      method: "GET",
+      url: `/api/v1/jobs/${failed.id}`,
+      headers: { cookie: cookie! },
+    });
+    expect(activityDetail.body).not.toContain("synthetic-secret");
+    expect(activityDetail.body).not.toContain("/private/internal");
+    expect(activityDetail.json().events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "failed", message: null }),
+      ]),
+    );
+    expect((await app.inject({
+      method: "GET",
+      url: `/api/v1/jobs/${otherFailed.id}`,
+      headers: { cookie: cookie! },
+    })).statusCode).toBe(404);
 
     expect(
       (await app.inject({ method: "GET", url: "/api/v1/inbox-analytics" }))
@@ -442,6 +711,7 @@ describe("capture pagination and count queries", () => {
     expect(analytics.json()).toEqual({
       totalCaptures: 2,
       capturesLast24Hours: 1,
+      capturesLast7Days: 2,
       failedImports: 1,
       generatedAt: expect.any(String),
     });
@@ -474,6 +744,7 @@ describe("capture pagination and count queries", () => {
     expect(afterFilter.json()).toMatchObject({
       totalCaptures: 2,
       capturesLast24Hours: 1,
+      capturesLast7Days: 2,
       failedImports: 1,
     });
 
@@ -489,5 +760,22 @@ describe("capture pagination and count queries", () => {
       headers: { cookie: cookie! },
     });
     expect(afterRetry.json()).toMatchObject({ failedImports: 0 });
+    for (const suffix of ["one", "two"]) {
+      const job = store.createOrGet({
+        ownerUserId: owner.id,
+        sourceUrl: `https://www.instagram.com/reel/api-bulk-${suffix}`,
+        normalizedUrl: `https://www.instagram.com/reel/api-bulk-${suffix}`,
+        sourceHash: `api-bulk-${suffix}`,
+      }).job;
+      store.setStatus(job.id, "failed");
+    }
+    const retryAll = await app.inject({
+      method: "POST",
+      url: "/api/v1/jobs/retry-failed",
+      headers: { cookie: cookie! },
+    });
+    expect(retryAll.json()).toEqual({ requested: 2, retried: 2 });
+    expect(store.listFailed(owner.id)).toHaveLength(0);
+    expect(store.listFailed(other.id)).toHaveLength(1);
   });
 });

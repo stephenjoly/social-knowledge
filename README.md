@@ -63,6 +63,8 @@ E2E_PASSWORD=your-test-password \
 npm run test:e2e
 ```
 
+The dashboard uses a desktop sidebar and mobile bottom navigation. Inbox has tile and table views, archive-wide sorting, and filters for search, platform, category, and topic. Capture opens a dialog on desktop or a mobile overlay; Activity separates failures, active processing, and completed jobs. Settings groups AI, connections, API keys, export/language, and account controls by topic. The app remembers the Inbox view on the current device.
+
 Set a long random `API_TOKEN` and use disposable local directories for `VAULT_DIR` and `MEDIA_DIR` until the configuration has been validated. Keep a fresh local or preview deployment off public networks until its first administrator has registered.
 
 ### Non-production demo accounts
@@ -95,7 +97,7 @@ Content-Type: application/json
 }
 ```
 
-The API returns `202` for a new job and `200` for an already-captured URL. The dashboard uses session-authenticated catalog, Activity, and account-wide Inbox analytics APIs; `GET /api/v1/inbox-analytics` returns total captures, captures created in the previous 24 hours, and currently failed imports without exposing job details.
+The API returns `202` for a new job and `200` for an already-captured URL. The dashboard uses session-authenticated catalog, Activity, and account-wide Inbox analytics APIs; `GET /api/v1/inbox-analytics` returns total captures, captures created in the previous 24 hours and seven days, and currently failed imports without exposing job details. `GET /api/v1/captures` remains newest-first by default and additionally accepts `sort=title|savedAt|source|category|topic` plus `direction=asc|desc`; each listed capture includes `categoryLabel`, the top-level domain of its current library assignment or `null`. Sorted cursors are opaque and must be reused with the same sort; Source uses the normalized platform-and-creator pair, Category uses the top-level domain of the current library assignment, empty category/topic values sort last, and a multi-topic capture sorts by its lexicographically first normalized topic.
 
 Agent endpoints are documented by the OpenAPI 3.1 contract at `/openapi.json`:
 

@@ -2,9 +2,7 @@ import { createReadStream } from "node:fs";
 import OpenAI from "openai";
 
 export class Transcriber {
-  constructor(
-    private readonly userClient: (userId: string) => OpenAI,
-  ) {}
+  constructor(private readonly userClient: (userId: string) => OpenAI) {}
 
   async transcribe(
     audioPath: string,
@@ -15,8 +13,8 @@ export class Transcriber {
     const result = await client.audio.transcriptions.create({
       file: createReadStream(audioPath),
       model,
-      response_format: "text",
+      response_format: "json",
     });
-    return result.trim();
+    return result.text.trim();
   }
 }

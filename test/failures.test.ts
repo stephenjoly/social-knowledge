@@ -21,4 +21,21 @@ describe("friendly capture failures", () => {
     expect(failure.message).not.toContain("cookies expired;");
     expect(failure.diagnostic).toContain("cookies expired");
   });
+
+  it.each([
+    [Object.assign(new Error("provider rejected test credential"), { status: 401 }), "ai_credentials_rejected"],
+    [Object.assign(new Error("quota details are private"), { status: 429, code: "insufficient_quota" }), "ai_quota_exceeded"],
+    [Object.assign(new Error("rate details are private"), { status: 429, code: "rate_limit_exceeded" }), "ai_rate_limited"],
+    [Object.assign(new Error("model details are private"), { status: 404, code: "model_not_found" }), "ai_model_unavailable"],
+    [new Error("model_unavailable"), "ai_model_unavailable"],
+  ])("maps trusted provider metadata to %s", (error, code) => {
+    const failure = normalizeFailure(error, "analyzing");
+    expect(failure.code).toBe(code);
+    expect(failure.message).not.toContain("private");
+  });
+  it("does not label non-AI HTTP failures as provider credential failures", () => {
+    const error = Object.assign(new Error("source access denied"), { status: 401 });
+    expect(normalizeFailure(error, "downloading").code).toBe("unknown");
+  });
+
 });

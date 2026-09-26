@@ -17,15 +17,17 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await page.getByLabel("Password").fill(password!);
   await page.getByRole("button", { name: "Continue" }).click();
 
-  await expect(page.getByRole("button", { name: "inbox" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Inbox", exact: true }),
+  ).toBeVisible();
   await expect(page.locator(".capture-card").first()).toBeVisible();
-  const travelFilter = page
-    .locator(".filter-group", { hasText: "Categories" })
-    .getByRole("button", { name: /Travel/ });
-  await expect(travelFilter).toBeVisible();
-  await travelFilter.click();
-  await expect(travelFilter).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "Clear" }).click();
+  await page.getByRole("button", { name: "+ Add filter" }).click();
+  const platformFilter = page.getByLabel("Platform");
+  await expect(platformFilter).toBeVisible();
+  await platformFilter.selectOption("instagram");
+  await expect(platformFilter).toHaveValue("instagram");
+  await page.getByRole("button", { name: "Close filters" }).click();
+  await page.getByRole("button", { name: "Clear filters" }).click();
   await page.locator(".capture-card").first().click();
   await expect(page.locator(".drawer video")).toBeVisible();
   await expect(
@@ -34,8 +36,24 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(page.locator(".drawer .takeaways li").first()).toBeVisible();
   await page.locator(".close").click();
 
-  await page.getByRole("button", { name: "library" }).click();
-  await expect(page.getByRole("heading", { name: "Library" })).toBeVisible();
+  await page
+    .getByRole("button", { name: "Knowledge base", exact: true })
+    .click();
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  await expect(
+    page.locator(".markdown").getByRole("heading", { name: "Map of content" }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".markdown").getByRole("button", { name: "Travel" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Export archive" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Download your archive" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("dialog").getByText("Markdown notes and capture metadata"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
   await expect(
     page.getByRole("button", { name: "Expand Travel" }),
   ).toBeVisible();
@@ -75,7 +93,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
       .getByRole("button", { name: "Open capture" }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "ask" }).click();
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Ask AI" })).toBeVisible();
   await page.getByRole("button", { name: "＋ New conversation" }).click();
   await expect(
@@ -107,7 +125,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(page.locator(".drawer")).toBeVisible();
   await page.locator(".close").click();
   await page.reload();
-  await page.getByRole("button", { name: "ask" }).click();
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
   await expect(
     page.locator(".chat-message.assistant .answer-sources button").first(),
   ).toBeVisible();
@@ -179,30 +197,18 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   ).toBeVisible({ timeout: 10000 });
 
   await page.getByRole("button", { name: /activity/i }).click();
-  await expect(page.locator(".job-list article").first()).toBeVisible();
-  const completedJob = page
-    .locator(".job-list article:has(.complete-summary)")
-    .first();
-  await expect(completedJob.locator(".complete-summary")).toHaveText(
-    /Complete/,
-  );
-  await expect(completedJob.locator(".stage-breadcrumbs")).toHaveCount(0);
-  await expect(completedJob.locator(".platform-icon")).toBeVisible();
-  await page
-    .locator(".job-list article")
-    .first()
-    .getByRole("button", { name: /view details/i })
-    .click();
-  await expect(
-    page.getByRole("dialog", { name: /processing details/i }),
-  ).toBeVisible();
-  await expect(page.locator(".event-log li").first()).toBeVisible();
-  await page.getByRole("button", { name: "Close details" }).click();
-  await expect(page.locator(".job-list article").first()).not.toContainText(
+  await expect(page.locator(".activity-card").first()).toBeVisible();
+  await expect(page.locator(".activity-stage").first()).toBeVisible();
+  await page.locator(".activity-card").first().click();
+  await expect(page.locator(".activity-inline-log")).toBeVisible();
+  await expect(page.locator(".activity-card").first()).not.toContainText(
     "Command failed with exit code",
   );
 
-  await page.getByRole("button", { name: "settings" }).click();
+  await page.locator(".app-profile-settings").click();
+  await page
+    .getByRole("button", { name: "Data & export", exact: true })
+    .click();
   const languageSelect = page.getByRole("combobox", {
     name: "Default language",
   });
@@ -215,8 +221,21 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await page.getByRole("button", { name: "Save language settings" }).click();
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "library" }).click();
+  await page
+    .getByRole("button", { name: "Knowledge base", exact: true })
+    .click();
   await expect(page.locator(".library-layout")).toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: "Browse tree", selected: true }),
+  ).toBeVisible();
+  await page
+    .locator(".library-tree")
+    .getByRole("button", { name: "Home" })
+    .click();
+  await expect(
+    page.getByRole("tab", { name: "Reading pane", selected: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Reading pane")).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(
