@@ -13,6 +13,8 @@ import remarkGfm from "remark-gfm";
 import {
   Activity,
   Bot,
+  ArrowLeft,
+  ArrowRight,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -273,30 +275,25 @@ function libraryHomeMarkdown(
   nodes: LibraryNode[],
   unclassifiedCount: number,
 ) {
-  const domains = nodes.filter((node) => node.parentId === null);
-  const captureCount =
-    domains.reduce((total, node) => total + node.captureCount, 0) +
-    unclassifiedCount;
+  const populated = nodes.filter((node) => node.captureCount > 0);
+  const domains = populated.filter((node) => node.parentId === null);
+  const captureCount = domains.reduce((total, node) => total + node.captureCount, 0) + unclassifiedCount;
+  const mapBranch = (parentId: string | null, depth = 0): string[] =>
+    populated.filter((node) => node.parentId === parentId).flatMap((node) => [
+      `${"  ".repeat(depth)}- [${markdownLinkText(node.label)}](library:${node.id}) — ${node.captureCount} ${node.captureCount === 1 ? "capture" : "captures"}`,
+      ...mapBranch(node.id, depth + 1),
+    ]);
   return [
     "# Social Knowledge",
     "",
-    captureCount
-      ? `Browse ${captureCount} saved ${captureCount === 1 ? "capture" : "captures"} across your categories.`
-      : "Your saved captures will appear here once they are ready to browse.",
+    captureCount ? `Browse ${captureCount} saved ${captureCount === 1 ? "capture" : "captures"} across your knowledge base.` : "Your map of content will grow as you save and classify captures.",
     "",
-    "## Categories",
+    "## Map of content",
     "",
-    ...(domains.length
-      ? domains.map(
-          (node) =>
-            `- [${markdownLinkText(node.label)}](library:${node.id}) — ${node.captureCount} ${node.captureCount === 1 ? "capture" : "captures"}`,
-        )
-      : ["_No categories yet. New captures are organized after analysis._"]),
+    ...mapBranch(null),
+    ...(unclassifiedCount > 0 ? [`- [Unclassified](library:unclassified) — ${unclassifiedCount} captures`] : []),
     "",
-    "## How to explore",
-    "",
-    "Open a category to browse its topics and generated capture notes.",
-    "",
+    ...(captureCount > 0 ? ["Open a category to browse its subcategories, extracted insights, and source captures.", ""] : []),
   ].join("\n");
 }
 
@@ -2910,6 +2907,11 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
   });
   const [unclassifiedCount, setUnclassifiedCount] = useState(0);
   const [selected, setSelected] = useState<string>("home");
+  const [navigation, setNavigation] = useState({ entries: ["home"], index: 0 });
+  const [navigationLoading, setNavigationLoading] = useState(false);
+  const [navigationError, setNavigationError] = useState("");
+  const navigationRequest = useRef(0);
+  useEffect(() => () => { navigationRequest.current += 1; }, []);
   const [node, setNode] = useState<LibraryNodeDetail | null>(null);
   const [markdown, setMarkdown] = useState("");
   const [selectedCapture, setSelectedCapture] = useState<string | null>(null);
@@ -2923,7 +2925,7 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
       nodes: LibraryNode[];
       unclassifiedCount: number;
     }>("/api/v1/library/tree");
-    setNodes(result.nodes);
+    setNodes(result.nodes.filter((item) => item.captureCount > 0));
     setUnclassifiedCount(result.unclassifiedCount);
   }
   async function loadExports() {
@@ -2963,46 +2965,46 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
       // Browsing still works when storage is unavailable.
     }
   }, [expandedNodes, nodes.length]);
-  async function openNode(id: string) {
-    const result = await api<{ node: LibraryNodeDetail; markdown: string }>(
-      `/api/v1/library/nodes/${id}`,
-    );
-    setSelected(id);
-    setNode(result.node);
-    setMarkdown(result.markdown);
-    setSelectedCapture(null);
-    setMobilePane("reading");
+  async function navigateLibrary(target: string, historyIndex?: number) {
+    const request = ++navigationRequest.current;
+    setNavigationLoading(true);
+    setNavigationError("");
+    try {
+      let nextNode: LibraryNodeDetail | null = null;
+      let nextMarkdown = "";
+      let nextCapture: string | null = null;
+      if (target === "unclassified") {
+        const result = await api<{ captures: Capture[] }>("/api/v1/library/unclassified");
+        nextMarkdown = ["# Unclassified", "", "These captures need a confident placement.", "", ...result.captures.map((capture) => `- [${markdownLinkText(capture.title)}](capture:${capture.id})`)].join("\n");
+      } else if (target.startsWith("capture:")) {
+        nextCapture = target.slice(8);
+        const result = await api<{ markdown: string }>(`/api/v1/captures/${nextCapture}/markdown`);
+        nextMarkdown = result.markdown;
+      } else if (target !== "home") {
+        const result = await api<{ node: LibraryNodeDetail; markdown: string }>(`/api/v1/library/nodes/${target}`);
+        nextNode = result.node;
+        nextMarkdown = result.markdown;
+      }
+      if (request !== navigationRequest.current) return;
+      setSelected(target);
+      setNode(nextNode);
+      setMarkdown(nextMarkdown);
+      setSelectedCapture(nextCapture);
+      setMobilePane("reading");
+      setNavigation((current) => historyIndex !== undefined
+        ? { ...current, index: historyIndex }
+        : current.entries[current.index] === target
+          ? current
+          : { entries: [...current.entries.slice(0, current.index + 1), target], index: current.index + 1 });
+    } catch {
+      if (request === navigationRequest.current) setNavigationError("This page could not be loaded. Please try again.");
+    } finally {
+      if (request === navigationRequest.current) setNavigationLoading(false);
+    }
   }
-  async function openCapture(id: string) {
-    const result = await api<{ markdown: string }>(
-      `/api/v1/captures/${id}/markdown`,
-    );
-    setSelected(`capture:${id}`);
-    setSelectedCapture(id);
-    setMarkdown(result.markdown);
-    setNode(null);
-    setMobilePane("reading");
-  }
-  async function openUnclassified() {
-    const result = await api<{ captures: Capture[] }>(
-      "/api/v1/library/unclassified",
-    );
-    setSelected("unclassified");
-    setNode(null);
-    setSelectedCapture(null);
-    setMarkdown(
-      [
-        "# Unclassified",
-        "",
-        "These captures need a confident placement.",
-        "",
-        ...result.captures.map(
-          (capture) => `- [${capture.title}](capture:${capture.id})`,
-        ),
-      ].join("\n"),
-    );
-    setMobilePane("reading");
-  }
+  const openNode = (id: string) => navigateLibrary(id);
+  const openCapture = (id: string) => navigateLibrary(`capture:${id}`);
+  const openUnclassified = () => navigateLibrary("unclassified");
   const children = (parentId: string | null) =>
     nodes.filter((candidate) => candidate.parentId === parentId);
   const nodeMatchesTreeQuery = (item: LibraryNode): boolean => {
@@ -3015,7 +3017,7 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
     children(parentId)
       .filter(nodeMatchesTreeQuery)
       .map((item) => {
-        const expandable = item.childCount > 0;
+        const expandable = children(item.id).length > 0;
         const expanded = expandedNodes.has(item.id);
         const branchId = `library-branch-${item.id}`;
         return (
@@ -3140,6 +3142,12 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
               <strong>Knowledge base</strong>
               <small>{nodes.length} categories</small>
             </div>
+            <div className="library-tree-actions">
+            <Button type="button" variant="ghost" className="library-collapse-all"
+              disabled={!nodes.some((item) => children(item.id).length > 0 && !expandedNodes.has(item.id))}
+              onClick={() => setExpandedNodes(new Set(nodes.filter((item) => children(item.id).length > 0).map((item) => item.id)))}>
+              Expand all
+            </Button>
             <Button
               type="button"
               variant="ghost"
@@ -3149,6 +3157,7 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
             >
               Collapse all
             </Button>
+            </div>
           </div>
           <label className="knowledge-tree-search">
             <Search aria-hidden="true" />
@@ -3174,23 +3183,18 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
               type="button"
               variant="ghost"
               className={`library-root-row ${selected === "home" ? "selected" : ""}`}
-              onClick={() => {
-                setSelected("home");
-                setNode(null);
-                setSelectedCapture(null);
-                setMobilePane("reading");
-              }}
+              onClick={() => void navigateLibrary("home")}
             >
               <House aria-hidden="true" />
               <span>Home</span>
               <small className="library-count">
                 {nodes
                   .filter((n) => n.parentId === null)
-                  .reduce((sum, n) => sum + n.captureCount, 0)}
+                  .reduce((sum, n) => sum + n.captureCount, 0) + unclassifiedCount}
               </small>
             </Button>
             {branch(null)}
-            <Button
+            {unclassifiedCount > 0 && <Button
               type="button"
               variant="ghost"
               className={`library-root-row ${selected === "unclassified" ? "selected" : ""}`}
@@ -3199,10 +3203,21 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
               <FileQuestion aria-hidden="true" />
               <span>Unclassified</span>
               <small className="library-count">{unclassifiedCount}</small>
-            </Button>
+            </Button>}
           </ScrollArea>
         </aside>
         <section className="markdown-pane" aria-label="Reading pane">
+          <div className="library-toolbar library-navigation">
+            <nav aria-label="Knowledge base history">
+              <button type="button" aria-label="Back in knowledge base" disabled={navigationLoading || navigation.index === 0}
+                onClick={() => void navigateLibrary(navigation.entries[navigation.index - 1]!, navigation.index - 1)}><ArrowLeft aria-hidden="true" /> Back</button>
+              <button type="button" aria-label="Forward in knowledge base" disabled={navigationLoading || navigation.index === navigation.entries.length - 1}
+                onClick={() => void navigateLibrary(navigation.entries[navigation.index + 1]!, navigation.index + 1)}><ArrowRight aria-hidden="true" /> Forward</button>
+            </nav>
+            {selectedCapture && <button type="button" onClick={() => onOpen(selectedCapture)}>Open capture</button>}
+          </div>
+          {navigationLoading && <p className="library-navigation-feedback" role="status">Loading page…</p>}
+          {navigationError && <p className="library-navigation-feedback" role="alert">{navigationError}</p>}
           {node && (
             <div className="library-toolbar">
               <div className="library-breadcrumb">
@@ -3261,37 +3276,6 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
               </div>
             </div>
           )}
-          {selectedCapture && (
-            <div className="library-toolbar">
-              <button onClick={() => onOpen(selectedCapture)}>
-                Open capture
-              </button>
-              <button
-                onClick={async () => {
-                  const label = window.prompt(
-                    `Move to category: ${nodes.map((candidate) => candidate.label).join(", ")}`,
-                  );
-                  const target = [...nodes]
-                    .reverse()
-                    .find(
-                      (candidate) =>
-                        candidate.label.toLowerCase() === label?.toLowerCase(),
-                    );
-                  if (!target) return;
-                  await api(
-                    `/api/v1/captures/${selectedCapture}/classification`,
-                    {
-                      method: "PATCH",
-                      body: JSON.stringify({ nodeId: target.id }),
-                    },
-                  );
-                  await loadTree();
-                }}
-              >
-                Move capture
-              </button>
-            </div>
-          )}
           <article className="markdown">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
@@ -3313,7 +3297,7 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
                     return (
                       <button
                         className="markdown-link"
-                        onClick={() => void openNode(href.slice(8))}
+                        onClick={() => void (href === "library:unclassified" ? openUnclassified() : openNode(href.slice(8)))}
                       >
                         {children}
                       </button>
@@ -4652,7 +4636,7 @@ function App() {
             <ChevronRight aria-hidden="true" />
           </button>
           <span className="app-mobile-wordmark">social knowledge</span>
-          <button
+          {(tab === "inbox" || tab === "capture") && <button
             type="button"
             className="app-capture"
             aria-label="Capture a post"
@@ -4660,7 +4644,7 @@ function App() {
           >
             <Plus aria-hidden="true" />
             <span>Capture link</span>
-          </button>
+          </button>}
         </header>
         <main className="shell">
           {(tab === "inbox" || tab === "capture") && (

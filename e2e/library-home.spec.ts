@@ -92,6 +92,7 @@ test.afterAll(async () => {
 test("shows a useful library home and opens category, topic, and capture", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`http://127.0.0.1:${port}`);
   await page.getByLabel("Username").fill("library-user");
   await page.getByLabel("Password").fill("a-strong-library-password");
@@ -101,11 +102,24 @@ test("shows a useful library home and opens category, topic, and capture", async
     .click();
 
   const readingPane = page.locator(".markdown");
+  const back = page.getByRole("button", { name: "Back in knowledge base", exact: true });
+  const forward = page.getByRole("button", { name: "Forward in knowledge base", exact: true });
+  await expect(back).toBeDisabled();
+  await expect(forward).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Capture a post", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Move capture", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Travel 0", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Unclassified 0", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Expand all", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Strength Training 1", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Collapse all", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Strength Training 1", exact: true })).toBeHidden();
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
   await expect(readingPane).toContainText("Browse 1 saved capture");
   await expect(
-    readingPane.getByRole("heading", { name: "Categories" }),
+    readingPane.getByRole("heading", { name: "Map of content" }),
   ).toBeVisible();
+  await page.screenshot({ path: "test-results/library-content-map-desktop.png", fullPage: true });
   await readingPane
     .getByRole("button", { name: "Health & Wellness" })
     .click();
@@ -131,4 +145,25 @@ test("shows a useful library home and opens category, topic, and capture", async
   await expect(
     readingPane.getByRole("heading", { name: "Strength training fixture" }),
   ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open capture", exact: true })).toBeVisible();
+  await page.screenshot({ path: "test-results/library-note-navigation.png", fullPage: true });
+  await back.click();
+  await expect(page.getByRole("heading", { name: "Strength Training", exact: true }).first()).toBeVisible();
+  await forward.click();
+  await expect(page.getByRole("heading", { name: "Capture note", exact: true })).toBeVisible();
+  await back.click();
+  await back.click();
+  await expect(page.getByRole("heading", { name: "Health & Wellness", exact: true }).first()).toBeVisible();
+  await back.click();
+  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
+  await expect(back).toBeDisabled();
+  await readingPane.getByRole("button", { name: "Strength Training", exact: true }).click();
+  await expect(forward).toBeDisabled();
+  await back.click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await forward.click();
+  await expect(readingPane.getByRole("heading", { name: "Strength Training", exact: true })).toBeVisible();
+  await page.screenshot({ path: "test-results/library-content-map-mobile.png", fullPage: true });
 });

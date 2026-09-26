@@ -25,6 +25,8 @@ test("restores page and dialog navigation with browser history", async ({
   await page.goForward();
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
 
+  await expect(page.getByRole("button", { name: "Capture a post" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Inbox", exact: true }).click();
   await page.getByRole("button", { name: "Capture a post" }).click();
   await expect(page).toHaveURL(/tab=capture/);
   await page.getByRole("button", { name: "Close capture" }).click();
@@ -33,11 +35,12 @@ test("restores page and dialog navigation with browser history", async ({
   ).toBeVisible();
   await expect(page).not.toHaveURL(/tab=capture/);
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
   const baseline = await page.locator(".shell").boundingBox();
   const navBaseline = await page.locator('.app-nav button[data-tab="inbox"]').boundingBox();
   for (const name of ["Knowledge base", "Ask", "Inbox", "Activity"]) {
     await page.getByRole("button", { name, exact: true }).click();
+    await expect(page.getByRole("button", { name: "Capture a post", exact: true })).toHaveCount(name === "Inbox" ? 1 : 0);
     const geometry = await page.locator(".shell").boundingBox();
     expect(geometry?.x).toBe(baseline?.x);
     expect(geometry?.width).toBe(baseline?.width);

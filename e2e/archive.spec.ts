@@ -41,7 +41,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
     .click();
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
   await expect(
-    page.locator(".markdown").getByRole("heading", { name: "Categories" }),
+    page.locator(".markdown").getByRole("heading", { name: "Map of content" }),
   ).toBeVisible();
   await expect(
     page.locator(".markdown").getByRole("button", { name: "Travel" }),

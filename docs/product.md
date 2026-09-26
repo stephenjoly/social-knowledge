@@ -38,7 +38,9 @@ Activity uses the shared application sidebar, content width, and page gutters so
 
 For release verification boundaries, see [Preview acceptance](preview-acceptance.md).
 
-Knowledge base Home shows the saved-capture count and navigable categories from the loaded library tree. Categories lead to topics and generated capture notes.
+## Knowledge base browsing
+
+Knowledge base browsing uses linked content maps: Home shows populated branches; category pages browse child categories, existing extracted insights, and captures across their subtree. Empty categories stay out of the browsing UI without removing stored taxonomy. Local Back/Forward controls navigate reading history, with Open capture on the right of capture notes. Expand all and Collapse all control the visible tree. Move capture is not exposed in this view. The global Capture link action is shown on Inbox only.
 
 ## Current scope
 
