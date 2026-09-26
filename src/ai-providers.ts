@@ -11,6 +11,14 @@ import type { JobStore } from "./db.js";
 
 export const aiProviderIds = ["openai", "cerebras"] as const;
 export type AiProviderId = (typeof aiProviderIds)[number];
+export const thinkingLevels = ["minimal", "low", "medium", "high"] as const;
+export type ThinkingLevel = (typeof thinkingLevels)[number];
+
+type ProviderConfigurationInput = {
+  transcriptionModel: string | null;
+  analysisModel: string | null;
+  thinkingLevel: ThinkingLevel | null;
+};
 
 const definitions = {
   openai: {
@@ -37,6 +45,7 @@ export class AiProviderService {
     userId: string;
     provider?: AiProviderId;
     model?: string;
+    thinkingLevel?: ThinkingLevel;
   }>();
   constructor(
     private readonly store: JobStore,
@@ -67,15 +76,17 @@ export class AiProviderService {
         analysis: true,
       },
       models: {
-        transcription: id === "openai" ? [this.config.transcriptionModel] : [],
-        analysis: [
-          id === "openai"
-            ? this.config.analysisModel
-            : this.config.cerebrasAnalysisModel,
-        ],
+        transcription: this.transcriptionModels(id),
+        analysis: this.analysisOptions(id).map((option) => option.model),
       },
+      taskOptions: {
+        transcription: this.transcriptionModels(id).map((model) => ({ model })),
+        analysis: this.analysisOptions(id),
+      },
+      configuration: this.store.aiProviderConfiguration(userId, id) ?? null,
       connected: connections.some(
-        (connection) => connection.provider === id && connection.status === "verified",
+        (connection) =>
+          connection.provider === id && connection.status === "verified",
       ),
       status:
         connections.find((connection) => connection.provider === id)?.status ??
@@ -90,43 +101,51 @@ export class AiProviderService {
   }
 
   settings(userId: string) {
+    this.upgradeLegacyConfiguration(userId);
     const selected = this.store.aiTaskSelections(userId);
     const connections = this.store.aiProviderConnections(userId);
     const verified = (provider: string | null) =>
       Boolean(
         provider &&
-          connections.some(
-            (connection) =>
-              connection.provider === provider &&
-              connection.status === "verified",
-          ),
+        connections.some(
+          (connection) =>
+            connection.provider === provider &&
+            connection.status === "verified",
+        ),
       );
     const transcription =
       selected.transcriptionProvider === "openai" &&
-      (selected.transcriptionModel === null ||
-        selected.transcriptionModel === this.config.transcriptionModel) &&
+      selected.transcriptionModel !== null &&
+      this.isTranscriptionModel("openai", selected.transcriptionModel) &&
       verified("openai")
         ? {
             provider: "openai" as const,
-            model: selected.transcriptionModel ?? this.config.transcriptionModel,
+            model: selected.transcriptionModel,
           }
         : null;
     const analysis =
       selected.analysisProvider &&
-      (selected.analysisModel === null ||
-        selected.analysisModel === this.analysisModel(selected.analysisProvider)) &&
+      selected.analysisModel !== null &&
+      this.isAnalysisModel(selected.analysisProvider, selected.analysisModel) &&
+      this.supportsThinkingLevel(
+        selected.analysisProvider,
+        selected.analysisModel,
+        selected.analysisThinkingLevel,
+      ) &&
       verified(selected.analysisProvider)
         ? {
             provider: selected.analysisProvider as AiProviderId,
-            model:
-              selected.analysisModel ??
-              this.analysisModel(selected.analysisProvider as AiProviderId),
+            model: selected.analysisModel,
+            thinkingLevel: selected.analysisThinkingLevel,
           }
         : null;
     return {
       providers: this.list(userId),
       selections: { transcription, analysis },
-      readiness: { capture: Boolean(transcription && analysis), ask: Boolean(analysis) },
+      readiness: {
+        capture: Boolean(transcription && analysis),
+        ask: Boolean(analysis),
+      },
     };
   }
 
@@ -136,13 +155,16 @@ export class AiProviderService {
 
   captureSelections(userId: string) {
     const settings = this.settings(userId);
-    if (!settings.selections.transcription) throw new Error("transcription_required");
-    if (!settings.selections.analysis) throw new Error("analysis_provider_required");
+    if (!settings.selections.transcription)
+      throw new Error("transcription_required");
+    if (!settings.selections.analysis)
+      throw new Error("analysis_provider_required");
     return {
       transcriptionProvider: settings.selections.transcription.provider,
       transcriptionModel: settings.selections.transcription.model,
       analysisProvider: settings.selections.analysis.provider,
       analysisModel: settings.selections.analysis.model,
+      analysisThinkingLevel: settings.selections.analysis.thinkingLevel,
     };
   }
 
@@ -155,25 +177,37 @@ export class AiProviderService {
     action: () => T,
     provider?: AiProviderId | null,
     model?: string | null,
+    thinkingLevel?: ThinkingLevel | null,
   ): T {
     const analysis = this.settings(userId).selections.analysis;
     const selectedProvider = provider ?? analysis?.provider;
     const selectedModel = model ?? analysis?.model;
+    const selectedThinkingLevel =
+      thinkingLevel === undefined ? analysis?.thinkingLevel : thinkingLevel;
     return this.users.run(
       {
         userId,
         ...(selectedProvider ? { provider: selectedProvider } : {}),
         ...(selectedModel ? { model: selectedModel } : {}),
+        ...(selectedThinkingLevel
+          ? { thinkingLevel: selectedThinkingLevel }
+          : {}),
       },
       action,
     );
   }
 
-  enterUser(userId: string, provider?: AiProviderId | null, model?: string | null) {
+  enterUser(
+    userId: string,
+    provider?: AiProviderId | null,
+    model?: string | null,
+    thinkingLevel?: ThinkingLevel | null,
+  ) {
     this.users.enterWith({
       userId,
       ...(provider ? { provider } : {}),
       ...(model ? { model } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
     });
   }
 
@@ -193,11 +227,36 @@ export class AiProviderService {
             context.model,
           );
           try {
-            if (route.provider === "openai")
+            if (route.provider === "openai") {
+              const routedRequest = {
+                ...request,
+                model: route.model,
+              };
+              if (
+                !context.thinkingLevel &&
+                !service.supportsAnyThinkingLevel(route.provider, route.model)
+              )
+                delete routedRequest.reasoning;
               return await route.client.responses.create(
-                { ...request, model: route.model },
+                {
+                  ...routedRequest,
+                  ...(context.thinkingLevel &&
+                  service.supportsThinkingLevel(
+                    route.provider,
+                    route.model,
+                    context.thinkingLevel,
+                  )
+                    ? {
+                        reasoning: {
+                          ...(request.reasoning ?? {}),
+                          effort: context.thinkingLevel,
+                        },
+                      }
+                    : {}),
+                },
                 options,
               );
+            }
 
             const inputMessages =
               typeof request.input === "string"
@@ -235,6 +294,14 @@ export class AiProviderService {
               {
                 model: route.model,
                 messages,
+                ...(context.thinkingLevel &&
+                service.supportsThinkingLevel(
+                  route.provider,
+                  route.model,
+                  context.thinkingLevel,
+                )
+                  ? { reasoning_effort: context.thinkingLevel }
+                  : {}),
                 ...(request.stream ? { stream: true } : {}),
                 ...(format?.type === "json_schema"
                   ? {
@@ -283,7 +350,10 @@ export class AiProviderService {
               (error as { status?: number }).status === 401 ||
               (error as { status?: number }).status === 403
             )
-              service.store.markAiProviderAttention(context.userId, route.provider);
+              service.store.markAiProviderAttention(
+                context.userId,
+                route.provider,
+              );
             throw error;
           }
         },
@@ -303,20 +373,6 @@ export class AiProviderService {
         throw new Error("invalid_api_key");
       throw new Error("provider_unavailable");
     }
-    const models = (await response.json().catch(() => null)) as {
-      data?: Array<{ id?: string }>;
-    } | null;
-    const requiredModels =
-      provider === "cerebras"
-        ? [this.config.cerebrasAnalysisModel]
-        : [this.config.transcriptionModel, this.config.analysisModel];
-    if (
-      Array.isArray(models?.data) &&
-      requiredModels.some(
-        (requiredModel) => !models.data!.some((model) => model.id === requiredModel),
-      )
-    )
-      throw new Error("model_unavailable");
     const iv = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", this.encryptionKey, iv);
     const encrypted = Buffer.concat([
@@ -331,16 +387,6 @@ export class AiProviderService {
     const payload = `v1.${this.encryptionKeyId}.${encryptedPayload}`;
     const keyHint = `${key.slice(0, 5)}…${key.slice(-4)}`;
     this.store.saveAiProviderConnection(userId, provider, payload, keyHint);
-    const current = this.store.aiTaskSelections(userId);
-    this.store.saveAiTaskSelections(userId, {
-      transcriptionProvider:
-        current.transcriptionProvider ?? (provider === "openai" ? "openai" : null),
-      transcriptionModel:
-        current.transcriptionModel ??
-        (provider === "openai" ? this.config.transcriptionModel : null),
-      analysisProvider: current.analysisProvider ?? provider,
-      analysisModel: current.analysisModel ?? this.analysisModel(provider),
-    });
     return this.settings(userId);
   }
 
@@ -349,48 +395,114 @@ export class AiProviderService {
     return this.settings(userId);
   }
 
-  saveSelections(userId: string, selections: {
-    transcription?: { provider: "openai"; model: string } | null | undefined;
-    analysis?: { provider: AiProviderId; model: string } | null | undefined;
-  }) {
+  saveConfiguration(
+    userId: string,
+    provider: AiProviderId,
+    configuration: ProviderConfigurationInput,
+  ) {
+    if (
+      this.store.aiProviderConnection(userId, provider)?.status !== "verified"
+    )
+      throw new Error("provider_not_connected");
+    if (
+      configuration.transcriptionModel !== null &&
+      !this.isTranscriptionModel(provider, configuration.transcriptionModel)
+    )
+      throw new Error("invalid_transcription_configuration");
+    if (
+      configuration.analysisModel !== null &&
+      !this.isAnalysisModel(provider, configuration.analysisModel)
+    )
+      throw new Error("invalid_analysis_configuration");
+    if (
+      !this.supportsThinkingLevel(
+        provider,
+        configuration.analysisModel,
+        configuration.thinkingLevel,
+      )
+    )
+      throw new Error("invalid_thinking_level");
+    this.store.saveAiProviderConfiguration(userId, provider, configuration);
+    return this.settings(userId);
+  }
+
+  saveSelections(
+    userId: string,
+    selections: {
+      transcription?:
+        { provider: "openai"; model?: string | undefined } | null | undefined;
+      analysis?:
+        | {
+            provider: AiProviderId;
+            model?: string | undefined;
+            thinkingLevel?: ThinkingLevel | null | undefined;
+          }
+        | null
+        | undefined;
+    },
+  ) {
     const current = this.store.aiTaskSelections(userId);
-    const next = {
-      transcriptionProvider:
-        selections.transcription === undefined
-          ? current.transcriptionProvider
-          : selections.transcription?.provider ?? null,
-      transcriptionModel:
-        selections.transcription === undefined
-          ? current.transcriptionModel
-          : selections.transcription?.model ?? null,
-      analysisProvider:
-        selections.analysis === undefined
-          ? current.analysisProvider
-          : selections.analysis?.provider ?? null,
-      analysisModel:
-        selections.analysis === undefined
-          ? current.analysisModel
-          : selections.analysis?.model ?? null,
-    };
-    if (
-      next.transcriptionProvider !== null &&
-      (next.transcriptionProvider !== "openai" ||
-        next.transcriptionModel !== this.config.transcriptionModel ||
-        this.store.aiProviderConnection(userId, "openai")?.status !== "verified")
-    )
-      throw new Error("invalid_transcription_selection");
-    if (
-      next.analysisProvider !== null &&
-      (next.analysisModel !== this.analysisModel(next.analysisProvider as AiProviderId) ||
-        this.store.aiProviderConnection(userId, next.analysisProvider)?.status !== "verified")
-    )
-      throw new Error("invalid_analysis_selection");
+    const next = { ...current };
+    if (selections.transcription !== undefined) {
+      if (selections.transcription === null) {
+        next.transcriptionProvider = null;
+        next.transcriptionModel = null;
+      } else {
+        const configuration = this.assignmentConfiguration(
+          userId,
+          selections.transcription.provider,
+        );
+        if (!configuration.transcriptionModel)
+          throw new Error("provider_configuration_required");
+        if (
+          selections.transcription.model !== undefined &&
+          selections.transcription.model !== configuration.transcriptionModel
+        )
+          throw new Error("provider_configuration_mismatch");
+        next.transcriptionProvider = "openai";
+        next.transcriptionModel = configuration.transcriptionModel;
+      }
+    }
+    if (selections.analysis !== undefined) {
+      if (selections.analysis === null) {
+        next.analysisProvider = null;
+        next.analysisModel = null;
+        next.analysisThinkingLevel = null;
+      } else {
+        const configuration = this.assignmentConfiguration(
+          userId,
+          selections.analysis.provider,
+        );
+        if (!configuration.analysisModel)
+          throw new Error("provider_configuration_required");
+        if (
+          selections.analysis.model !== undefined &&
+          selections.analysis.model !== configuration.analysisModel
+        )
+          throw new Error("provider_configuration_mismatch");
+        if (
+          selections.analysis.thinkingLevel !== undefined &&
+          selections.analysis.thinkingLevel !== configuration.thinkingLevel
+        )
+          throw new Error("provider_configuration_mismatch");
+        next.analysisProvider = selections.analysis.provider;
+        next.analysisModel = configuration.analysisModel;
+        next.analysisThinkingLevel = configuration.thinkingLevel;
+      }
+    }
     this.store.saveAiTaskSelections(userId, next);
     return this.settings(userId);
   }
 
-  client(userId: string, expectedProvider?: AiProviderId, expectedModel?: string) {
-    const connection = this.store.aiProviderConnectionSecret(userId, expectedProvider);
+  client(
+    userId: string,
+    expectedProvider?: AiProviderId,
+    expectedModel?: string,
+  ) {
+    const connection = this.store.aiProviderConnectionSecret(
+      userId,
+      expectedProvider,
+    );
     if (!connection || connection.status !== "verified")
       throw new Error("ai_provider_required");
     if (expectedProvider && connection.provider !== expectedProvider)
@@ -424,10 +536,10 @@ export class AiProviderService {
     }
     if (!apiKey) throw new Error("ai_credentials_unreadable");
     const provider = connection.provider as AiProviderId;
-    const model = expectedModel ?? this.analysisModel(provider);
+    const model = expectedModel ?? this.analysisOptions(provider)[0]!.model;
     if (
-      model !== this.analysisModel(provider) &&
-      !(provider === "openai" && model === this.config.transcriptionModel)
+      !this.isAnalysisModel(provider, model) &&
+      !this.isTranscriptionModel(provider, model)
     )
       throw new Error("model_unavailable");
     return {
@@ -442,10 +554,111 @@ export class AiProviderService {
     };
   }
 
-  private analysisModel(provider: AiProviderId) {
-    return provider === "cerebras"
-      ? this.config.cerebrasAnalysisModel
-      : this.config.analysisModel;
+  private transcriptionModels(provider: AiProviderId) {
+    if (provider !== "openai") return [];
+    return [
+      ...new Set([
+        this.config.transcriptionModel,
+        "gpt-4o-mini-transcribe",
+        "gpt-4o-transcribe",
+      ]),
+    ];
+  }
+
+  private analysisOptions(provider: AiProviderId) {
+    if (provider === "cerebras")
+      return [
+        {
+          model: this.config.cerebrasAnalysisModel,
+          thinkingLevels: [] as ThinkingLevel[],
+        },
+      ];
+    return [...new Set([this.config.analysisModel, "gpt-5-mini", "gpt-5"])].map(
+      (model) => ({
+        model,
+        thinkingLevels:
+          model === "gpt-5-mini" || model === "gpt-5"
+            ? [...thinkingLevels]
+            : [],
+      }),
+    );
+  }
+
+  private isTranscriptionModel(provider: AiProviderId, model: string) {
+    return this.transcriptionModels(provider).includes(model);
+  }
+
+  private isAnalysisModel(provider: AiProviderId, model: string) {
+    return this.analysisOptions(provider).some(
+      (option) => option.model === model,
+    );
+  }
+
+  private supportsThinkingLevel(
+    provider: AiProviderId,
+    model: string | null,
+    thinkingLevel: ThinkingLevel | null,
+  ) {
+    if (thinkingLevel === null) return true;
+    return Boolean(
+      model &&
+      this.analysisOptions(provider)
+        .find((option) => option.model === model)
+        ?.thinkingLevels.includes(thinkingLevel),
+    );
+  }
+
+  private supportsAnyThinkingLevel(provider: AiProviderId, model: string) {
+    return this.analysisOptions(provider).some(
+      (option) => option.model === model && option.thinkingLevels.length > 0,
+    );
+  }
+
+  private assignmentConfiguration(userId: string, provider: AiProviderId) {
+    if (
+      this.store.aiProviderConnection(userId, provider)?.status !== "verified"
+    )
+      throw new Error("invalid_provider_selection");
+    const configuration = this.store.aiProviderConfiguration(userId, provider);
+    if (!configuration) throw new Error("provider_configuration_required");
+    return configuration;
+  }
+
+  private upgradeLegacyConfiguration(userId: string) {
+    const selected = this.store.aiTaskSelections(userId);
+    for (const provider of aiProviderIds) {
+      if (
+        this.store.aiProviderConnection(userId, provider)?.status !== "verified"
+      )
+        continue;
+      const hasTranscription =
+        provider === "openai" && selected.transcriptionProvider === provider;
+      const hasAnalysis = selected.analysisProvider === provider;
+      if (!hasTranscription && !hasAnalysis) continue;
+      const configuration = this.store.aiProviderConfiguration(
+        userId,
+        provider,
+      );
+      const transcriptionModel = hasTranscription
+        ? (selected.transcriptionModel ?? this.config.transcriptionModel)
+        : (configuration?.transcriptionModel ?? null);
+      const analysisModel = hasAnalysis
+        ? (selected.analysisModel ?? this.analysisOptions(provider)[0]!.model)
+        : (configuration?.analysisModel ?? null);
+      const thinkingLevel = hasAnalysis
+        ? (selected.analysisThinkingLevel ?? null)
+        : (configuration?.thinkingLevel ?? null);
+      if (
+        !configuration ||
+        (hasTranscription && configuration.transcriptionModel === null) ||
+        (hasAnalysis && configuration.analysisModel === null)
+      )
+        this.store.saveAiProviderConfiguration(userId, provider, {
+          transcriptionModel,
+          analysisModel,
+          thinkingLevel,
+        });
+    }
   }
 }
 

@@ -25,7 +25,7 @@ describe("Transcriber", () => {
     ({
       audio: {
         transcriptions: {
-          create: create.mockResolvedValue(text),
+          create: create.mockResolvedValue({ text }),
         },
       },
     }) as unknown as OpenAI;
@@ -40,7 +40,10 @@ describe("Transcriber", () => {
     ).resolves.toBe("user transcript");
     expect(userClient).toHaveBeenCalledWith("user-1");
     expect(userCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "whisper-test", response_format: "text" }),
+      expect.objectContaining({
+        model: "whisper-test",
+        response_format: "json",
+      }),
     );
   });
 });

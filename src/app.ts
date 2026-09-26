@@ -30,7 +30,11 @@ import {
   matchesKnowledge,
 } from "./knowledge.js";
 import { openApiDocument } from "./openapi.js";
-import { AiProviderService, aiProviderIds } from "./ai-providers.js";
+import {
+  AiProviderService,
+  aiProviderIds,
+  thinkingLevels,
+} from "./ai-providers.js";
 import { AskService } from "./ask.js";
 import { registerOAuth } from "./oauth.js";
 import { registerMcp } from "./mcp.js";
@@ -60,6 +64,16 @@ const failedActivityCursorSchema = z.object({
   updatedAt: z.string().datetime(),
   id: z.string().uuid(),
 });
+
+function controlledError(
+  error: unknown,
+  allowed: readonly string[],
+  fallback: string,
+) {
+  return error instanceof Error && allowed.includes(error.message)
+    ? error.message
+    : fallback;
+}
 
 function encodeActivityCursor(value: object) {
   return Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -110,10 +124,16 @@ function localOffsetAt(now: number, timeZone: string) {
   );
 }
 
-function localMidnight(year: number, month: number, day: number, timeZone: string) {
+function localMidnight(
+  year: number,
+  month: number,
+  day: number,
+  timeZone: string,
+) {
   const base = Date.UTC(year, month - 1, day);
   let instant = base;
-  for (let index = 0; index < 3; index++) instant = base - localOffsetAt(instant, timeZone);
+  for (let index = 0; index < 3; index++)
+    instant = base - localOffsetAt(instant, timeZone);
   return new Date(instant).toISOString();
 }
 
@@ -122,7 +142,12 @@ function viewerDayBounds(now: number, timeZone: string) {
   const next = new Date(Date.UTC(today.year, today.month - 1, today.day + 1));
   return {
     start: localMidnight(today.year, today.month, today.day, timeZone),
-    end: localMidnight(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), timeZone),
+    end: localMidnight(
+      next.getUTCFullYear(),
+      next.getUTCMonth() + 1,
+      next.getUTCDate(),
+      timeZone,
+    ),
   };
 }
 
@@ -148,23 +173,23 @@ export function canReceiveLiveEvent(
   event: unknown,
 ) {
   const envelope =
-    event && typeof event === "object"
-      ? (event as { payload?: unknown })
-      : {};
-  const item = (envelope.payload && typeof envelope.payload === "object"
-    ? envelope.payload
-    : envelope) as {
+    event && typeof event === "object" ? (event as { payload?: unknown }) : {};
+  const item = (
+    envelope.payload && typeof envelope.payload === "object"
+      ? envelope.payload
+      : envelope
+  ) as {
     id?: string;
     jobId?: string;
     captureId?: string;
   };
   return Boolean(
     (item.jobId && store.getOwned(userId, item.jobId)) ||
-      (item.captureId && store.getOwnedCapture(userId, item.captureId)) ||
-      (item.id &&
-        (store.getOwned(userId, item.id) ||
-          store.getOwnedCapture(userId, item.id))) ||
-      (!item.id && !item.jobId && !item.captureId),
+    (item.captureId && store.getOwnedCapture(userId, item.captureId)) ||
+    (item.id &&
+      (store.getOwned(userId, item.id) ||
+        store.getOwnedCapture(userId, item.id))) ||
+    (!item.id && !item.jobId && !item.captureId),
   );
 }
 
@@ -183,7 +208,9 @@ export function buildApp(
   });
   const auth = new AuthService(store, config);
   const setSessionCookie = (
-    reply: { setCookie: (name: string, value: string, options: object) => unknown },
+    reply: {
+      setCookie: (name: string, value: string, options: object) => unknown;
+    },
     session: { token: string; expiresAt: string },
   ) => {
     reply.setCookie(SESSION_COOKIE, session.token, {
@@ -211,19 +238,30 @@ export function buildApp(
       "",
       `Explore ${node.captureCount} saved ${node.captureCount === 1 ? "capture" : "captures"} in this category${node.children.length ? " and its subcategories" : ""}.`,
       "",
-      ...(node.children.length ? [
-        "## Browse",
-        "",
-        ...node.children.map((child) => `- [${markdownText(child.label)}](library:${child.id}) — ${child.captureCount} ${child.captureCount === 1 ? "capture" : "captures"}`),
-        "",
-      ] : []),
-      ...(node.captures.some((capture) => capture.takeaways.length) ? [
-        "## Browse by insight",
-        "",
-        ...node.captures.flatMap((capture) => capture.takeaways.map((takeaway) =>
-          `- [${markdownText(takeaway)}](capture:${capture.id}) — ${markdownText(capture.title)}`)),
-        "",
-      ] : []),
+      ...(node.children.length
+        ? [
+            "## Browse",
+            "",
+            ...node.children.map(
+              (child) =>
+                `- [${markdownText(child.label)}](library:${child.id}) — ${child.captureCount} ${child.captureCount === 1 ? "capture" : "captures"}`,
+            ),
+            "",
+          ]
+        : []),
+      ...(node.captures.some((capture) => capture.takeaways.length)
+        ? [
+            "## Browse by insight",
+            "",
+            ...node.captures.flatMap((capture) =>
+              capture.takeaways.map(
+                (takeaway) =>
+                  `- [${markdownText(takeaway)}](capture:${capture.id}) — ${markdownText(capture.title)}`,
+              ),
+            ),
+            "",
+          ]
+        : []),
       `## Captures (${node.captureCount})`,
       "",
       ...node.captures.flatMap((capture) => [
@@ -233,7 +271,8 @@ export function buildApp(
       ]),
     ].join("\n");
   const ask =
-    askService ?? new AskService(aiProviderService.routedClient(), config, store);
+    askService ??
+    new AskService(aiProviderService.routedClient(), config, store);
   const knowledgeExporter = new KnowledgeExporter(store, config);
   let exportCleanup: NodeJS.Timeout | null = null;
   app.addHook("onReady", async () => {
@@ -430,7 +469,9 @@ export function buildApp(
   });
   app.get("/health", async () => ({ status: "ok" }));
   app.get("/openapi.json", async () => openApiDocument(config.appUrl));
-  app.get("/roadmap", async (_request, reply) => reply.sendFile("roadmap.html"));
+  app.get("/roadmap", async (_request, reply) =>
+    reply.sendFile("roadmap.html"),
+  );
   registerOAuth(app, config, store, auth);
   registerMcp(app, config, store, auth);
 
@@ -441,8 +482,7 @@ export function buildApp(
         rateLimit: {
           max: 5,
           timeWindow: "15 minutes",
-          keyGenerator: (request: any) =>
-            AuthService.hashToken(request.ip),
+          keyGenerator: (request: any) => AuthService.hashToken(request.ip),
         },
       },
     },
@@ -497,9 +537,16 @@ export function buildApp(
         .safeParse(request.body);
       if (!input.success)
         return reply.code(400).send({ error: "invalid_invitation" });
-      const invitation = store.inspectInvitation(AuthService.hashToken(input.data.token));
+      const invitation = store.inspectInvitation(
+        AuthService.hashToken(input.data.token),
+      );
       return invitation
-        ? { invitation: { role: invitation.role, expiresAt: invitation.expiresAt } }
+        ? {
+            invitation: {
+              role: invitation.role,
+              expiresAt: invitation.expiresAt,
+            },
+          }
         : reply.code(400).send({ error: "invalid_invitation" });
     },
   );
@@ -530,7 +577,9 @@ export function buildApp(
       if (!invitation)
         return reply.code(400).send({ error: "invalid_invitation" });
       if (invitation.role === "admin" && !input.data.administratorAcknowledged)
-        return reply.code(400).send({ error: "administrator_acknowledgement_required" });
+        return reply
+          .code(400)
+          .send({ error: "administrator_acknowledgement_required" });
       const result = store.redeemInvitation({
         tokenHash,
         username: input.data.username,
@@ -631,19 +680,18 @@ export function buildApp(
           store.retry(result.job.id, selections);
         const job = retried ? store.get(result.job.id) : result.job;
         events.publish("job", { id: result.job.id, status: job?.status });
-        return reply
-          .code(result.created || retried ? 202 : 200)
-          .send({
-            created: result.created,
-            retried,
-            job: activityJob(
-              job ?? result.job,
-              store.events(result.job.id),
-            ),
-          });
+        return reply.code(result.created || retried ? 202 : 200).send({
+          created: result.created,
+          retried,
+          job: activityJob(job ?? result.job, store.events(result.job.id)),
+        });
       } catch (error) {
         const code = error instanceof Error ? error.message : "invalid_url";
-        if (["transcription_required", "analysis_provider_required"].includes(code))
+        if (
+          ["transcription_required", "analysis_provider_required"].includes(
+            code,
+          )
+        )
           return reply.code(428).send({ error: code });
         return reply.code(400).send({
           error: "invalid_url",
@@ -904,10 +952,7 @@ export function buildApp(
       }
       return user;
     };
-    const newInvitation = (
-      userId: string,
-      role: "member" | "admin",
-    ) => {
+    const newInvitation = (userId: string, role: "member" | "admin") => {
       const token = randomBytes(32).toString("base64url");
       const invitation = store.createInvitation({
         createdByUserId: userId,
@@ -944,7 +989,10 @@ export function buildApp(
           .safeParse(request.body ?? {});
         if (!input.success)
           return reply.code(400).send({ error: "invalid_request" });
-        if (input.data.role === "admin" && !input.data.administratorAcknowledged)
+        if (
+          input.data.role === "admin" &&
+          !input.data.administratorAcknowledged
+        )
           return reply.code(400).send({
             error: "administrator_acknowledgement_required",
           });
@@ -955,7 +1003,9 @@ export function buildApp(
       "/api/v1/admin/invitations/:id/revoke",
       async (request, reply) => {
         if (!requireAdmin(request, reply)) return;
-        const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+        const params = z
+          .object({ id: z.string().uuid() })
+          .safeParse(request.params);
         if (!params.success)
           return reply.code(400).send({ error: "invalid_request" });
         return store.revokeInvitation(params.data.id)
@@ -971,7 +1021,9 @@ export function buildApp(
       async (request, reply) => {
         const user = requireAdmin(request, reply);
         if (!user) return;
-        const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+        const params = z
+          .object({ id: z.string().uuid() })
+          .safeParse(request.params);
         if (!params.success)
           return reply.code(400).send({ error: "invalid_request" });
         const token = randomBytes(32).toString("base64url");
@@ -1019,14 +1071,17 @@ export function buildApp(
           timezone: z.string().min(1).max(100).optional(),
         })
         .safeParse(request.query);
-      if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+      if (!parsed.success)
+        return reply.code(400).send({ error: "invalid_request" });
       if (
         parsed.data.timeZone &&
         parsed.data.timezone &&
         parsed.data.timeZone !== parsed.data.timezone
       )
         return reply.code(400).send({ error: "invalid_request" });
-      const timeZone = validTimeZone(parsed.data.timeZone ?? parsed.data.timezone);
+      const timeZone = validTimeZone(
+        parsed.data.timeZone ?? parsed.data.timezone,
+      );
       if (!timeZone) return reply.code(400).send({ error: "invalid_request" });
       const filter = parsed.data.filter ?? "all";
       let cursor: { createdAt: string; id: string } | undefined;
@@ -1051,7 +1106,9 @@ export function buildApp(
       });
       const day = viewerDayBounds(now, timeZone);
       return {
-        jobs: page.jobs.map((job) => activityJob(job, store.events(job.id), now)),
+        jobs: page.jobs.map((job) =>
+          activityJob(job, store.events(job.id), now),
+        ),
         nextCursor: page.nextCursor
           ? encodeActivityCursor({ ...page.nextCursor, filter })
           : null,
@@ -1074,8 +1131,10 @@ export function buildApp(
           cursor: z.string().max(300).optional(),
         })
         .safeParse(request.query);
-      if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
-      let cursor: { priority: number; updatedAt: string; id: string } | undefined;
+      if (!parsed.success)
+        return reply.code(400).send({ error: "invalid_request" });
+      let cursor:
+        { priority: number; updatedAt: string; id: string } | undefined;
       if (parsed.data.cursor) {
         try {
           cursor = decodeActivityCursor(
@@ -1093,15 +1152,22 @@ export function buildApp(
         ...(cursor ? { cursor } : {}),
       });
       return {
-        failures: page.jobs.map((job) => activityJob(job, store.events(job.id), now)),
-        nextCursor: page.nextCursor ? encodeActivityCursor(page.nextCursor) : null,
+        failures: page.jobs.map((job) =>
+          activityJob(job, store.events(job.id), now),
+        ),
+        nextCursor: page.nextCursor
+          ? encodeActivityCursor(page.nextCursor)
+          : null,
         total: store.countFailedActivityJobs(user.id),
       };
     });
     protectedApi.get("/api/v1/jobs/:id", async (request, reply) => {
       reply.header("Cache-Control", "no-store");
-      const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
-      if (!params.success) return reply.code(400).send({ error: "invalid_request" });
+      const params = z
+        .object({ id: z.string().uuid() })
+        .safeParse(request.params);
+      if (!params.success)
+        return reply.code(400).send({ error: "invalid_request" });
       const { id } = params.data;
       const user = auth.user(request)!;
       const job = store.getOwned(user.id, id);
@@ -1130,8 +1196,11 @@ export function buildApp(
       return { requested: result.requested, retried: result.retriedIds.length };
     });
     protectedApi.post("/api/v1/jobs/:id/retry", async (request, reply) => {
-      const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
-      if (!params.success) return reply.code(400).send({ error: "invalid_request" });
+      const params = z
+        .object({ id: z.string().uuid() })
+        .safeParse(request.params);
+      if (!params.success)
+        return reply.code(400).send({ error: "invalid_request" });
       const { id } = params.data;
       const user = auth.user(request)!;
       if (!store.getOwned(user.id, id))
@@ -1174,8 +1243,11 @@ export function buildApp(
             body.data.apiKey,
           );
         } catch (error) {
-          const code =
-            error instanceof Error ? error.message : "provider_unavailable";
+          const code = controlledError(
+            error,
+            ["invalid_api_key", "model_unavailable", "provider_unavailable"],
+            "provider_unavailable",
+          );
           return reply
             .code(
               code === "invalid_api_key"
@@ -1192,31 +1264,97 @@ export function buildApp(
       const body = z
         .object({
           transcription: z
-            .object({ provider: z.literal("openai"), model: z.string().min(1) })
+            .object({
+              provider: z.literal("openai"),
+              model: z.string().min(1).optional(),
+            })
             .nullable()
             .optional(),
           analysis: z
-            .object({ provider: z.enum(aiProviderIds), model: z.string().min(1) })
+            .object({
+              provider: z.enum(aiProviderIds),
+              model: z.string().min(1).optional(),
+              thinkingLevel: z.enum(thinkingLevels).nullable().optional(),
+            })
             .nullable()
             .optional(),
         })
-        .refine((value) => value.transcription !== undefined || value.analysis !== undefined)
+        .refine(
+          (value) =>
+            value.transcription !== undefined || value.analysis !== undefined,
+        )
         .safeParse(request.body);
-      if (!body.success) return reply.code(400).send({ error: "invalid_request" });
+      if (!body.success)
+        return reply.code(400).send({ error: "invalid_request" });
       try {
-        return aiProviderService.saveSelections(auth.user(request)!.id, body.data);
+        return aiProviderService.saveSelections(
+          auth.user(request)!.id,
+          body.data,
+        );
       } catch (error) {
         return reply.code(409).send({
-          error: error instanceof Error ? error.message : "invalid_selection",
+          error: controlledError(
+            error,
+            [
+              "invalid_provider_selection",
+              "provider_configuration_required",
+              "provider_configuration_mismatch",
+            ],
+            "invalid_selection",
+          ),
         });
       }
     });
+    protectedApi.put(
+      "/api/v1/ai-providers/:provider/configuration",
+      async (request, reply) => {
+        const params = z
+          .object({ provider: z.enum(aiProviderIds) })
+          .safeParse(request.params);
+        const body = z
+          .object({
+            transcriptionModel: z.string().min(1).nullable(),
+            analysisModel: z.string().min(1).nullable(),
+            thinkingLevel: z.enum(thinkingLevels).nullable(),
+          })
+          .strict()
+          .safeParse(request.body);
+        if (!params.success || !body.success)
+          return reply.code(400).send({ error: "invalid_request" });
+        try {
+          return aiProviderService.saveConfiguration(
+            auth.user(request)!.id,
+            params.data.provider,
+            body.data,
+          );
+        } catch (error) {
+          return reply.code(409).send({
+            error: controlledError(
+              error,
+              [
+                "provider_not_connected",
+                "invalid_transcription_configuration",
+                "invalid_analysis_configuration",
+                "invalid_thinking_level",
+              ],
+              "invalid_configuration",
+            ),
+          });
+        }
+      },
+    );
     protectedApi.delete(
       "/api/v1/ai-providers/:provider",
       async (request, reply) => {
-        const params = z.object({ provider: z.enum(aiProviderIds) }).safeParse(request.params);
-        if (!params.success) return reply.code(400).send({ error: "invalid_request" });
-        return aiProviderService.remove(auth.user(request)!.id, params.data.provider);
+        const params = z
+          .object({ provider: z.enum(aiProviderIds) })
+          .safeParse(request.params);
+        if (!params.success)
+          return reply.code(400).send({ error: "invalid_request" });
+        return aiProviderService.remove(
+          auth.user(request)!.id,
+          params.data.provider,
+        );
       },
     );
     protectedApi.get("/api/v1/library-exports", async (request) => ({
@@ -1653,9 +1791,7 @@ export function buildApp(
     });
     protectedApi.get("/api/v1/library/tree", async (request) => ({
       nodes: store.libraryTree(auth.user(request)!.id),
-      unclassifiedCount: store.unclassifiedCaptureCount(
-        auth.user(request)!.id,
-      ),
+      unclassifiedCount: store.unclassifiedCaptureCount(auth.user(request)!.id),
     }));
     protectedApi.get("/api/v1/library/nodes/:id", async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);

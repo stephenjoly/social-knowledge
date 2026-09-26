@@ -39,7 +39,9 @@ describe("AI provider settings", () => {
         headers: { Authorization: "Bearer csk-secret-value-1234" },
       }),
     );
-    expect(providers.providers.find((item) => item.id === "cerebras")).toMatchObject({
+    expect(
+      providers.providers.find((item) => item.id === "cerebras"),
+    ).toMatchObject({
       connected: true,
     });
     expect(JSON.stringify(providers)).not.toContain("csk-secret-value-1234");
@@ -68,6 +70,165 @@ describe("AI provider settings", () => {
     store.close();
   });
 
+  it("keeps provider preferences separate from assignment and validates them", async () => {
+    const store = new JobStore(":memory:");
+    const user = store.createUser("two-step", "hash");
+    const config = testConfig("/tmp/ai-two-step");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () => new Response(JSON.stringify({ data: [] }), { status: 200 }),
+      ),
+    );
+    const service = new AiProviderService(store, config);
+    await service.verifyAndSave(user.id, "openai", "sk-two-step-test-key");
+    store.saveAiProviderConnection(
+      user.id,
+      "cerebras",
+      "stored-secret",
+      "cs…test",
+    );
+    expect(service.settings(user.id).selections).toEqual({
+      transcription: null,
+      analysis: null,
+    });
+    expect(() =>
+      service.saveSelections(user.id, { analysis: { provider: "openai" } }),
+    ).toThrow("provider_configuration_required");
+    expect(() =>
+      service.saveConfiguration(user.id, "openai", {
+        transcriptionModel: "not-a-model",
+        analysisModel: config.analysisModel,
+        thinkingLevel: null,
+      }),
+    ).toThrow("invalid_transcription_configuration");
+    expect(() =>
+      service.saveConfiguration(user.id, "cerebras", {
+        transcriptionModel: null,
+        analysisModel: config.cerebrasAnalysisModel,
+        thinkingLevel: "high",
+      }),
+    ).toThrow("invalid_thinking_level");
+
+    service.saveConfiguration(user.id, "openai", {
+      transcriptionModel: config.transcriptionModel,
+      analysisModel: config.analysisModel,
+      thinkingLevel: "high",
+    });
+    const assigned = service.saveSelections(user.id, {
+      transcription: { provider: "openai" },
+      analysis: { provider: "openai" },
+    });
+    expect(assigned.selections.analysis).toEqual({
+      provider: "openai",
+      model: config.analysisModel,
+      thinkingLevel: "high",
+    });
+    expect(() =>
+      service.saveSelections(user.id, {
+        analysis: { provider: "openai", model: "gpt-5" },
+      }),
+    ).toThrow("provider_configuration_mismatch");
+
+    await service.verifyAndSave(user.id, "openai", "sk-replacement-test-key");
+    expect(
+      service.settings(user.id).providers.find((item) => item.id === "openai"),
+    ).toMatchObject({
+      configuration: {
+        transcriptionModel: config.transcriptionModel,
+        analysisModel: config.analysisModel,
+        thinkingLevel: "high",
+      },
+    });
+    store.close();
+  });
+
+  it("migrates legacy selected defaults once without reseeding cleared preferences", () => {
+    const store = new JobStore(":memory:");
+    const user = store.createUser("legacy-configuration", "hash");
+    const config = testConfig("/tmp/ai-legacy-configuration");
+    store.saveAiProviderConnection(
+      user.id,
+      "openai",
+      "legacy-payload",
+      "sk…test",
+    );
+    store.saveAiTaskSelections(user.id, {
+      transcriptionProvider: "openai",
+      transcriptionModel: null,
+      analysisProvider: "openai",
+      analysisModel: null,
+      analysisThinkingLevel: null,
+    });
+    const service = new AiProviderService(store, config);
+    expect(service.settings(user.id).selections).toEqual({
+      transcription: { provider: "openai", model: config.transcriptionModel },
+      analysis: {
+        provider: "openai",
+        model: config.analysisModel,
+        thinkingLevel: null,
+      },
+    });
+    service.saveConfiguration(user.id, "openai", {
+      transcriptionModel: null,
+      analysisModel: null,
+      thinkingLevel: null,
+    });
+    expect(service.settings(user.id).selections).toEqual({
+      transcription: null,
+      analysis: null,
+    });
+    expect(store.aiProviderConfiguration(user.id, "openai")).toEqual({
+      transcriptionModel: null,
+      analysisModel: null,
+      thinkingLevel: null,
+    });
+    store.close();
+  });
+
+  it("applies the saved OpenAI thinking level to routed requests", async () => {
+    const store = new JobStore(":memory:");
+    const user = store.createUser("thinking-route", "hash");
+    const config = testConfig("/tmp/ai-thinking-route");
+    let requestBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith("/models"))
+          return new Response(JSON.stringify({ data: [] }), { status: 200 });
+        requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<
+          string,
+          unknown
+        >;
+        return new Response(JSON.stringify({ output: [], output_text: "ok" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+    const service = new AiProviderService(store, config);
+    await service.verifyAndSave(user.id, "openai", "sk-thinking-route-key");
+    service.saveConfiguration(user.id, "openai", {
+      transcriptionModel: config.transcriptionModel,
+      analysisModel: config.analysisModel,
+      thinkingLevel: "high",
+    });
+    service.saveSelections(user.id, { analysis: { provider: "openai" } });
+    await service.runForUser(user.id, () =>
+      service.routedClient().responses.create({
+        model: "ignored",
+        input: "test",
+        reasoning: { effort: "low" },
+      }),
+    );
+    expect(requestBody).toMatchObject({
+      model: config.analysisModel,
+      reasoning: { effort: "high" },
+    });
+    store.close();
+  });
+
   it("keeps both connections and selects transcription independently", async () => {
     const store = new JobStore(":memory:");
     const user = store.createUser("separate-tasks", "hash");
@@ -78,23 +239,37 @@ describe("AI provider settings", () => {
         const url = input instanceof Request ? input.url : String(input);
         const data = url.includes("cerebras")
           ? [{ id: config.cerebrasAnalysisModel }]
-          : [
-              { id: config.transcriptionModel },
-              { id: config.analysisModel },
-            ];
+          : [{ id: config.transcriptionModel }, { id: config.analysisModel }];
         return new Response(JSON.stringify({ data }), { status: 200 });
       }),
     );
     const service = new AiProviderService(store, config);
     await service.verifyAndSave(user.id, "openai", "sk-openai-test-key");
     await service.verifyAndSave(user.id, "cerebras", "csk-cerebras-test-key");
-    const settings = service.saveSelections(user.id, {
-      analysis: { provider: "cerebras", model: config.cerebrasAnalysisModel },
+    service.saveConfiguration(user.id, "openai", {
+      transcriptionModel: config.transcriptionModel,
+      analysisModel: config.analysisModel,
+      thinkingLevel: null,
     });
-    expect(settings.providers.filter((provider) => provider.connected)).toHaveLength(2);
+    service.saveConfiguration(user.id, "cerebras", {
+      transcriptionModel: null,
+      analysisModel: config.cerebrasAnalysisModel,
+      thinkingLevel: null,
+    });
+    const settings = service.saveSelections(user.id, {
+      transcription: { provider: "openai" },
+      analysis: { provider: "cerebras" },
+    });
+    expect(
+      settings.providers.filter((provider) => provider.connected),
+    ).toHaveLength(2);
     expect(settings.selections).toEqual({
       transcription: { provider: "openai", model: config.transcriptionModel },
-      analysis: { provider: "cerebras", model: config.cerebrasAnalysisModel },
+      analysis: {
+        provider: "cerebras",
+        model: config.cerebrasAnalysisModel,
+        thinkingLevel: null,
+      },
     });
     expect(settings.readiness).toEqual({ capture: true, ask: true });
 
@@ -102,6 +277,16 @@ describe("AI provider settings", () => {
     expect(afterRemoval.selections.transcription).toBeNull();
     expect(afterRemoval.selections.analysis?.provider).toBe("cerebras");
     expect(afterRemoval.readiness).toEqual({ capture: false, ask: true });
+    const afterReconnect = await service.verifyAndSave(
+      user.id,
+      "openai",
+      "sk-openai-reconnected-key",
+    );
+    expect(afterReconnect.selections.transcription).toBeNull();
+    expect(
+      afterReconnect.providers.find((provider) => provider.id === "openai")
+        ?.configuration,
+    ).toBeNull();
     store.close();
   });
 
@@ -139,6 +324,12 @@ describe("AI provider settings", () => {
     );
     const service = new AiProviderService(store, testConfig("/tmp/ai-routing"));
     await service.verifyAndSave(user.id, "cerebras", "csk-routing-test-1234");
+    service.saveConfiguration(user.id, "cerebras", {
+      transcriptionModel: null,
+      analysisModel: "qwen-3.8-27b",
+      thinkingLevel: null,
+    });
+    service.saveSelections(user.id, { analysis: { provider: "cerebras" } });
     const response = await service.runForUser(user.id, () =>
       service.routedClient().responses.create({
         model: "ignored-by-router",
@@ -195,6 +386,12 @@ describe("AI provider settings", () => {
     );
     const service = new AiProviderService(store, testConfig("/tmp/ai-roles"));
     await service.verifyAndSave(user.id, "cerebras", "csk-role-order-1234");
+    service.saveConfiguration(user.id, "cerebras", {
+      transcriptionModel: null,
+      analysisModel: "qwen-3.8-27b",
+      thinkingLevel: null,
+    });
+    service.saveSelections(user.id, { analysis: { provider: "cerebras" } });
     await service.runForUser(user.id, () =>
       service.routedClient().responses.create({
         model: "ignored",
@@ -252,6 +449,12 @@ describe("AI provider settings", () => {
     );
     const service = new AiProviderService(store, testConfig("/tmp/ai-revoked"));
     await service.verifyAndSave(user.id, "cerebras", "csk-revoked-test-1234");
+    service.saveConfiguration(user.id, "cerebras", {
+      transcriptionModel: null,
+      analysisModel: "qwen-3.8-27b",
+      thinkingLevel: null,
+    });
+    service.saveSelections(user.id, { analysis: { provider: "cerebras" } });
     await expect(
       service.runForUser(user.id, () =>
         service

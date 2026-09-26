@@ -8,6 +8,7 @@ import { buildApp, canReceiveLiveEvent } from "../src/app.js";
 import { JobStore } from "../src/db.js";
 import { EventHub } from "../src/events.js";
 import { AuthService } from "../src/auth.js";
+import { AiProviderService } from "../src/ai-providers.js";
 import type { AskService } from "../src/ask.js";
 import { testConfig } from "./helpers.js";
 
@@ -40,6 +41,116 @@ describe("API", () => {
   afterEach(async () => {
     vi.unstubAllGlobals();
     for (const cleanup of cleanups.splice(0)) await cleanup();
+  });
+
+  it("stores provider preferences before task assignment and redacts unexpected failures", async () => {
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), "social-knowledge-ai-settings-"),
+    );
+    await mkdir(path.join(root, "data"));
+    const config = testConfig(root);
+    const store = new JobStore(config.databasePath);
+    const providers = new AiProviderService(store, config);
+    const app = buildApp(config, store, new EventHub(), undefined, providers);
+    cleanups.push(async () => {
+      await app.close();
+      store.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    const setup = await app.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: {
+        username: "provider-settings",
+        password: "a-strong-test-password",
+        administratorAcknowledged: true,
+      },
+    });
+    const cookie = (
+      Array.isArray(setup.headers["set-cookie"])
+        ? setup.headers["set-cookie"][0]
+        : setup.headers["set-cookie"]
+    )?.split(";")[0];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () => new Response(JSON.stringify({ data: [] }), { status: 200 }),
+      ),
+    );
+    const connected = await app.inject({
+      method: "PUT",
+      url: "/api/v1/ai-providers/openai",
+      headers: { cookie: cookie! },
+      payload: { apiKey: "sk-api-contract-test-key" },
+    });
+    expect(
+      connected
+        .json()
+        .providers.find((item: { id: string }) => item.id === "openai"),
+    ).toMatchObject({ configuration: null });
+    const beforeConfiguration = await app.inject({
+      method: "PUT",
+      url: "/api/v1/ai-settings",
+      headers: { cookie: cookie! },
+      payload: { analysis: { provider: "openai" } },
+    });
+    expect(beforeConfiguration.json()).toEqual({
+      error: "provider_configuration_required",
+    });
+    const configured = await app.inject({
+      method: "PUT",
+      url: "/api/v1/ai-providers/openai/configuration",
+      headers: { cookie: cookie! },
+      payload: {
+        transcriptionModel: config.transcriptionModel,
+        analysisModel: config.analysisModel,
+        thinkingLevel: "high",
+      },
+    });
+    expect(configured.statusCode).toBe(200);
+    expect(configured.json().selections).toEqual({
+      transcription: null,
+      analysis: null,
+    });
+    const assigned = await app.inject({
+      method: "PUT",
+      url: "/api/v1/ai-settings",
+      headers: { cookie: cookie! },
+      payload: { analysis: { provider: "openai" } },
+    });
+    expect(assigned.json().selections.analysis).toEqual({
+      provider: "openai",
+      model: config.analysisModel,
+      thinkingLevel: "high",
+    });
+    vi.spyOn(providers, "saveSelections").mockImplementation(() => {
+      throw new Error("sqlite diagnostic at /private/secret-path");
+    });
+    const redacted = await app.inject({
+      method: "PUT",
+      url: "/api/v1/ai-settings",
+      headers: { cookie: cookie! },
+      payload: { analysis: null },
+    });
+    expect(redacted.json()).toEqual({ error: "invalid_selection" });
+    expect(redacted.body).not.toContain("secret-path");
+    vi.spyOn(providers, "saveConfiguration").mockImplementation(() => {
+      throw new Error("database diagnostic at /private/configuration-secret");
+    });
+    const redactedConfiguration = await app.inject({
+      method: "PUT",
+      url: "/api/v1/ai-providers/openai/configuration",
+      headers: { cookie: cookie! },
+      payload: {
+        transcriptionModel: config.transcriptionModel,
+        analysisModel: config.analysisModel,
+        thinkingLevel: null,
+      },
+    });
+    expect(redactedConfiguration.json()).toEqual({
+      error: "invalid_configuration",
+    });
+    expect(redactedConfiguration.body).not.toContain("configuration-secret");
   });
 
   it("requires a bearer token and accepts a supported URL", async () => {
@@ -179,15 +290,18 @@ describe("API", () => {
       },
     });
     expect(setup.statusCode).toBe(201);
-    expect(setup.json().user).toMatchObject({ username: "demo", role: "admin" });
+    expect(setup.json().user).toMatchObject({
+      username: "demo",
+      role: "admin",
+    });
     expect(setup.body).not.toContain(config.apiToken);
     const setupCookie = setup.headers["set-cookie"];
     expect(setupCookie).toBeTruthy();
     expect(setupCookie).toContain("HttpOnly");
     expect(setupCookie).toContain("Secure");
-    const cookie = (Array.isArray(setupCookie) ? setupCookie[0] : setupCookie)?.split(
-      ";",
-    )[0];
+    const cookie = (
+      Array.isArray(setupCookie) ? setupCookie[0] : setupCookie
+    )?.split(";")[0];
     expect(cookie).toBeTruthy();
     expect(
       (
@@ -232,7 +346,7 @@ describe("API", () => {
     });
     expect(aiConnection.statusCode).toBe(200);
     expect(aiConnection.body).not.toContain("csk-test-secret-1234");
-    expect(aiConnection.json().readiness.ask).toBe(true);
+    expect(aiConnection.json().readiness.ask).toBe(false);
     store.saveAiProviderConnection(
       setup.json().user.id,
       "openai",
@@ -653,7 +767,9 @@ describe("API", () => {
   });
 
   it("limits invitation administration to administrators and issues one-time account sessions", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "social-knowledge-invites-"));
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), "social-knowledge-invites-"),
+    );
     await mkdir(path.join(root, "data"));
     const config = testConfig(root);
     const store = new JobStore(config.databasePath);
@@ -664,7 +780,11 @@ describe("API", () => {
       AuthService.hashToken(administratorSession),
       new Date(Date.now() + 60_000).toISOString(),
     );
-    const existingMember = store.createUser("existing-member", "hash", "member");
+    const existingMember = store.createUser(
+      "existing-member",
+      "hash",
+      "member",
+    );
     const memberSession = "member-session";
     store.createSession(
       existingMember.id,
@@ -681,7 +801,12 @@ describe("API", () => {
     const memberCookie = `social_knowledge_session=${memberSession}`;
     const tokenFrom = (url: string) =>
       new URLSearchParams(new URL(url).hash.slice(1)).get("invite")!;
-    const redeem = (token: string, username: string, index: number, extra = {}) =>
+    const redeem = (
+      token: string,
+      username: string,
+      index: number,
+      extra = {},
+    ) =>
       app.inject({
         method: "POST",
         url: "/api/auth/invitations/redeem",
@@ -695,9 +820,8 @@ describe("API", () => {
       });
 
     expect(
-      (
-        await app.inject({ method: "GET", url: "/api/v1/admin/users" })
-      ).statusCode,
+      (await app.inject({ method: "GET", url: "/api/v1/admin/users" }))
+        .statusCode,
     ).toBe(401);
     expect(
       (
@@ -740,9 +864,9 @@ describe("API", () => {
     });
     expect(inspectMember.statusCode).toBe(200);
     expect(inspectMember.json().invitation.role).toBe("member");
-    expect(new Date(inspectMember.json().invitation.expiresAt).getTime()).toBeGreaterThan(
-      Date.now() + 23 * 60 * 60 * 1000,
-    );
+    expect(
+      new Date(inspectMember.json().invitation.expiresAt).getTime(),
+    ).toBeGreaterThan(Date.now() + 23 * 60 * 60 * 1000);
     const listed = await app.inject({
       method: "GET",
       url: "/api/v1/admin/invitations",
@@ -759,9 +883,8 @@ describe("API", () => {
       role: "member",
     });
     const memberSetCookie = memberRedeemed.headers["set-cookie"];
-    const newMemberCookie = (Array.isArray(memberSetCookie)
-      ? memberSetCookie[0]
-      : memberSetCookie
+    const newMemberCookie = (
+      Array.isArray(memberSetCookie) ? memberSetCookie[0] : memberSetCookie
     )?.split(";")[0];
     expect(newMemberCookie).toBeTruthy();
     expect(
@@ -790,7 +913,9 @@ describe("API", () => {
       headers: { cookie: adminCookie },
       payload: { role: "admin", administratorAcknowledged: true },
     });
-    const administratorToken = tokenFrom(administratorInvitation.json().invitationUrl);
+    const administratorToken = tokenFrom(
+      administratorInvitation.json().invitationUrl,
+    );
     const missingRedeemAcknowledgement = await redeem(
       administratorToken,
       "unacknowledged-admin",
@@ -804,7 +929,9 @@ describe("API", () => {
       administratorToken,
       "invited-admin",
       4,
-      { administratorAcknowledged: true },
+      {
+        administratorAcknowledged: true,
+      },
     );
     expect(administratorRedeemed.statusCode).toBe(201);
     expect(administratorRedeemed.json().user.role).toBe("admin");
@@ -826,7 +953,9 @@ describe("API", () => {
         })
       ).statusCode,
     ).toBe(200);
-    expect((await redeem(revokedToken, "revoked-user", 5)).statusCode).toBe(400);
+    expect((await redeem(revokedToken, "revoked-user", 5)).statusCode).toBe(
+      400,
+    );
 
     const replaceInvitation = await app.inject({
       method: "POST",
@@ -873,7 +1002,9 @@ describe("API", () => {
       redeem(raceToken, "race-winner-a", 6),
       redeem(raceToken, "race-winner-b", 7),
     ]);
-    expect(race.map((response) => response.statusCode).sort()).toEqual([201, 400]);
+    expect(race.map((response) => response.statusCode).sort()).toEqual([
+      201, 400,
+    ]);
   });
 
   it("sets streaming headers and preserves answer delta ordering", async () => {
