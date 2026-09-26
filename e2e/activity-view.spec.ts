@@ -79,6 +79,7 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
       return route.fulfill({ contentType: "application/json", body: JSON.stringify({
         job: [failedCookie, failedMedia, activeOld, activeNew, queued, complete, olderComplete].find((item) => item.id === id),
         events: id === "complete" ? [
+          ...Array.from({ length: 30 }, (_, index) => ({ id: `history-${index}`, status: "processing", label: "Processing media", message: "Media prepared", createdAt: "2026-09-22T10:00:00.000Z", durationMs: 1000, state: "completed" })),
           { id: "prior-failure", status: "failed", label: "Capture failed", message: null, createdAt: "2026-09-22T11:00:00.000Z", durationMs: 0, state: "failed" },
           { id: "retry", status: "queued", label: "Queued", message: "Manual retry requested", createdAt: "2026-09-22T12:00:00.000Z", durationMs: 124, state: "completed" },
           { id: "saved", status: "complete", label: "Saved", message: "Capture archived", createdAt: "2026-09-22T12:01:00.000Z", durationMs: 0, state: "completed" },
@@ -145,6 +146,13 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await page.locator(".activity-card").filter({ hasText: "Saved capture" }).locator(".activity-row-trigger").click();
   await expect(page.locator(".activity-inline-log")).toContainText("Saved");
   await expect(page.locator(".activity-inline-log")).toContainText("Capture archived");
+  const logEntries = page.getByLabel("Processing log entries");
+  expect(await page.locator(".activity-inline-log").evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(320);
+  expect(await logEntries.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await logEntries.focus();
+  await page.keyboard.press("End");
+  await expect.poll(() => logEntries.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect(page.getByRole("button", { name: "Copy logs" })).toBeVisible();
   await expect(page.locator(".activity-inline-log .activity-log-dot.failed")).toHaveCount(1);
   await expect(page.locator(".activity-inline-log")).toContainText("Retry requested");
   await page.getByRole("button", { name: "Copy logs" }).click();

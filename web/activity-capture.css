@@ -77,7 +77,8 @@
 .activity-updated { color: #68716b; font-size: 10px; font-weight: 550; font-variant-numeric: tabular-nums; }
 .activity-row-chevron { width: 14px; height: 14px; color: #68716b; transition: transform .16s ease; }
 .activity-row-trigger[aria-expanded="true"] .activity-row-chevron { transform: rotate(180deg); }
-.activity-inline-log { margin: 0 0 6px; padding: 14px 16px; border-radius: 0 0 5px 5px; background: #f8faf7; }
+.activity-inline-log { display: flex; flex-direction: column; max-height: 320px; margin: 0 0 6px; padding: 14px 16px; border-radius: 0 0 5px 5px; background: #f8faf7; }
+.activity-inline-log > * { flex-shrink: 0; }
 .activity-inline-log-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .activity-inline-log-heading > div { display: flex; align-items: baseline; gap: 9px; }
 .activity-inline-log-heading strong { font-size: 12px; font-weight: 650; }
@@ -85,7 +86,7 @@
 .activity-inline-log-heading button { display: inline-flex; align-items: center; gap: 5px; height: 25px; padding: 0 9px; border: 1px solid #dde1dc; border-radius: 5px; background: #fff; color: #1d201e; font: inherit; font-size: 10px; font-weight: 650; }
 .activity-inline-log-heading button svg { width: 12px; height: 12px; }
 .activity-inline-log > p { margin: 9px 0; color: #68716b; font-size: 11px; }
-.activity-inline-log ol { margin: 7px 0 0; padding: 0; border-top: 1px solid #dde1dc; list-style: none; }
+.activity-inline-log ol { flex-shrink: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; margin: 7px 0 0; padding: 0; border-top: 1px solid #dde1dc; list-style: none; }
 .activity-inline-log li { display: grid; grid-template-columns: 7px 86px 150px minmax(0, 1fr) 76px; gap: 12px; align-items: center; min-height: 28px; border-bottom: 1px solid #edf0ec; font-size: 11px; }
 .activity-log-dot { width: 5px; height: 5px; border-radius: 50%; background: #4c7759; }
 .activity-log-dot.running { background: #7b9b82; }.activity-log-dot.pending { background: #c8cfc8; }.activity-log-dot.failed { background: #b66a45; }

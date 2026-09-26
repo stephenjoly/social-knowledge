@@ -32,6 +32,8 @@ Activity opens on active captures and expands the newest one. A compact table sh
 
 Logs retain previous attempts when a capture was retried. Their action labels are derived from known pipeline statuses, so changes in display wording cannot hide valid success events. Historical failures remain visible as failures alongside a later saved outcome.
 
+Expanded Activity logs are capped at 320px. Entries scroll within the panel, with keyboard access; the heading, Copy logs action, and touch stage durations remain visible.
+
 ## Current scope
 
 The supported source platforms are Facebook and Instagram. The application provides a private dashboard, Apple Shortcut ingestion, account API keys, OAuth-backed read-only MCP access, Obsidian Markdown output, and complete library exports.
