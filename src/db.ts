@@ -17,6 +17,7 @@ import {
   slugifyLibraryLabel,
   unclassified,
   type LibraryClassification,
+  type LibraryContentNode,
   type LibraryNode,
 } from "./library.js";
 
@@ -1015,12 +1016,6 @@ export class JobStore {
            JOIN library_nodes current ON current.id=ancestry.ancestor_id
            JOIN library_nodes parent ON parent.id=current.parent_id
          ),
-         child_counts AS (
-           SELECT parent_id AS node_id,COUNT(*) AS child_count
-           FROM library_nodes
-           WHERE parent_id IS NOT NULL
-           GROUP BY parent_id
-         ),
          capture_counts AS (
            SELECT ancestry.ancestor_id AS node_id,COUNT(*) AS capture_count
            FROM ancestry
@@ -1030,23 +1025,35 @@ export class JobStore {
            GROUP BY ancestry.ancestor_id
          )
          SELECT n.id,n.parent_id AS parentId,n.label,n.slug,n.kind,
-           COALESCE(child_counts.child_count,0) AS childCount,
            COALESCE(capture_counts.capture_count,0) AS captureCount
          FROM library_nodes n
-         LEFT JOIN child_counts ON child_counts.node_id=n.id
          LEFT JOIN capture_counts ON capture_counts.node_id=n.id
          ORDER BY n.label COLLATE NOCASE`,
       )
       .all(...(userId ? [userId] : [])) as Row[];
-    const nodes = rows.map((row) => ({
+    const visibleRows = userId
+      ? rows.filter((row) => Number(row.captureCount) > 0)
+      : rows;
+    const visibleChildCounts = new Map<string, number>();
+    for (const row of visibleRows) {
+      const parentId = row.parentId as string | null;
+      if (parentId)
+        visibleChildCounts.set(
+          parentId,
+          (visibleChildCounts.get(parentId) ?? 0) + 1,
+        );
+    }
+    const nodes = visibleRows.map((row) => ({
       ...row,
-      childCount: Number(row.childCount),
+      childCount: visibleChildCounts.get(String(row.id)) ?? 0,
       captureCount: Number(row.captureCount),
     })) as unknown as LibraryNode[];
     return nodes;
   }
   libraryNode(id: string, userId?: string) {
-    const node = this.libraryNodeRecord(id, userId);
+    const node = userId
+      ? this.libraryTree(userId).find((candidate) => candidate.id === id) ?? null
+      : this.libraryNodeRecord(id);
     if (!node) return null;
     const children = this.libraryTree(userId).filter(
       (candidate) => candidate.parentId === id,
@@ -1062,6 +1069,90 @@ export class JobStore {
       ...node,
       breadcrumb: this.libraryBreadcrumb(id, userId),
       children,
+      captures,
+    };
+  }
+  libraryContentNode(id: string, userId: string): LibraryContentNode | null {
+    const tree = this.libraryTree(userId);
+    const node = tree.find((candidate) => candidate.id === id);
+    if (!node) return null;
+    const nodesById = new Map(tree.map((candidate) => [candidate.id, candidate]));
+    const breadcrumb = (nodeId: string) => {
+      const result: Array<{ id: string; label: string }> = [];
+      let current = nodesById.get(nodeId);
+      const seen = new Set<string>();
+      while (current) {
+        if (seen.has(current.id))
+          throw new Error("Library taxonomy contains a cycle");
+        seen.add(current.id);
+        result.unshift({ id: current.id, label: current.label });
+        current = current.parentId ? nodesById.get(current.parentId) : undefined;
+      }
+      return result;
+    };
+    const nodeBreadcrumb = breadcrumb(id).map(({ id: breadcrumbId }) => {
+      const breadcrumbNode = nodesById.get(breadcrumbId);
+      if (!breadcrumbNode) throw new Error("Library taxonomy is incomplete");
+      return breadcrumbNode;
+    });
+    const captures = (
+      this.database
+        .prepare(
+          `WITH RECURSIVE descendants(id) AS (
+             SELECT ?
+             UNION ALL
+             SELECT child.id FROM library_nodes child
+             JOIN descendants parent ON child.parent_id=parent.id
+           )
+           SELECT c.id,c.title,c.platform,c.creator,c.creator_url AS creatorUrl,
+             c.source_url AS sourceUrl,c.synopsis,c.analysis_json AS analysisJson,
+             c.created_at AS createdAt,cl.node_id AS nodeId
+           FROM captures c
+           JOIN capture_library cl ON cl.capture_id=c.id
+           JOIN descendants d ON d.id=cl.node_id
+           WHERE c.owner_user_id=?
+           ORDER BY c.created_at DESC,c.id DESC`,
+        )
+        .all(id, userId) as Row[]
+    ).map((row) => {
+      let takeaways: string[] = [];
+      try {
+        const analysis = JSON.parse(String(row.analysisJson)) as {
+          takeaways?: unknown;
+        };
+        takeaways = Array.isArray(analysis.takeaways)
+          ? analysis.takeaways
+              .filter((item): item is string => typeof item === "string")
+              .slice(0, 8)
+              .map((item) => item.slice(0, 1_000))
+          : [];
+      } catch {
+        // A legacy malformed analysis must not make the library unreadable.
+      }
+      const assignedNode = nodesById.get(String(row.nodeId));
+      if (!assignedNode) throw new Error("Library taxonomy is incomplete");
+      return {
+        id: String(row.id),
+        title: String(row.title).slice(0, 500),
+        platform: String(row.platform).slice(0, 80),
+        creator: row.creator === null ? null : String(row.creator).slice(0, 300),
+        creatorUrl:
+          row.creatorUrl === null ? null : String(row.creatorUrl).slice(0, 4_096),
+        sourceUrl: String(row.sourceUrl).slice(0, 4_096),
+        synopsis: String(row.synopsis).slice(0, 2_000),
+        takeaways,
+        createdAt: String(row.createdAt),
+        assignedNode: {
+          id: String(row.nodeId),
+          label: assignedNode.label,
+        },
+        breadcrumb: breadcrumb(String(row.nodeId)),
+      };
+    });
+    return {
+      ...node,
+      breadcrumb: nodeBreadcrumb,
+      children: tree.filter((candidate) => candidate.parentId === id),
       captures,
     };
   }

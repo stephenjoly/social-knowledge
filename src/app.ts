@@ -136,6 +136,12 @@ function validTimeZone(value: string | undefined) {
   }
 }
 
+function markdownText(value: string) {
+  return value
+    .replace(/[\r\n]+/g, " ")
+    .replace(/([\\`*_[\]{}()#+\-.!|<>])/g, "\\$1");
+}
+
 export function canReceiveLiveEvent(
   store: JobStore,
   userId: string,
@@ -190,7 +196,7 @@ export function buildApp(
   };
   const library = new LibraryPublisher(store, config.vaultDir);
   const userNodeMarkdown = (
-    node: NonNullable<ReturnType<JobStore["libraryNode"]>>,
+    node: NonNullable<ReturnType<JobStore["libraryContentNode"]>>,
   ) =>
     [
       "---",
@@ -199,27 +205,40 @@ export function buildApp(
       "generated: true",
       "---",
       "",
-      `# ${node.label}`,
+      `# ${markdownText(node.label)}`,
       "",
-      node.breadcrumb.map((item) => item.label).join(" → "),
+      node.breadcrumb.map((item) => markdownText(item.label)).join(" → "),
       "",
       "## Browse",
       "",
       ...(node.children.length
         ? node.children.map(
             (child) =>
-              `- [${child.label}](library:${child.id}) — ${child.captureCount} captures`,
+              `- [${markdownText(child.label)}](library:${child.id}) — ${child.captureCount} captures`,
           )
         : ["_No child categories._"]),
       "",
-      "## Captures",
+      `## Captures (${node.captureCount})`,
       "",
       ...(node.captures.length
-        ? node.captures.map(
-            (capture) =>
-              `- [${capture.title}](capture:${capture.id}) — ${capture.platform}`,
-          )
-        : ["_No captures assigned directly to this category._"]),
+        ? node.captures.flatMap((capture) => [
+            `### [${markdownText(capture.title)}](capture:${capture.id})`,
+            "",
+            markdownText(capture.synopsis),
+            "",
+            ...(capture.takeaways.length
+              ? [
+                  "Key takeaways:",
+                  ...capture.takeaways.map(
+                    (takeaway) => `- ${markdownText(takeaway)}`,
+                  ),
+                ]
+              : []),
+            `Source: ${markdownText(capture.creator ?? capture.platform)} — ${markdownText(capture.sourceUrl)}`,
+            `Filed under: ${capture.breadcrumb.map((item) => markdownText(item.label)).join(" → ")}`,
+            "",
+          ])
+        : ["_No captures in this category._"]),
       "",
     ].join("\n");
   const ask =
@@ -1649,7 +1668,7 @@ export function buildApp(
     }));
     protectedApi.get("/api/v1/library/nodes/:id", async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-      const node = store.libraryNode(id, auth.user(request)!.id);
+      const node = store.libraryContentNode(id, auth.user(request)!.id);
       if (!node) return reply.code(404).send({ error: "not_found" });
       return { node, markdown: userNodeMarkdown(node) };
     });

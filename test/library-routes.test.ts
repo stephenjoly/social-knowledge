@@ -50,8 +50,8 @@ describe("library routes", () => {
         sourceType: "video",
         sourceId: "library-route-fixture",
         platform: "instagram",
-        title: "Library route fixture",
-        creator: null,
+        title: "Knife [skills]",
+        creator: "Chef [One]",
         creatorUrl: null,
         description: null,
         transcript: "Synthetic transcript.",
@@ -60,20 +60,20 @@ describe("library routes", () => {
         translationLanguage: null,
         comments: [],
         analysis: {
-          title: "Library route fixture",
-          synopsis: "Synthetic library capture.",
+          title: "Knife [skills]",
+          synopsis: "Safe [knife] techniques.",
           whyUseful: null,
-          takeaways: [],
+          takeaways: ["Keep [fingertips] clear."],
           topics: [],
           entities: [],
           recommendations: [],
           claimsNeedingVerification: [],
           evidence: [],
           classification: {
-            primaryDomain: "Health & Wellness",
+            primaryDomain: "Food & Drink",
             country: null,
             city: null,
-            subcategory: "Guides",
+            subcategory: "Techniques",
             secondaryTopics: [],
             confidence: 0.9,
           },
@@ -84,6 +84,63 @@ describe("library routes", () => {
         assets: [],
       })!;
       store.assignClassification(capture.id, capture.analysis.classification);
+      const techniquesId = store.libraryAssignment(capture.id)!.nodeId;
+      store.renameLibraryNode(techniquesId, "Techniques [raw]");
+
+      const parentJob = store.createOrGet({
+        ownerUserId: owner.id,
+        sourceUrl: "https://www.instagram.com/reel/library-parent-route/",
+        normalizedUrl:
+          "https://www.instagram.com/reel/library-parent-route/",
+        sourceHash: "library-parent-route-fixture",
+        userNote: "",
+      }).job;
+      const parentCapture = store.createCapture({
+        job: parentJob,
+        sourceType: "video",
+        sourceId: "library-parent-route-fixture",
+        platform: "instagram",
+        title: "Food overview",
+        creator: "Kitchen account",
+        creatorUrl: null,
+        description: null,
+        transcript: "Synthetic parent transcript.",
+        sourceLanguage: "en",
+        translatedTranscript: null,
+        translationLanguage: null,
+        comments: [],
+        analysis: {
+          title: "Food overview",
+          synopsis: "A parent-level food guide.",
+          whyUseful: null,
+          takeaways: ["Taste before salting."],
+          topics: [],
+          entities: [],
+          recommendations: [],
+          claimsNeedingVerification: [],
+          evidence: [],
+          classification: {
+            primaryDomain: "Food & Drink",
+            country: null,
+            city: null,
+            subcategory: "Food Products",
+            secondaryTopics: [],
+            confidence: 0.9,
+          },
+        },
+        publishedAt: null,
+        durationSeconds: null,
+        notePath: "Social Knowledge/Captures/library-parent-route-fixture.md",
+        assets: [],
+      })!;
+      store.assignClassification(
+        parentCapture.id,
+        parentCapture.analysis.classification,
+      );
+      const foodNode = store
+        .libraryTree(owner.id)
+        .find((node) => node.label === "Food & Drink")!;
+      store.moveCapture(parentCapture.id, foodNode.id);
 
       const tree = await app.inject({
         method: "GET",
@@ -91,28 +148,50 @@ describe("library routes", () => {
         headers: { cookie },
       });
       expect(tree.statusCode).toBe(200);
-      const health = tree
+      const food = tree
         .json()
-        .nodes.find((node: { label: string }) => node.label === "Health & Wellness");
-      expect(health).toMatchObject({ captureCount: 1 });
+        .nodes.find((node: { label: string }) => node.label === "Food & Drink");
+      expect(food).toMatchObject({ captureCount: 2, childCount: 1 });
+      expect(tree.json().nodes.map((node: { label: string }) => node.label)).toEqual(
+        expect.not.arrayContaining(["Travel"]),
+      );
 
       const category = await app.inject({
         method: "GET",
-        url: `/api/v1/library/nodes/${health.id}`,
+        url: `/api/v1/library/nodes/${food.id}`,
         headers: { cookie },
       });
       expect(category.statusCode).toBe(200);
-      expect(category.json().markdown).toContain("[Guides](library:");
-      const guides = category
+      expect(category.json().markdown).toContain("[Techniques \\[raw\\]](library:");
+      expect(category.json().node.captures).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: capture.id,
+            synopsis: "Safe [knife] techniques.",
+            takeaways: ["Keep [fingertips] clear."],
+            sourceUrl: "https://www.instagram.com/reel/library-route/",
+          }),
+          expect.objectContaining({ id: parentCapture.id }),
+        ]),
+      );
+      expect(JSON.stringify(category.json().node.captures)).not.toContain(
+        "notePath",
+      );
+      const techniques = category
         .json()
-        .node.children.find((node: { label: string }) => node.label === "Guides");
+        .node.children.find(
+          (node: { label: string }) => node.label === "Techniques [raw]",
+        );
       const topic = await app.inject({
         method: "GET",
-        url: `/api/v1/library/nodes/${guides.id}`,
+        url: `/api/v1/library/nodes/${techniques.id}`,
         headers: { cookie },
       });
       expect(topic.json().markdown).toContain(
-        `[Library route fixture](capture:${capture.id})`,
+        `[Knife \\[skills\\]](capture:${capture.id})`,
+      );
+      expect(topic.json().markdown).toContain(
+        "Keep \\[fingertips\\] clear\\.",
       );
 
       const note = await app.inject({
@@ -140,6 +219,12 @@ describe("library routes", () => {
         headers: { cookie: otherCookie },
       });
       expect(hidden.statusCode).toBe(404);
+      const hiddenNode = await app.inject({
+        method: "GET",
+        url: `/api/v1/library/nodes/${food.id}`,
+        headers: { cookie: otherCookie },
+      });
+      expect(hiddenNode.statusCode).toBe(404);
     } finally {
       await app.close();
       store.close();
