@@ -1,6 +1,6 @@
 # AI task controls and connection tests
 
-Status: active
+Status: completed
 Owner: Codex
 Started: 2026-09-26
 
@@ -26,7 +26,7 @@ Two isolated Workers implement backend and UI. Parent reviews contracts, integra
 - [x] Inspect current settings and user feedback; delegate bounded work.
 - [x] Implement task-owned model/thinking settings and safe test endpoints.
 - [x] Polish task controls and test-result UI.
-- [ ] Verify, document, and update preview.
+- [x] Verify, document, and update preview.
 
 ## Decisions
 - 2026-09-26: User's revised flow supersedes per-provider model editing in the previous UI. Preserve stored choices and compatibility where practical.
@@ -44,3 +44,8 @@ Provider requests incur usage; use small fixed samples, strict upload bounds, ca
 - Streaming tests require non-whitespace content and clean terminal completion; structured tests reject incomplete responses. Cerebras diagnostic output caps and finish reasons are handled explicitly.
 - UI checkpoint `81ecfcf` integrated as `e2b6fc0`. Parent full checks passed 135 tests; provider settings, settings alignment, onboarding, and library browser journeys passed (4/4) against the combined backend/UI.
 - Parent screenshot review widened the two-field transcription row, refined upload/test controls, and simplified test help text. Final checks and preview identity verification follow this polish.
+
+## Completion
+- 2026-09-26: Final `npm run check` passed 135 tests. Combined provider settings, alignment, onboarding, and library browser journeys passed 4/4; focused provider journey passed again after visual polish. Desktop/mobile screenshots reviewed.
+- Published through existing PR #28 at `db1cdfd`. Preview serves verified assets `index-B4bgqIec.js` and `index-Ce3bQTWR.css`; `/health` returned 200 with status ok.
+- Real provider credentials were not exercised automatically. User-triggered Test connections is available for isolated staging acceptance. No production promotion.
