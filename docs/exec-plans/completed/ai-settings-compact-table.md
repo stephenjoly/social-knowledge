@@ -1,6 +1,6 @@
 # AI settings compact table
 
-Status: active
+Status: completed
 Owner: Codex
 Started: 2026-09-26
 
@@ -26,7 +26,7 @@ One isolated UI Worker owns markup, styles, and focused browser coverage. A read
 - [x] Read canonical frame and export visual reference.
 - [x] Delegate UI implementation and behavior review.
 - [x] Integrate compact UI and explicit draft/save behavior.
-- [ ] Verify desktop/mobile, update documentation, and publish preview.
+- [x] Verify desktop/mobile, update documentation, and publish preview.
 
 ## Decisions
 - Preserve the real provider catalog; mock Anthropic/model names do not add unsupported integrations.
@@ -47,3 +47,7 @@ One isolated UI Worker owns markup, styles, and focused browser coverage. A read
 
 ## Risks and recovery
 Draft settings and server refresh can diverge; verify failed saves and provider changes explicitly. Model-specific effort support remains catalog-driven. Revert scoped commits on regression; existing API and persistent data remain compatible.
+
+## Completion
+- Published implementation `66738e1` to existing feature PR #28. Preview returned HTTP 200 and served verified assets `index-Cw_3Hi9k.js` and `index-DukbRXrX.css`; health returned status ok.
+- Test controls use existing safe diagnostics. No live provider test was run automatically; no production promotion.
