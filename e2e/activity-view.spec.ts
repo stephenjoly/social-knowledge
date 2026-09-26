@@ -8,76 +8,30 @@ test.skip(
   "Set E2E_USERNAME and E2E_PASSWORD for authenticated browser tests",
 );
 
-test("groups live jobs and keeps failure details and retry usable", async ({
-  page,
-}) => {
+test("Activity expands one safe inline log and retries every failure", async ({ page }) => {
   const jobs = [
-    {
-      id: "failed-job",
-      status: "failed",
-      normalizedUrl: "https://www.instagram.com/reel/failed/",
-      displayTitle: "Weekend reading",
-      attempts: 1,
-      error: null,
-      errorCode: "private_post",
-      errorDetail: null,
-      resultNotePath: null,
-      createdAt: "2026-09-24T12:00:00.000Z",
-      updatedAt: "2026-09-24T12:01:00.000Z",
-    },
-    {
-      id: "active-job",
-      status: "downloading",
-      normalizedUrl: "https://www.instagram.com/reel/active/",
-      displayTitle: "One good question",
-      attempts: 1,
-      error: null,
-      errorCode: null,
-      errorDetail: null,
-      resultNotePath: null,
-      createdAt: "2026-09-24T12:00:00.000Z",
-      updatedAt: "2026-09-24T12:01:00.000Z",
-    },
-    {
-      id: "complete-job",
-      status: "complete",
-      normalizedUrl: "https://www.facebook.com/complete/",
-      displayTitle: "Organize references",
-      attempts: 1,
-      error: null,
-      errorCode: null,
-      errorDetail: null,
-      resultNotePath: "/private/internal-note.md",
-      createdAt: "2026-09-22T12:00:00.000Z",
-      updatedAt: "2026-09-22T12:01:00.000Z",
-    },
-  ];
-  let retried = false;
-  await page.route("**/api/v1/jobs?limit=100", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ jobs }),
-    });
+    { id: "failed-cookie", status: "failed", errorCode: "authentication_required", displayTitle: "Reconnect account", createdAt: "2026-09-24T12:00:00.000Z", updatedAt: "2026-09-24T12:01:00.000Z" },
+    { id: "failed-media", status: "failed", errorCode: "processing_failed", displayTitle: "Media issue", createdAt: "2026-09-24T12:02:00.000Z", updatedAt: "2026-09-24T12:03:00.000Z" },
+    { id: "active-old", status: "downloading", errorCode: null, displayTitle: "Earlier capture", createdAt: "2026-09-24T12:04:00.000Z", updatedAt: "2026-09-24T12:05:00.000Z" },
+    { id: "active-new", status: "processing", errorCode: null, displayTitle: "Newest capture", createdAt: "2026-09-24T12:06:00.000Z", updatedAt: "2026-09-24T12:07:00.000Z" },
+    { id: "complete", status: "complete", errorCode: null, displayTitle: "Saved capture", createdAt: "2026-09-22T12:00:00.000Z", updatedAt: "2026-09-22T12:01:00.000Z" },
+  ].map((job) => ({ ...job, normalizedUrl: `https://www.instagram.com/reel/${job.id}/`, attempts: 1, error: null, errorDetail: null, resultNotePath: null, reachedStages: ["queued", job.status], stageDurations: { queued: 1, [job.status]: 8 } }));
+  const retried: string[] = [];
+  await page.route("**/api/v1/jobs?limit=100", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ jobs }) }));
+  await page.route(/\/api\/v1\/jobs\/[^/?]+$/, (route) => {
+    const id = route.request().url().split("/").pop()!;
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+      job: jobs.find((job) => job.id === id),
+      events: [
+        { id: `${id}-queued`, status: "queued", message: "Capture accepted", createdAt: "2026-09-24T12:00:00.000Z" },
+        { id: `${id}-active`, status: "processing", message: "secret=value /private/internal/cookie.txt", createdAt: "2026-09-24T12:00:08.000Z" },
+      ],
+    }) });
   });
-  await page.route("**/api/v1/jobs/failed-job", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        job: jobs[0],
-        events: [
-          {
-            id: "failed-event",
-            status: "failed",
-            message: "Post unavailable",
-            createdAt: "2026-09-24T12:01:00.000Z",
-          },
-        ],
-      }),
-    });
-  });
-  await page.route("**/api/v1/jobs/failed-job/retry", async (route) => {
-    retried = true;
-    await route.fulfill({ contentType: "application/json", body: "{}" });
+  await page.route("**/api/v1/jobs/retry-failed", async (route) => {
+    retried.push("failed-cookie", "failed-media");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await route.fulfill({ contentType: "application/json", body: '{"retried":2}' });
   });
 
   await page.goto("/");
@@ -85,32 +39,31 @@ test("groups live jobs and keeps failure details and retry usable", async ({
   await page.getByLabel("Password").fill(password!);
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Activity", exact: true }).click();
-  await expect(page.locator(".activity-group")).toHaveCount(3);
-  await expect(page.locator(".activity-card")).toHaveCount(3);
-  await expect(page.getByText("The post is private")).toBeVisible();
-  await page
-    .locator(".activity-card")
-    .first()
-    .getByRole("button", { name: "Technical details" })
-    .click();
-  const dialog = page.getByRole("dialog", { name: "Processing details" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog).not.toContainText("/private/internal-note.md");
-  await page.getByRole("button", { name: "Close details" }).click();
-  await page.getByRole("button", { name: "Retry" }).click();
-  await expect.poll(() => retried).toBe(true);
-  await expect(page.getByRole("status")).toContainText(
-    "Capture re-queued successfully.",
-  );
-
+  await expect(page.getByRole("button", { name: /Active 2/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".activity-card")).toHaveCount(2);
+  await expect(page.locator(".activity-card.expanded")).toContainText("Newest capture");
+  await expect(page.locator(".activity-inline-log")).toContainText("8s");
+  await expect(page.locator(".activity-inline-log")).not.toContainText("secret=value");
+  await expect(page.locator(".activity-inline-log")).not.toContainText("/private/internal");
+  await expect(page.locator(".activity-stage").first()).toHaveAttribute("title", /1s/);
+  await page.getByRole("button", { name: /Earlier capture/ }).click();
+  await expect(page.locator(".activity-card.expanded")).toContainText("Earlier capture");
+  await expect(page.locator(".activity-inline-log")).toHaveCount(1);
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page.locator(".activity-card")).toHaveCount(5);
+  await expect(page.locator(".activity-attention-item").first()).toContainText("Reconnect account");
+  await page.getByRole("button", { name: "Retry all" }).click();
+  await expect(page.getByRole("button", { name: "Retrying…" }).first()).toBeDisabled();
+  await expect.poll(() => retried.sort()).toEqual(["failed-cookie", "failed-media"]);
+  await expect(page.getByRole("status")).toContainText("2 captures re-queued.");
+  await page.locator(".app-account-trigger").click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("button", { name: "Close account menu" }).click();
+  await page.locator(".app-profile-settings").click();
+  await expect(page.getByRole("button", { name: "Settings", exact: true })).toHaveAttribute("aria-current", "page");
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          document.documentElement.scrollWidth <=
-          document.documentElement.clientWidth,
-      ),
-    )
-    .toBe(true);
+  await page.locator(".app-menu-trigger").click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });

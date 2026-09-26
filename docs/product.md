@@ -22,6 +22,10 @@ Social Knowledge turns Facebook and Instagram media a person deliberately submit
 - **Recoverable.** Interrupted jobs and exports should have clear retry behavior, and the complete library should be portable.
 - **Low-friction ingestion.** The common capture path should remain quick enough to use habitually from a phone.
 
+## Activity behavior
+
+Activity opens on active captures and expands the newest one. Each capture has an inline processing log; expanding another closes the previous log. All shows active, failed, and completed captures. Stage circles convey queued, active, completed, and failed states, with duration on hover and in the expanded log for touch devices. Needs attention keeps a fixed-height, scrollable list ordered by failure priority. Retry all re-queues every account-owned failed capture, including failures outside the currently loaded activity page. Processing logs expose only known-safe event copy and timestamps, never raw diagnostics or internal paths.
+
 ## Current scope
 
 The supported source platforms are Facebook and Instagram. The application provides a private dashboard, Apple Shortcut ingestion, account API keys, OAuth-backed read-only MCP access, Obsidian Markdown output, and complete library exports.

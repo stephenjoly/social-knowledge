@@ -24,7 +24,6 @@ import {
   LibraryBig,
   Link2,
   LogOut,
-  Menu,
   MessageSquare,
   Plus,
   Search,
@@ -116,6 +115,7 @@ type Job = {
   createdAt: string;
   updatedAt: string;
   reachedStages?: string[];
+  stageDurations?: Record<string, number>;
 };
 type LibraryExport = {
   id: string;
@@ -451,91 +451,42 @@ function PlatformIcon({ url }: { url: string }) {
   );
 }
 
-function JobInfoModal({
-  details,
-  onClose,
-}: {
-  details: JobDetails;
-  onClose: () => void;
-}) {
-  const { job, events } = details;
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
-  }, [onClose]);
-  return (
-    <div className="modal-scrim" onClick={onClose}>
-      <section
-        className="job-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Processing details"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="modal-heading">
-          <div>
-            <div className="eyebrow">Processing details</div>
-            <h2 id="job-modal-title">
-              {job.displayTitle || sourceLabel(job.normalizedUrl)}
-            </h2>
-          </div>
-          <button
-            className="icon-button"
-            onClick={onClose}
-            aria-label="Close details"
-          >
-            ×
-          </button>
-        </div>
-        <dl className="job-facts">
-          <div>
-            <dt>Status</dt>
-            <dd>{stageCopy[job.status] || job.status}</dd>
-          </div>
-          <div>
-            <dt>Attempts</dt>
-            <dd>{job.attempts}</dd>
-          </div>
-          <div>
-            <dt>Submitted</dt>
-            <dd>{new Date(job.createdAt).toLocaleString()}</dd>
-          </div>
-          <div>
-            <dt>Last update</dt>
-            <dd>{new Date(job.updatedAt).toLocaleString()}</dd>
-          </div>
-        </dl>
-        <a
-          className="source-link"
-          href={job.normalizedUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open original post ↗
-        </a>
-        <h3>Processing log</h3>
-        <ol className="event-log">
-          {events.map((event) => (
-            <li key={event.id}>
-              <span className={`event-dot ${event.status}`} />
-              <div>
-                <strong>{stageCopy[event.status] || event.status}</strong>
-                {event.message && <p>{event.message}</p>}
-                <time>{new Date(event.createdAt).toLocaleString()}</time>
-              </div>
-            </li>
-          ))}
-        </ol>
-        {(job.errorDetail || job.error) && (
-          <details className="modal-diagnostic">
-            <summary>Technical diagnostic</summary>
-            <code>{job.errorDetail || job.error}</code>
-          </details>
-        )}
-      </section>
-    </div>
-  );
+function stageDuration(events: JobEvent[], index: number, now: number) {
+  const started = Date.parse(events[index]!.createdAt);
+  const ended = events[index + 1]
+    ? Date.parse(events[index + 1]!.createdAt)
+    : now;
+  if (!Number.isFinite(started) || !Number.isFinite(ended)) return "—";
+  const seconds = Math.max(0, Math.round((ended - started) / 1000));
+  return seconds < 60
+    ? `${seconds}s`
+    : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+}
+
+function formatDuration(seconds: number) {
+  return seconds < 60
+    ? `${seconds}s`
+    : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+}
+
+const failurePriority: Record<string, number> = {
+  authentication_required: 0,
+  private_post: 1,
+  ai_failed: 2,
+  processing_failed: 3,
+  platform_temporary: 4,
+};
+
+function safeLogMessage(message: string | null) {
+  return [
+    "Capture accepted",
+    "Download started",
+    "Capture archived",
+    "Manual retry requested",
+    "AI title ready; extracting detailed knowledge",
+  ].includes(message ?? "")
+    ? message
+    : null;
 }
 type ApiKey = {
   id: string;
@@ -4053,7 +4004,15 @@ function App() {
   const [captureError, setCaptureError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [captureSubmitted, setCaptureSubmitted] = useState(false);
+  const [activityFilter, setActivityFilter] = useState<"active" | "all">("active");
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
   const [jobDetails, setJobDetails] = useState<JobDetails | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState(false);
+  const detailsRequest = useRef(0);
+  const lastNewestActive = useRef<string | null>(null);
+  const [retryPending, setRetryPending] = useState(false);
+  const [retryingIds, setRetryingIds] = useState<string[]>([]);
   async function check() {
     try {
       const result = await api<{ user: AccountUser }>("/api/auth/me");
@@ -4251,28 +4210,80 @@ function App() {
     [jobs],
   );
   const activeJobCount = counts.active + counts.failed;
-  const failedJobs = jobs.filter((job) => job.status === "failed");
-  const processingJobs = jobs.filter(
-    (job) => job.status !== "failed" && job.status !== "complete",
-  );
+  const failedJobs = jobs
+    .filter((job) => job.status === "failed")
+    .sort(
+      (a, b) =>
+        (failurePriority[a.errorCode ?? ""] ?? 5) -
+          (failurePriority[b.errorCode ?? ""] ?? 5) ||
+        Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
+    );
+  const processingJobs = jobs
+    .filter((job) => job.status !== "failed" && job.status !== "complete")
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const completedJobs = jobs.filter((job) => job.status === "complete");
+  const activityJobs =
+    activityFilter === "active"
+      ? processingJobs
+      : [...jobs].sort(
+          (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+        );
+  const newestActiveId = processingJobs[0]?.id ?? null;
+  useEffect(() => {
+    if (activityFilter !== "active") return;
+    if (newestActiveId && newestActiveId !== lastNewestActive.current) {
+      setExpandedJobId(newestActiveId);
+    }
+    lastNewestActive.current = newestActiveId;
+  }, [activityFilter, newestActiveId]);
+  useEffect(() => {
+    if (!expandedJobId || tab !== "activity") return;
+    const requestId = ++detailsRequest.current;
+    setDetailsLoading(true);
+    setDetailsError(false);
+    void api<JobDetails>(`/api/v1/jobs/${expandedJobId}`)
+      .then((details) => {
+        if (requestId === detailsRequest.current) setJobDetails(details);
+      })
+      .catch(() => {
+        if (requestId === detailsRequest.current) setDetailsError(true);
+      })
+      .finally(() => {
+        if (requestId === detailsRequest.current) setDetailsLoading(false);
+      });
+    return () => {
+      detailsRequest.current += 1;
+    };
+  }, [expandedJobId, tab, jobs.find((job) => job.id === expandedJobId)?.updatedAt]);
   async function retryJob(job: Job) {
+    if (retryPending || retryingIds.includes(job.id)) return;
+    setRetryingIds((current) => [...current, job.id]);
     try {
       setMessage("Retrying capture…");
       await api(`/api/v1/jobs/${job.id}/retry`, { method: "POST" });
       setMessage("Capture re-queued successfully.");
       await load();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Retry failed");
+    } catch {
+      setMessage("Retry failed. Check the capture setup and try again.");
+    } finally {
+      setRetryingIds((current) => current.filter((id) => id !== job.id));
     }
   }
-  async function showJobDetails(job: Job) {
+  async function retryAll() {
+    if (retryPending || failedJobs.length === 0) return;
+    setRetryPending(true);
+    setMessage("Retrying failed captures…");
     try {
-      setJobDetails(await api<JobDetails>(`/api/v1/jobs/${job.id}`));
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Details unavailable",
+      const result = await api<{ retried: number }>(
+        "/api/v1/jobs/retry-failed",
+        { method: "POST" },
       );
+      setMessage(`${result.retried} captures re-queued.`);
+      await load();
+    } catch {
+      setMessage("Retry all failed. Check the capture setup and try again.");
+    } finally {
+      setRetryPending(false);
     }
   }
   const profileInitial = user?.username.slice(0, 1).toUpperCase() || "S";
@@ -4418,20 +4429,27 @@ function App() {
           onNavigate={navigateTo}
         />
         <div className="app-profile">
-          <span className="app-avatar" aria-hidden="true">
-            {profileInitial}
-          </span>
-          <span className="app-profile-copy">
-            <strong>{user?.username || "Personal archive"}</strong>
-            <small>Personal workspace</small>
-          </span>
           <button
             type="button"
-            className="app-signout"
-            onClick={() => void signOut()}
+            className="app-account-trigger"
+            aria-label="Open account menu"
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen(true)}
           >
-            <LogOut aria-hidden="true" />
-            <span>Sign out</span>
+            <span className="app-avatar" aria-hidden="true">{profileInitial}</span>
+            <span className="app-profile-copy">
+              <strong>{user?.username || "Personal archive"}</strong>
+              <small>Personal workspace</small>
+            </span>
+            <ChevronRight aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="app-profile-settings"
+            aria-label="Open Settings"
+            onClick={() => navigateTo("settings")}
+          >
+            <SettingsIcon aria-hidden="true" />
           </button>
         </div>
       </aside>
@@ -4444,7 +4462,8 @@ function App() {
             aria-expanded={mobileMenuOpen}
             onClick={() => setMobileMenuOpen(true)}
           >
-            <Menu aria-hidden="true" />
+            <span className="app-avatar" aria-hidden="true">{profileInitial}</span>
+            <ChevronRight aria-hidden="true" />
           </button>
           <span className="app-mobile-wordmark">social knowledge</span>
           <button
@@ -4936,90 +4955,79 @@ function App() {
                   {message}
                 </p>
               )}
-              {[
-                { title: "Needs attention", items: failedJobs, kind: "failed" },
-                {
-                  title: "Processing now",
-                  items: processingJobs,
-                  kind: "processing",
-                },
-                {
-                  title: "Completed history",
-                  items: completedJobs,
-                  kind: "complete",
-                },
-              ].map((group) => (
-                <section className="activity-group" key={group.kind}>
-                  <div className="activity-group-heading">
-                    <h2>{group.title}</h2>
-                    {group.kind === "failed" && group.items.length > 0 && (
-                      <span className="activity-failed-count">
-                        {group.items.length} failed
-                      </span>
-                    )}
-                  </div>
-                  {group.items.length === 0 ? (
-                    <p className="activity-empty">
-                      {group.kind === "failed"
-                        ? "Nothing needs attention."
-                        : group.kind === "processing"
-                          ? "No captures processing now."
-                          : "Completed captures will appear here."}
-                    </p>
-                  ) : (
-                    <div className="activity-list">
-                      {group.items.map((job) => (
-                        <article
-                          className={`activity-card ${highlightedJob === job.id ? "highlighted" : ""}`}
-                          key={job.id}
-                        >
-                          <div className="activity-card-main">
-                            <div className="activity-card-title">
-                              <PlatformIcon url={job.normalizedUrl} />
-                              <strong>
-                                {job.displayTitle ||
-                                  sourceReference(job.normalizedUrl)}
-                              </strong>
-                            </div>
-                            {group.kind === "failed" ? (
-                              <p>{failureFor(job).message}</p>
-                            ) : group.kind === "processing" ? (
-                              <p>{stageCopy[job.status] || job.status}…</p>
-                            ) : (
-                              <p>
-                                Saved{" "}
-                                {new Date(job.createdAt).toLocaleDateString()} ·
-                                Open details ↗
-                              </p>
-                            )}
-                          </div>
-                          <div className="activity-card-actions">
-                            <button
-                              type="button"
-                              className="activity-details"
-                              onClick={() => void showJobDetails(job)}
-                            >
-                              {group.kind === "failed"
-                                ? "Technical details"
-                                : "Open details"}
-                              <ChevronRight aria-hidden="true" />
-                            </button>
-                            {group.kind === "failed" && (
-                              <button
-                                type="button"
-                                className="activity-retry"
-                                onClick={() => void retryJob(job)}
-                              >
-                                Retry
-                              </button>
-                            )}
-                          </div>
-                        </article>
-                      ))}
+              <section className="activity-attention" aria-labelledby="attention-title">
+                <div className="activity-attention-heading">
+                  <div><h2 id="attention-title">Needs attention</h2><span>{failedJobs.length}</span></div>
+                  <button type="button" onClick={() => void retryAll()} disabled={retryPending || failedJobs.length === 0}>
+                    {retryPending ? "Retrying…" : "Retry all"}
+                  </button>
+                </div>
+                <div className="activity-attention-list" role="list">
+                  {failedJobs.length === 0 ? (
+                    <p>Nothing needs attention.</p>
+                  ) : failedJobs.map((job) => (
+                    <div className="activity-attention-item" role="listitem" key={job.id}>
+                      <span className="activity-attention-dot" aria-hidden="true" />
+                      <div><strong>{job.displayTitle || sourceReference(job.normalizedUrl)}</strong><small>{failureFor(job).title}</small></div>
+                      <button type="button" disabled={retryPending || retryingIds.includes(job.id)} onClick={() => void retryJob(job)}>
+                        {retryingIds.includes(job.id) ? "Retrying…" : "Retry"}
+                      </button>
                     </div>
-                  )}
-                </section>
-              ))}
+                  ))}
+                </div>
+              </section>
+              <section className="activity-history" aria-label="Capture activity">
+                <div className="activity-history-heading">
+                  <h2>Captures</h2>
+                  <div className="activity-filters" role="group" aria-label="Activity filter">
+                    <button type="button" aria-pressed={activityFilter === "active"} onClick={() => { setActivityFilter("active"); setExpandedJobId(newestActiveId); }}>Active <span>{processingJobs.length}</span></button>
+                    <button type="button" aria-pressed={activityFilter === "all"} onClick={() => setActivityFilter("all")}>All</button>
+                  </div>
+                </div>
+                {activityJobs.length === 0 ? (
+                  <p className="activity-empty">{activityFilter === "active" ? "No captures processing now." : "No captures yet."}</p>
+                ) : (
+                  <div className="activity-list">
+                    {activityJobs.map((job) => {
+                      const expanded = expandedJobId === job.id;
+                      const events = expanded && jobDetails?.job.id === job.id ? jobDetails.events : [];
+                      const failedStage = job.status === "failed" ? [...(job.reachedStages ?? [])].reverse().find((stage) => stages.includes(stage) && stage !== "queued") ?? "queued" : null;
+                      return (
+                        <article className={`activity-card ${expanded ? "expanded" : ""} ${highlightedJob === job.id ? "highlighted" : ""}`} key={job.id}>
+                          <div className="activity-card-head">
+                            <button type="button" className="activity-row-trigger" aria-expanded={expanded} aria-controls={`activity-log-${job.id}`} onClick={() => setExpandedJobId(expanded ? null : job.id)}>
+                              <PlatformIcon url={job.normalizedUrl} />
+                              <span className="activity-row-copy"><strong>{job.displayTitle || sourceReference(job.normalizedUrl)}</strong><small>{job.status === "failed" ? failureFor(job).title : stageCopy[job.status] || "Processing"}</small></span>
+                              <ChevronRight className="activity-row-chevron" aria-hidden="true" />
+                            </button>
+                            {job.status === "failed" && <button type="button" className="activity-retry" disabled={retryPending || retryingIds.includes(job.id)} onClick={() => void retryJob(job)}>{retryingIds.includes(job.id) ? "Retrying…" : "Retry"}</button>}
+                          </div>
+                          <div className="activity-stages" aria-label="Processing stages">
+                            {stages.map((stage) => {
+                              const state = stage === failedStage ? "failed" : job.status === "complete" || (job.reachedStages ?? []).includes(stage) && stage !== job.status ? "completed" : stage === job.status ? "active" : "queued";
+                              const eventIndex = events.findIndex((event) => event.status === stage);
+                              const duration = job.stageDurations?.[stage] !== undefined ? formatDuration(job.stageDurations[stage]) : eventIndex >= 0 ? stageDuration(events, eventIndex, job.status === "complete" || job.status === "failed" ? Date.parse(job.updatedAt) : Date.now()) : "—";
+                              return <span className={`activity-stage ${state}`} title={`${stageCopy[stage]} · ${duration}`} aria-label={`${stageCopy[stage]}: ${state}${duration !== "—" ? `, ${duration}` : ""}`} key={stage} />;
+                            })}
+                          </div>
+                          {expanded && (
+                            <div className="activity-inline-log" id={`activity-log-${job.id}`}>
+                              <div className="activity-inline-log-heading"><strong>Processing log</strong><span>Attempt {job.attempts}</span></div>
+                              {detailsLoading && events.length === 0 ? <p>Loading log…</p> : detailsError ? <p role="alert">Log unavailable. Close and reopen this capture to retry.</p> : (
+                                <ol>
+                                  {events.map((event, index) => <li key={event.id}><span className="activity-log-time">{new Date(event.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><div><strong>{stageCopy[event.status] || "Processing update"}</strong>{safeLogMessage(event.message) && <p>{safeLogMessage(event.message)}</p>}</div><span className="activity-log-duration">{stageDuration(events, index, job.status === "complete" || job.status === "failed" ? Date.parse(job.updatedAt) : Date.now())}</span></li>)}
+                                </ol>
+                              )}
+                              {job.status === "failed" && <p className="activity-failure-copy">{failureFor(job).message}</p>}
+                              {job.status === "complete" && <a href={job.normalizedUrl} target="_blank" rel="noreferrer">Open original post ↗</a>}
+                            </div>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
             </div>
           )}
           {tab === "library" && <Library onOpen={setDetail} />}
@@ -5170,12 +5178,6 @@ function App() {
         </div>
       )}
       {detail && <Detail id={detail} onClose={() => setDetail(null)} />}
-      {jobDetails && (
-        <JobInfoModal
-          details={jobDetails}
-          onClose={() => setJobDetails(null)}
-        />
-      )}
     </div>
   );
 }

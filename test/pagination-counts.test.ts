@@ -648,6 +648,16 @@ describe("capture pagination and count queries", () => {
       sourceHash: "api-failed",
     }).job;
     store.setStatus(failed.id, "failed");
+    store.fail(
+      failed.id,
+      {
+        code: "processing_failed",
+        title: "Media processing failed",
+        message: "synthetic-secret /private/internal/cookie.txt",
+        diagnostic: "synthetic-secret /private/internal/cookie.txt",
+      },
+      0,
+    );
     const otherFailed = store.createOrGet({
       ownerUserId: other.id,
       sourceUrl: "https://www.instagram.com/reel/api-other-failed",
@@ -655,6 +665,35 @@ describe("capture pagination and count queries", () => {
       sourceHash: "api-other-failed",
     }).job;
     store.setStatus(otherFailed.id, "failed");
+    const activityList = await app.inject({
+      method: "GET",
+      url: "/api/v1/jobs?limit=100",
+      headers: { cookie: cookie! },
+    });
+    expect(activityList.json().jobs).toHaveLength(3);
+    expect(activityList.body).not.toContain(otherFailed.id);
+    expect(activityList.body).not.toContain("synthetic-secret");
+    expect(activityList.body).not.toContain("/private/internal");
+    expect(activityList.json().jobs[0].stageDurations).toEqual(
+      expect.objectContaining({ queued: expect.any(Number) }),
+    );
+    const activityDetail = await app.inject({
+      method: "GET",
+      url: `/api/v1/jobs/${failed.id}`,
+      headers: { cookie: cookie! },
+    });
+    expect(activityDetail.body).not.toContain("synthetic-secret");
+    expect(activityDetail.body).not.toContain("/private/internal");
+    expect(activityDetail.json().events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "failed", message: null }),
+      ]),
+    );
+    expect((await app.inject({
+      method: "GET",
+      url: `/api/v1/jobs/${otherFailed.id}`,
+      headers: { cookie: cookie! },
+    })).statusCode).toBe(404);
 
     expect(
       (await app.inject({ method: "GET", url: "/api/v1/inbox-analytics" }))
@@ -719,5 +758,22 @@ describe("capture pagination and count queries", () => {
       headers: { cookie: cookie! },
     });
     expect(afterRetry.json()).toMatchObject({ failedImports: 0 });
+    for (const suffix of ["one", "two"]) {
+      const job = store.createOrGet({
+        ownerUserId: owner.id,
+        sourceUrl: `https://www.instagram.com/reel/api-bulk-${suffix}`,
+        normalizedUrl: `https://www.instagram.com/reel/api-bulk-${suffix}`,
+        sourceHash: `api-bulk-${suffix}`,
+      }).job;
+      store.setStatus(job.id, "failed");
+    }
+    const retryAll = await app.inject({
+      method: "POST",
+      url: "/api/v1/jobs/retry-failed",
+      headers: { cookie: cookie! },
+    });
+    expect(retryAll.json()).toEqual({ retried: 2 });
+    expect(store.listFailed(owner.id)).toHaveLength(0);
+    expect(store.listFailed(other.id)).toHaveLength(1);
   });
 });

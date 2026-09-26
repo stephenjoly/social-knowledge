@@ -197,6 +197,15 @@ export class JobStore {
         .all(userId, limit) as Row[]
     ).map((row) => this.mapJob(row) as JobRecord);
   }
+  listFailed(userId: string) {
+    return (
+      this.database
+        .prepare(
+          "SELECT * FROM jobs WHERE owner_user_id=? AND status='failed' ORDER BY created_at DESC",
+        )
+        .all(userId) as Row[]
+    ).map((row) => this.mapJob(row) as JobRecord);
+  }
   inboxAnalytics(
     ownerUserId: string,
     last24HoursCutoffIso: string,

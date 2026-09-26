@@ -908,16 +908,32 @@ export function buildApp(
         .object({ limit: z.coerce.number().int().min(1).max(100).default(50) })
         .parse(request.query);
       return {
-        jobs: store.list(user.id, q.limit).map((job) => ({
-          ...job,
-          reachedStages: [
-            ...new Set(
-              (store.events(job.id) as Array<{ status: string }>).map(
-                (event) => event.status,
-              ),
-            ),
-          ],
-        })),
+        jobs: store.list(user.id, q.limit).map((job) => {
+          const history = store.events(job.id) as Array<{
+            status: string;
+            createdAt: string;
+          }>;
+          const stageDurations: Record<string, number> = {};
+          history.forEach((event, index) => {
+            const start = Date.parse(event.createdAt);
+            const end = history[index + 1]
+              ? Date.parse(history[index + 1]!.createdAt)
+              : ["complete", "failed"].includes(job.status)
+                ? Date.parse(job.updatedAt)
+                : Date.now();
+            if (Number.isFinite(start) && Number.isFinite(end))
+              stageDurations[event.status] =
+                (stageDurations[event.status] ?? 0) +
+                Math.max(0, Math.round((end - start) / 1000));
+          });
+          return {
+            ...job,
+            error: null,
+            errorDetail: null,
+            reachedStages: [...new Set(history.map((event) => event.status))],
+            stageDurations,
+          };
+        }),
       };
     });
     protectedApi.get("/api/v1/jobs/:id", async (request, reply) => {
@@ -925,8 +941,47 @@ export function buildApp(
       const user = auth.user(request)!;
       const job = store.getOwned(user.id, id);
       return job
-        ? { job, events: store.events(id) }
+        ? {
+            job: { ...job, error: null, errorDetail: null },
+            events: (store.events(id) as Array<{
+              id: string;
+              status: string;
+              message: string | null;
+              createdAt: string;
+            }>).map((event) => ({
+              ...event,
+              message: [
+                "Capture accepted",
+                "Download started",
+                "Capture archived",
+                "Manual retry requested",
+                "AI title ready; extracting detailed knowledge",
+              ].includes(event.message ?? "")
+                ? event.message
+                : null,
+            })),
+          }
         : reply.code(404).send({ error: "not_found" });
+    });
+    protectedApi.post("/api/v1/jobs/retry-failed", async (request, reply) => {
+      const user = auth.user(request)!;
+      const failed = store.listFailed(user.id);
+      if (failed.length === 0) return { retried: 0 };
+      let selections;
+      try {
+        selections = aiProviderService.captureSelections(user.id);
+      } catch (error) {
+        return reply.code(428).send({
+          error: error instanceof Error ? error.message : "analysis_provider_required",
+        });
+      }
+      let retried = 0;
+      for (const job of failed) {
+        if (!store.retry(job.id, selections)) continue;
+        retried += 1;
+        events.publish("job", { id: job.id, status: "queued" });
+      }
+      return { retried };
     });
     protectedApi.post("/api/v1/jobs/:id/retry", async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
