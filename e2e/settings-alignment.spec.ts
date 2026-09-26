@@ -31,7 +31,7 @@ test.afterAll(async () => {
 });
 
 test("settings topics keep their geometry when scrolling changes", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.setViewportSize({ width: 1440, height: 1020 });
   await page.goto(`http://127.0.0.1:${port}/?tab=settings`);
   await page.getByLabel("Username").fill("qa-user");
   await page.getByLabel("Password").fill("a-strong-qa-password");
@@ -55,6 +55,11 @@ test("settings topics keep their geometry when scrolling changes", async ({ page
   await page.evaluate(() => { document.body.style.minHeight = "200vh"; });
   expect(await geometry()).toEqual(classicBaseline);
   await page.evaluate(() => { document.body.style.minHeight = ""; });
+  await sidebar.getByRole("button", { name: "AI", exact: true }).click();
+  for (const width of [1100, 820]) {
+    await page.setViewportSize({ width, height: 1020 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  }
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator(".settings-mobile-topics")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);

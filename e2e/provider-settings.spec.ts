@@ -9,6 +9,7 @@ import { EventHub } from "../src/events.js";
 import { testConfig } from "../test/helpers.js";
 
 const port = 8799;
+const screenshotDir = process.env.E2E_SCREENSHOT_DIR ?? path.join(os.tmpdir(), "ai-settings-frame35");
 let root = "";
 let store: JobStore;
 let app: ReturnType<typeof buildApp>;
@@ -31,7 +32,7 @@ function diagnosticStream() {
 test.beforeAll(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), "social-knowledge-e2e-ai-"));
   await mkdir(path.join(root, "data"));
-  await mkdir(path.join(process.cwd(), "output", "playwright"), {
+  await mkdir(screenshotDir, {
     recursive: true,
   });
   audioOne = path.join(root, "short-one.wav");
@@ -115,7 +116,7 @@ test.afterAll(async () => {
 test("saves an explicit AI draft and runs diagnostics without archive data", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.setViewportSize({ width: 1440, height: 1020 });
   await page.goto(`http://127.0.0.1:${port}`);
   await page.getByLabel("Username").fill("qa-user");
   await page.getByLabel("Password").fill("a-strong-qa-password");
@@ -190,16 +191,25 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
       analysis: { provider: "openai", model: "gpt-5", thinkingLevel: "high" },
     },
   ]);
-  await page.screenshot({
-    path: "output/playwright/provider-settings-desktop.png",
-    fullPage: true,
-  });
-
   await page.reload();
   await page
     .getByRole("navigation", { name: "Settings topics" })
     .getByRole("button", { name: "AI" })
     .click();
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: path.join(screenshotDir, "provider-settings-desktop.png"),
+    fullPage: true,
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({
+    path: path.join(screenshotDir, "provider-settings-mobile.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1440, height: 1020 });
+
   const persistedAnalysis = page
     .locator(".ai-task")
     .filter({ has: page.getByRole("heading", { name: "Analysis" }) });
@@ -301,7 +311,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
     ),
   ).toBe(true);
   await page.screenshot({
-    path: "output/playwright/provider-settings-mobile.png",
+    path: path.join(screenshotDir, "provider-settings-mobile-draft-error.png"),
     fullPage: true,
   });
 });

@@ -2304,6 +2304,14 @@ a:focus-visible {
   padding: 52px 0 64px;
 }
 
+/* All Settings topics use the same frame-35 gutters and heading origin. */
+@media (min-width: 781px) {
+  .shell:has(.settings-workspace) {
+    width: min(1216px, calc(100% - 64px));
+    padding-top: 36px;
+  }
+}
+
 .hero {
   display: block;
   margin: 0 0 28px;
