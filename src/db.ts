@@ -10,20 +10,52 @@ import type {
   SocialComment,
   SourceType,
 } from "./types.js";
+import type { JobEventRecord } from "./activity.js";
+import { failureCodes, type FailureCode } from "./failures.js";
 import {
   libraryDomains,
   slugifyLibraryLabel,
   unclassified,
   type LibraryClassification,
+  type LibraryContentNode,
   type LibraryNode,
 } from "./library.js";
 
 type Row = Record<string, unknown>;
 
-export type CaptureCursor = {
-  createdAt: string;
-  id: string;
+function persistedFailureCode(code: string): FailureCode {
+  return (failureCodes as readonly string[]).includes(code)
+    ? (code as FailureCode)
+    : "unknown";
+}
+
+export const captureSortKeys = [
+  "title",
+  "savedAt",
+  "source",
+  "category",
+  "topic",
+] as const;
+
+export type CaptureSortKey = (typeof captureSortKeys)[number];
+export type CaptureSortDirection = "asc" | "desc";
+export type CaptureSort = {
+  key: CaptureSortKey;
+  direction: CaptureSortDirection;
 };
+
+export const defaultCaptureSort: CaptureSort = {
+  key: "savedAt",
+  direction: "desc",
+};
+
+/**
+ * The createdAt cursor is retained for the longstanding newest-first listing.
+ * Every other sort stores its normalized sort value and always breaks ties by
+ * capture id, so pages neither repeat nor skip equal values.
+ */
+export type CaptureCursor =
+  { createdAt: string; id: string } | { value: string | null; id: string };
 
 export type ThumbnailBackfillCandidate = {
   captureId: string;
@@ -39,8 +71,36 @@ export type ThumbnailBackfillIssue = {
 export type InboxAnalyticsCounts = {
   totalCaptures: number;
   capturesLast24Hours: number;
+  capturesLast7Days: number;
   failedImports: number;
 };
+
+export type ActivityFilter = "active" | "all";
+export type ActivityCursor = { createdAt: string; id: string };
+export type FailedActivityCursor = {
+  priority: number;
+  updatedAt: string;
+  id: string;
+};
+export type ActivityCounts = {
+  active: number;
+  queued: number;
+  failed: number;
+  savedToday: number;
+  recentEvents: number;
+};
+
+const failedJobPrioritySql = `CASE COALESCE(error_code, 'unknown')
+  WHEN 'authentication_required' THEN 0
+  WHEN 'private_post' THEN 1
+  WHEN 'ai_failed' THEN 2
+  WHEN 'processing_failed' THEN 3
+  WHEN 'platform_temporary' THEN 4
+  WHEN 'unavailable' THEN 5
+  WHEN 'unsupported_format' THEN 6
+  WHEN 'archive_limit' THEN 7
+  ELSE 8
+END`;
 
 export type ConversationCompaction = {
   id: string;
@@ -52,6 +112,49 @@ export type ConversationCompaction = {
   model: string | null;
   estimatedTokens: number | null;
   createdAt: string;
+};
+
+export type InvitationRole = "member" | "admin";
+
+export type InvitationRecord = {
+  id: string;
+  role: InvitationRole;
+  createdByUserId: string;
+  createdAt: string;
+  expiresAt: string;
+  consumedAt: string | null;
+  revokedAt: string | null;
+};
+
+export type AccountRecord = {
+  id: string;
+  username: string;
+  role: string;
+  createdAt: string;
+};
+
+export type AiProviderId = "openai" | "cerebras";
+
+export type AiTaskSelections = {
+  transcriptionProvider: AiProviderId | null;
+  transcriptionModel: string | null;
+  analysisProvider: AiProviderId | null;
+  analysisModel: string | null;
+  analysisThinkingLevel: "minimal" | "low" | "medium" | "high" | null;
+  updatedAt: string | null;
+};
+
+export type AiTaskSelectionInput = Omit<
+  AiTaskSelections,
+  "updatedAt" | "analysisThinkingLevel"
+> & {
+  analysisThinkingLevel?: "minimal" | "low" | "medium" | "high" | null;
+};
+
+export type AiProviderConfiguration = {
+  transcriptionModel: string | null;
+  analysisModel: string | null;
+  thinkingLevel: "minimal" | "low" | "medium" | "high" | null;
 };
 
 export class JobStore {
@@ -81,6 +184,11 @@ export class JobStore {
     normalizedUrl: string;
     sourceHash: string;
     aiProvider?: "openai" | "cerebras" | null;
+    transcriptionProvider?: AiProviderId | null;
+    transcriptionModel?: string | null;
+    analysisProvider?: AiProviderId | null;
+    analysisModel?: string | null;
+    analysisThinkingLevel?: "minimal" | "low" | "medium" | "high" | null;
     userNote?: string | undefined;
   }) {
     const existing = this.getByHash(input.ownerUserId, input.sourceHash);
@@ -89,7 +197,7 @@ export class JobStore {
     const id = randomUUID();
     this.database
       .prepare(
-        `INSERT INTO jobs(id,owner_user_id,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at,ai_provider) VALUES(?,?,?,?,?,?,'queued',0,NULL,NULL,?,?,?,?)`,
+        `INSERT INTO jobs(id,owner_user_id,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at,ai_provider,transcription_provider,transcription_model,analysis_provider,analysis_model,analysis_thinking_level) VALUES(?,?,?,?,?,?,'queued',0,NULL,NULL,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         id,
@@ -101,7 +209,12 @@ export class JobStore {
         now,
         now,
         now,
-        input.aiProvider ?? null,
+        input.analysisProvider ?? input.aiProvider ?? null,
+        input.transcriptionProvider ?? null,
+        input.transcriptionModel ?? null,
+        input.analysisProvider ?? input.aiProvider ?? null,
+        input.analysisModel ?? null,
+        input.analysisThinkingLevel ?? null,
       );
     this.addEvent(id, "queued", "Capture accepted");
     return { job: this.get(id) as JobRecord, created: true };
@@ -133,18 +246,164 @@ export class JobStore {
         .all(userId, limit) as Row[]
     ).map((row) => this.mapJob(row) as JobRecord);
   }
-  inboxAnalytics(ownerUserId: string, cutoffIso: string): InboxAnalyticsCounts {
+  listActivityJobs(input: {
+    userId: string;
+    filter: ActivityFilter;
+    limit: number;
+    cursor?: ActivityCursor;
+  }) {
+    const where = ["owner_user_id=?"];
+    const params: unknown[] = [input.userId];
+    if (input.filter === "active")
+      where.push(
+        "status IN ('queued','downloading','processing','transcribing','translating','analyzing','writing')",
+      );
+    if (input.cursor) {
+      where.push("(created_at < ? OR (created_at = ? AND id < ?))");
+      params.push(
+        input.cursor.createdAt,
+        input.cursor.createdAt,
+        input.cursor.id,
+      );
+    }
+    params.push(input.limit + 1);
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM jobs WHERE ${where.join(" AND ")}
+         ORDER BY created_at DESC,id DESC LIMIT ?`,
+      )
+      .all(...params) as Row[];
+    const hasMore = rows.length > input.limit;
+    const page = rows.slice(0, input.limit);
+    const last = page.at(-1);
+    return {
+      jobs: page.map((row) => this.mapJob(row) as JobRecord),
+      nextCursor:
+        hasMore && last
+          ? { createdAt: String(last.created_at), id: String(last.id) }
+          : null,
+    };
+  }
+  listFailedActivityJobs(input: {
+    userId: string;
+    limit: number;
+    cursor?: FailedActivityCursor;
+  }) {
+    const where = ["owner_user_id=?", "status='failed'"];
+    const params: unknown[] = [input.userId];
+    if (input.cursor) {
+      where.push(
+        `(${failedJobPrioritySql} > ? OR
+          (${failedJobPrioritySql} = ? AND (updated_at < ? OR (updated_at = ? AND id < ?))))`,
+      );
+      params.push(
+        input.cursor.priority,
+        input.cursor.priority,
+        input.cursor.updatedAt,
+        input.cursor.updatedAt,
+        input.cursor.id,
+      );
+    }
+    params.push(input.limit + 1);
+    const rows = this.database
+      .prepare(
+        `SELECT *,${failedJobPrioritySql} AS activity_failure_priority
+         FROM jobs WHERE ${where.join(" AND ")}
+         ORDER BY activity_failure_priority ASC,updated_at DESC,id DESC LIMIT ?`,
+      )
+      .all(...params) as Row[];
+    const hasMore = rows.length > input.limit;
+    const page = rows.slice(0, input.limit);
+    const last = page.at(-1);
+    return {
+      jobs: page.map((row) => this.mapJob(row) as JobRecord),
+      nextCursor:
+        hasMore && last
+          ? {
+              priority: Number(last.activity_failure_priority),
+              updatedAt: String(last.updated_at),
+              id: String(last.id),
+            }
+          : null,
+    };
+  }
+  countFailedActivityJobs(userId: string) {
+    const row = this.database
+      .prepare(
+        "SELECT COUNT(*) AS total FROM jobs WHERE owner_user_id=? AND status='failed'",
+      )
+      .get(userId) as Row;
+    return Number(row.total ?? 0);
+  }
+  activityCounts(input: {
+    userId: string;
+    savedTodayStart: string;
+    savedTodayEnd: string;
+    recentEventsStart: string;
+    recentEventsEnd: string;
+  }): ActivityCounts {
+    const row = this.database
+      .prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND status IN ('downloading','processing','transcribing','translating','analyzing','writing')) AS active,
+           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND status='queued') AS queued,
+           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND status='failed') AS failed,
+           (SELECT COUNT(*) FROM captures WHERE owner_user_id=? AND created_at>=? AND created_at<?) AS savedToday,
+           (SELECT COUNT(*) FROM job_events e JOIN jobs j ON j.id=e.job_id WHERE j.owner_user_id=? AND e.created_at>=? AND e.created_at<=?) AS recentEvents`,
+      )
+      .get(
+        input.userId,
+        input.userId,
+        input.userId,
+        input.userId,
+        input.savedTodayStart,
+        input.savedTodayEnd,
+        input.userId,
+        input.recentEventsStart,
+        input.recentEventsEnd,
+      ) as Row;
+    return {
+      active: Number(row.active ?? 0),
+      queued: Number(row.queued ?? 0),
+      failed: Number(row.failed ?? 0),
+      savedToday: Number(row.savedToday ?? 0),
+      recentEvents: Number(row.recentEvents ?? 0),
+    };
+  }
+  listFailed(userId: string) {
+    return (
+      this.database
+        .prepare(
+          "SELECT * FROM jobs WHERE owner_user_id=? AND status='failed' ORDER BY created_at DESC",
+        )
+        .all(userId) as Row[]
+    ).map((row) => this.mapJob(row) as JobRecord);
+  }
+  inboxAnalytics(
+    ownerUserId: string,
+    last24HoursCutoffIso: string,
+    last7DaysCutoffIso: string,
+  ): InboxAnalyticsCounts {
     const row = this.database
       .prepare(
         `SELECT
            (SELECT COUNT(*) FROM captures WHERE owner_user_id=?) AS totalCaptures,
            (SELECT COUNT(*) FROM captures WHERE owner_user_id=? AND created_at>=?) AS capturesLast24Hours,
+           (SELECT COUNT(*) FROM captures WHERE owner_user_id=? AND created_at>=?) AS capturesLast7Days,
            (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND status='failed') AS failedImports`,
       )
-      .get(ownerUserId, ownerUserId, cutoffIso, ownerUserId) as Row;
+      .get(
+        ownerUserId,
+        ownerUserId,
+        last24HoursCutoffIso,
+        ownerUserId,
+        last7DaysCutoffIso,
+        ownerUserId,
+      ) as Row;
     return {
       totalCaptures: Number(row.totalCaptures ?? 0),
       capturesLast24Hours: Number(row.capturesLast24Hours ?? 0),
+      capturesLast7Days: Number(row.capturesLast7Days ?? 0),
       failedImports: Number(row.failedImports ?? 0),
     };
   }
@@ -205,56 +464,144 @@ export class JobStore {
   ) {
     const job = this.get(id);
     if (!job) return;
+    const failureCode = persistedFailureCode(failure.code);
     const retry = job.attempts < maxAttempts;
+    const now = new Date().toISOString();
     const next = new Date(
       Date.now() +
         Math.min(300, 15 * 2 ** Math.max(0, job.attempts - 1)) * 1000,
     ).toISOString();
     const status = retry ? "queued" : "failed";
-    this.database
-      .prepare(
-        "UPDATE jobs SET status=?,error=?,error_code=?,error_detail=?,updated_at=?,next_attempt_at=? WHERE id=?",
-      )
-      .run(
-        status,
-        failure.message.slice(0, 500),
-        failure.code,
-        failure.diagnostic.slice(0, 4000),
-        new Date().toISOString(),
-        next,
-        id,
-      );
-    this.addEvent(
-      id,
-      status,
-      `${failure.title}: ${failure.message}`.slice(0, 500),
-    );
+    this.database.transaction(() => {
+      this.database
+        .prepare(
+          "UPDATE jobs SET status=?,error=?,error_code=?,error_detail=?,updated_at=?,next_attempt_at=? WHERE id=?",
+        )
+        .run(
+          status,
+          failure.message.slice(0, 500),
+          failureCode,
+          failure.diagnostic.slice(0, 4000),
+          now,
+          next,
+          id,
+        );
+      // A retryable failure still ends this attempt. Persist the terminal
+      // boundary before queuing the next one so Activity never turns it into
+      // a successful event or charges it the retry wait.
+      this.addEvent(id, "failed", null, failureCode);
+      if (retry) this.addEvent(id, "queued", "Retry scheduled");
+    })();
   }
-  retry(id: string, aiProvider?: "openai" | "cerebras" | null) {
+  retry(id: string, selections?: AiTaskSelectionInput | AiProviderId | null) {
     const job = this.get(id);
     if (!job || job.status !== "failed") return false;
     const now = new Date().toISOString();
+    const snapshot =
+      typeof selections === "string"
+        ? { analysisProvider: selections }
+        : selections;
     this.database
       .prepare(
-        "UPDATE jobs SET status='queued',attempts=0,error=NULL,error_code=NULL,error_detail=NULL,next_attempt_at=?,updated_at=?,ai_provider=COALESCE(?,ai_provider) WHERE id=?",
+        `UPDATE jobs SET status='queued',attempts=0,error=NULL,error_code=NULL,error_detail=NULL,next_attempt_at=?,updated_at=?,
+         ai_provider=COALESCE(?,ai_provider),transcription_provider=COALESCE(?,transcription_provider),transcription_model=COALESCE(?,transcription_model),analysis_provider=COALESCE(?,analysis_provider),analysis_model=COALESCE(?,analysis_model),analysis_thinking_level=CASE WHEN ? THEN ? ELSE analysis_thinking_level END WHERE id=?`,
       )
-      .run(now, now, aiProvider ?? null, id);
+      .run(
+        now,
+        now,
+        snapshot?.analysisProvider ?? null,
+        snapshot && "transcriptionProvider" in snapshot
+          ? snapshot.transcriptionProvider
+          : null,
+        snapshot && "transcriptionModel" in snapshot
+          ? snapshot.transcriptionModel
+          : null,
+        snapshot?.analysisProvider ?? null,
+        snapshot && "analysisModel" in snapshot ? snapshot.analysisModel : null,
+        Number(Boolean(snapshot && "analysisThinkingLevel" in snapshot)),
+        snapshot && "analysisThinkingLevel" in snapshot
+          ? snapshot.analysisThinkingLevel
+          : null,
+        id,
+      );
     this.addEvent(id, "queued", "Manual retry requested");
     return true;
   }
-  addEvent(jobId: string, status: string, message: string | null) {
+  retryAllFailed(
+    ownerUserId: string,
+    selections?: AiTaskSelectionInput | AiProviderId | null,
+  ) {
+    return this.database.transaction(() => {
+      const rows = this.database
+        .prepare(
+          "SELECT id FROM jobs WHERE owner_user_id=? AND status='failed'",
+        )
+        .all(ownerUserId) as Array<{ id: string }>;
+      const now = new Date().toISOString();
+      const snapshot =
+        typeof selections === "string"
+          ? { analysisProvider: selections }
+          : selections;
+      const retry = this.database.prepare(
+        `UPDATE jobs SET status='queued',attempts=0,error=NULL,error_code=NULL,error_detail=NULL,next_attempt_at=?,updated_at=?,
+         ai_provider=COALESCE(?,ai_provider),transcription_provider=COALESCE(?,transcription_provider),transcription_model=COALESCE(?,transcription_model),analysis_provider=COALESCE(?,analysis_provider),analysis_model=COALESCE(?,analysis_model),analysis_thinking_level=CASE WHEN ? THEN ? ELSE analysis_thinking_level END WHERE id=? AND owner_user_id=? AND status='failed'`,
+      );
+      const retriedIds: string[] = [];
+      for (const row of rows) {
+        const result = retry.run(
+          now,
+          now,
+          snapshot?.analysisProvider ?? null,
+          snapshot && "transcriptionProvider" in snapshot
+            ? snapshot.transcriptionProvider
+            : null,
+          snapshot && "transcriptionModel" in snapshot
+            ? snapshot.transcriptionModel
+            : null,
+          snapshot?.analysisProvider ?? null,
+          snapshot && "analysisModel" in snapshot
+            ? snapshot.analysisModel
+            : null,
+          Number(Boolean(snapshot && "analysisThinkingLevel" in snapshot)),
+          snapshot && "analysisThinkingLevel" in snapshot
+            ? snapshot.analysisThinkingLevel
+            : null,
+          row.id,
+          ownerUserId,
+        );
+        if (result.changes === 1) {
+          this.addEvent(row.id, "queued", "Manual retry requested");
+          retriedIds.push(row.id);
+        }
+      }
+      return { requested: rows.length, retriedIds };
+    })();
+  }
+  addEvent(
+    jobId: string,
+    status: string,
+    message: string | null,
+    failureCode: FailureCode | null = null,
+  ) {
     this.database
       .prepare(
-        "INSERT INTO job_events(id,job_id,status,message,created_at) VALUES(?,?,?,?,?)",
+        "INSERT INTO job_events(id,job_id,status,message,failure_code,created_at) VALUES(?,?,?,?,?,?)",
       )
-      .run(randomUUID(), jobId, status, message, new Date().toISOString());
+      .run(
+        randomUUID(),
+        jobId,
+        status,
+        message,
+        failureCode,
+        new Date().toISOString(),
+      );
   }
   events(jobId: string) {
     return this.database
       .prepare(
-        "SELECT id,status,message,created_at AS createdAt FROM job_events WHERE job_id=? ORDER BY created_at",
+        "SELECT id,status,message,failure_code AS failureCode,created_at AS createdAt FROM job_events WHERE job_id=? ORDER BY created_at,rowid",
       )
-      .all(jobId);
+      .all(jobId) as JobEventRecord[];
   }
 
   createCapture(input: {
@@ -340,12 +687,18 @@ export class JobStore {
     userId?: string;
     limit: number;
     cursor?: CaptureCursor;
+    sort?: CaptureSort;
     search?: string;
     platform?: string;
     sourceType?: string;
     nodeId?: string;
     topic?: string;
   }) {
+    const sort = query.sort ?? defaultCaptureSort;
+    const isDefaultSort =
+      sort.key === defaultCaptureSort.key &&
+      sort.direction === defaultCaptureSort.direction;
+    const sortValue = captureSortExpression(sort.key);
     const where: string[] = [];
     const params: unknown[] = [];
     if (query.userId) {
@@ -353,12 +706,30 @@ export class JobStore {
       params.push(query.userId);
     }
     if (query.cursor) {
-      where.push("(c.created_at < ? OR (c.created_at = ? AND c.id < ?))");
-      params.push(
-        query.cursor.createdAt,
-        query.cursor.createdAt,
-        query.cursor.id,
-      );
+      if ("createdAt" in query.cursor) {
+        if (!isDefaultSort) throw new Error("invalid_capture_cursor");
+        where.push("(c.created_at < ? OR (c.created_at = ? AND c.id < ?))");
+        params.push(
+          query.cursor.createdAt,
+          query.cursor.createdAt,
+          query.cursor.id,
+        );
+      } else if (sort.key === "savedAt") {
+        const comparison = sort.direction === "asc" ? ">" : "<";
+        where.push(
+          `(c.created_at ${comparison} ? OR (c.created_at = ? AND c.id < ?))`,
+        );
+        params.push(query.cursor.value, query.cursor.value, query.cursor.id);
+      } else if (query.cursor.value === null) {
+        where.push(`(${sortValue} IS NULL AND c.id < ?)`);
+        params.push(query.cursor.id);
+      } else {
+        const comparison = sort.direction === "asc" ? ">" : "<";
+        where.push(
+          `(${sortValue} IS NULL OR ${sortValue} ${comparison} ? OR (${sortValue} = ? AND c.id < ?))`,
+        );
+        params.push(query.cursor.value, query.cursor.value, query.cursor.id);
+      }
     }
     if (query.platform) {
       where.push("c.platform = ?");
@@ -392,22 +763,57 @@ export class JobStore {
       params.push(query.search.replace(/["']/g, " ").trim() + "*");
     }
     params.push(query.limit + 1);
+    const orderBy =
+      sort.key === "savedAt"
+        ? `c.created_at ${sort.direction.toUpperCase()},c.id DESC`
+        : `(${sortValue} IS NULL) ASC,${sortValue} ${sort.direction.toUpperCase()},c.id DESC`;
     const rows = this.database
       .prepare(
-        `SELECT c.* FROM captures c ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY c.created_at DESC,c.id DESC LIMIT ?`,
+        `WITH RECURSIVE category_roots(node_id,parent_id,label) AS (
+           SELECT id,parent_id,label FROM library_nodes
+           UNION ALL
+           SELECT category_roots.node_id,parent.parent_id,parent.label
+           FROM category_roots
+           JOIN library_nodes parent ON parent.id=category_roots.parent_id
+         )
+         SELECT c.*,category.label AS inbox_category_label,
+           ${sortValue} AS inbox_sort_value
+         FROM captures c
+         LEFT JOIN capture_library cl ON cl.capture_id=c.id
+         LEFT JOIN (
+           SELECT node_id,label FROM category_roots WHERE parent_id IS NULL
+         ) category ON category.node_id=cl.node_id
+         ${where.length ? "WHERE " + where.join(" AND ") : ""}
+         ORDER BY ${orderBy} LIMIT ?`,
       )
       .all(...params) as Row[];
     const hasMore = rows.length > query.limit;
-    const sliced = rows
-      .slice(0, query.limit)
-      .map((r) => this.mapCapture(r, false));
+    const slicedRows = rows.slice(0, query.limit);
+    const sliced = slicedRows.map((r) => this.mapCapture(r, false));
+    const categoryLabels = new Map(
+      slicedRows.map((row) => [
+        String(row.id),
+        row.inbox_category_label == null
+          ? null
+          : String(row.inbox_category_label),
+      ]),
+    );
     return {
       captures: sliced,
+      categoryLabels,
       nextCursor: hasMore
-        ? {
-            createdAt: String(rows[query.limit - 1]?.created_at),
-            id: String(rows[query.limit - 1]?.id),
-          }
+        ? isDefaultSort
+          ? {
+              createdAt: String(rows[query.limit - 1]?.created_at),
+              id: String(rows[query.limit - 1]?.id),
+            }
+          : {
+              value:
+                rows[query.limit - 1]?.inbox_sort_value === null
+                  ? null
+                  : String(rows[query.limit - 1]?.inbox_sort_value),
+              id: String(rows[query.limit - 1]?.id),
+            }
         : null,
     };
   }
@@ -626,12 +1032,6 @@ export class JobStore {
            JOIN library_nodes current ON current.id=ancestry.ancestor_id
            JOIN library_nodes parent ON parent.id=current.parent_id
          ),
-         child_counts AS (
-           SELECT parent_id AS node_id,COUNT(*) AS child_count
-           FROM library_nodes
-           WHERE parent_id IS NOT NULL
-           GROUP BY parent_id
-         ),
          capture_counts AS (
            SELECT ancestry.ancestor_id AS node_id,COUNT(*) AS capture_count
            FROM ancestry
@@ -641,23 +1041,36 @@ export class JobStore {
            GROUP BY ancestry.ancestor_id
          )
          SELECT n.id,n.parent_id AS parentId,n.label,n.slug,n.kind,
-           COALESCE(child_counts.child_count,0) AS childCount,
            COALESCE(capture_counts.capture_count,0) AS captureCount
          FROM library_nodes n
-         LEFT JOIN child_counts ON child_counts.node_id=n.id
          LEFT JOIN capture_counts ON capture_counts.node_id=n.id
          ORDER BY n.label COLLATE NOCASE`,
       )
       .all(...(userId ? [userId] : [])) as Row[];
-    const nodes = rows.map((row) => ({
+    const visibleRows = userId
+      ? rows.filter((row) => Number(row.captureCount) > 0)
+      : rows;
+    const visibleChildCounts = new Map<string, number>();
+    for (const row of visibleRows) {
+      const parentId = row.parentId as string | null;
+      if (parentId)
+        visibleChildCounts.set(
+          parentId,
+          (visibleChildCounts.get(parentId) ?? 0) + 1,
+        );
+    }
+    const nodes = visibleRows.map((row) => ({
       ...row,
-      childCount: Number(row.childCount),
+      childCount: visibleChildCounts.get(String(row.id)) ?? 0,
       captureCount: Number(row.captureCount),
     })) as unknown as LibraryNode[];
     return nodes;
   }
   libraryNode(id: string, userId?: string) {
-    const node = this.libraryNodeRecord(id, userId);
+    const node = userId
+      ? (this.libraryTree(userId).find((candidate) => candidate.id === id) ??
+        null)
+      : this.libraryNodeRecord(id);
     if (!node) return null;
     const children = this.libraryTree(userId).filter(
       (candidate) => candidate.parentId === id,
@@ -673,6 +1086,97 @@ export class JobStore {
       ...node,
       breadcrumb: this.libraryBreadcrumb(id, userId),
       children,
+      captures,
+    };
+  }
+  libraryContentNode(id: string, userId: string): LibraryContentNode | null {
+    const tree = this.libraryTree(userId);
+    const node = tree.find((candidate) => candidate.id === id);
+    if (!node) return null;
+    const nodesById = new Map(
+      tree.map((candidate) => [candidate.id, candidate]),
+    );
+    const breadcrumb = (nodeId: string) => {
+      const result: Array<{ id: string; label: string }> = [];
+      let current = nodesById.get(nodeId);
+      const seen = new Set<string>();
+      while (current) {
+        if (seen.has(current.id))
+          throw new Error("Library taxonomy contains a cycle");
+        seen.add(current.id);
+        result.unshift({ id: current.id, label: current.label });
+        current = current.parentId
+          ? nodesById.get(current.parentId)
+          : undefined;
+      }
+      return result;
+    };
+    const nodeBreadcrumb = breadcrumb(id).map(({ id: breadcrumbId }) => {
+      const breadcrumbNode = nodesById.get(breadcrumbId);
+      if (!breadcrumbNode) throw new Error("Library taxonomy is incomplete");
+      return breadcrumbNode;
+    });
+    const captures = (
+      this.database
+        .prepare(
+          `WITH RECURSIVE descendants(id) AS (
+             SELECT ?
+             UNION ALL
+             SELECT child.id FROM library_nodes child
+             JOIN descendants parent ON child.parent_id=parent.id
+           )
+           SELECT c.id,c.title,c.platform,c.creator,c.creator_url AS creatorUrl,
+             c.source_url AS sourceUrl,c.synopsis,c.analysis_json AS analysisJson,
+             c.created_at AS createdAt,cl.node_id AS nodeId
+           FROM captures c
+           JOIN capture_library cl ON cl.capture_id=c.id
+           JOIN descendants d ON d.id=cl.node_id
+           WHERE c.owner_user_id=?
+           ORDER BY c.created_at DESC,c.id DESC`,
+        )
+        .all(id, userId) as Row[]
+    ).map((row) => {
+      let takeaways: string[] = [];
+      try {
+        const analysis = JSON.parse(String(row.analysisJson)) as {
+          takeaways?: unknown;
+        };
+        takeaways = Array.isArray(analysis.takeaways)
+          ? analysis.takeaways
+              .filter((item): item is string => typeof item === "string")
+              .slice(0, 8)
+              .map((item) => item.slice(0, 1_000))
+          : [];
+      } catch {
+        // A legacy malformed analysis must not make the library unreadable.
+      }
+      const assignedNode = nodesById.get(String(row.nodeId));
+      if (!assignedNode) throw new Error("Library taxonomy is incomplete");
+      return {
+        id: String(row.id),
+        title: String(row.title).slice(0, 500),
+        platform: String(row.platform).slice(0, 80),
+        creator:
+          row.creator === null ? null : String(row.creator).slice(0, 300),
+        creatorUrl:
+          row.creatorUrl === null
+            ? null
+            : String(row.creatorUrl).slice(0, 4_096),
+        sourceUrl: String(row.sourceUrl).slice(0, 4_096),
+        synopsis: String(row.synopsis).slice(0, 2_000),
+        takeaways,
+        createdAt: String(row.createdAt),
+        assignedNode: {
+          id: String(row.nodeId),
+          label: assignedNode.label,
+        },
+        breadcrumb: breadcrumb(String(row.nodeId)),
+      };
+    });
+    return {
+      ...node,
+      breadcrumb: nodeBreadcrumb,
+      children: tree.filter((candidate) => candidate.parentId === id),
       captures,
     };
   }
@@ -1058,6 +1562,21 @@ export class JobStore {
       );
     return { id, username: username.toLowerCase(), role };
   }
+  upsertDemoUser(
+    username: string,
+    passwordHash: string,
+    role: "member" | "admin",
+  ) {
+    const normalizedUsername = username.toLowerCase();
+    const existing = this.getUserByUsername(normalizedUsername);
+    if (existing) {
+      this.database
+        .prepare("UPDATE users SET password_hash=?,role=? WHERE id=?")
+        .run(passwordHash, role, existing.id);
+      return { id: existing.id, username: normalizedUsername, role };
+    }
+    return this.createUser(normalizedUsername, passwordHash, role);
+  }
   createInitialUser(username: string, passwordHash: string) {
     const normalizedUsername = username.toLowerCase();
     const create = this.database.transaction(() => {
@@ -1077,6 +1596,176 @@ export class JobStore {
       return { id, username: normalizedUsername, role: "admin" };
     });
     return create();
+  }
+  listUsers(): AccountRecord[] {
+    return this.database
+      .prepare(
+        "SELECT id,username,role,created_at AS createdAt FROM users ORDER BY created_at,id",
+      )
+      .all() as AccountRecord[];
+  }
+  createInvitation(input: {
+    createdByUserId: string;
+    role: InvitationRole;
+    tokenHash: string;
+    expiresAt: string;
+  }): InvitationRecord {
+    const id = randomUUID(),
+      now = new Date().toISOString();
+    this.database
+      .prepare(
+        "INSERT INTO invitations(id,token_hash,role,created_by_user_id,created_at,expires_at,consumed_at,consumed_by_user_id,revoked_at) VALUES(?,?,?,?,?,?,NULL,NULL,NULL)",
+      )
+      .run(
+        id,
+        input.tokenHash,
+        input.role,
+        input.createdByUserId,
+        now,
+        input.expiresAt,
+      );
+    return {
+      id,
+      role: input.role,
+      createdByUserId: input.createdByUserId,
+      createdAt: now,
+      expiresAt: input.expiresAt,
+      consumedAt: null,
+      revokedAt: null,
+    };
+  }
+  listInvitations(): InvitationRecord[] {
+    return (
+      this.database
+        .prepare(
+          "SELECT id,role,created_by_user_id AS createdByUserId,created_at AS createdAt,expires_at AS expiresAt,consumed_at AS consumedAt,revoked_at AS revokedAt FROM invitations ORDER BY created_at DESC,id DESC",
+        )
+        .all() as Array<Record<string, unknown>>
+    ).map((row) => this.mapInvitation(row));
+  }
+  inspectInvitation(tokenHash: string): InvitationRecord | null {
+    const row = this.database
+      .prepare(
+        "SELECT id,role,created_by_user_id AS createdByUserId,created_at AS createdAt,expires_at AS expiresAt,consumed_at AS consumedAt,revoked_at AS revokedAt FROM invitations WHERE token_hash=? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?",
+      )
+      .get(tokenHash, new Date().toISOString()) as
+      Record<string, unknown> | undefined;
+    return row ? this.mapInvitation(row) : null;
+  }
+  redeemInvitation(input: {
+    tokenHash: string;
+    username: string;
+    passwordHash: string;
+  }):
+    | { ok: true; user: { id: string; username: string; role: InvitationRole } }
+    | { ok: false; reason: "invalid_invitation" | "username_taken" } {
+    const redeem = this.database.transaction(() => {
+      const now = new Date().toISOString();
+      const invitation = this.database
+        .prepare(
+          "SELECT id,role FROM invitations WHERE token_hash=? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?",
+        )
+        .get(input.tokenHash, now) as
+        { id: string; role: InvitationRole } | undefined;
+      if (!invitation)
+        return { ok: false as const, reason: "invalid_invitation" as const };
+      const username = input.username.toLowerCase();
+      const exists = this.database
+        .prepare("SELECT 1 FROM users WHERE username=?")
+        .get(username);
+      if (exists)
+        return { ok: false as const, reason: "username_taken" as const };
+      const user = { id: randomUUID(), username, role: invitation.role };
+      this.database
+        .prepare(
+          "INSERT INTO users(id,username,password_hash,role,created_at) VALUES(?,?,?,?,?)",
+        )
+        .run(user.id, user.username, input.passwordHash, user.role, now);
+      const consumed = this.database
+        .prepare(
+          "UPDATE invitations SET consumed_at=?,consumed_by_user_id=? WHERE id=? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?",
+        )
+        .run(now, user.id, invitation.id, now);
+      if (consumed.changes !== 1) throw new Error("invitation_redeem_race");
+      return { ok: true as const, user };
+    });
+    try {
+      return redeem();
+    } catch (error) {
+      if (error instanceof Error && error.message === "invitation_redeem_race")
+        return { ok: false, reason: "invalid_invitation" };
+      if (
+        error instanceof Error &&
+        error.message.includes("UNIQUE constraint failed: users.username")
+      )
+        return { ok: false, reason: "username_taken" };
+      throw error;
+    }
+  }
+  revokeInvitation(id: string) {
+    return (
+      this.database
+        .prepare(
+          "UPDATE invitations SET revoked_at=? WHERE id=? AND consumed_at IS NULL AND revoked_at IS NULL",
+        )
+        .run(new Date().toISOString(), id).changes > 0
+    );
+  }
+  regenerateInvitation(input: {
+    id: string;
+    createdByUserId: string;
+    tokenHash: string;
+    expiresAt: string;
+  }): InvitationRecord | null {
+    const regenerate = this.database.transaction(() => {
+      const existing = this.database
+        .prepare(
+          "SELECT role,consumed_at AS consumedAt FROM invitations WHERE id=?",
+        )
+        .get(input.id) as
+        { role: InvitationRole; consumedAt: string | null } | undefined;
+      if (!existing || existing.consumedAt) return null;
+      const now = new Date().toISOString();
+      this.database
+        .prepare(
+          "UPDATE invitations SET revoked_at=COALESCE(revoked_at,?) WHERE id=?",
+        )
+        .run(now, input.id);
+      const id = randomUUID();
+      this.database
+        .prepare(
+          "INSERT INTO invitations(id,token_hash,role,created_by_user_id,created_at,expires_at,consumed_at,consumed_by_user_id,revoked_at) VALUES(?,?,?,?,?,?,NULL,NULL,NULL)",
+        )
+        .run(
+          id,
+          input.tokenHash,
+          existing.role,
+          input.createdByUserId,
+          now,
+          input.expiresAt,
+        );
+      return {
+        id,
+        role: existing.role,
+        createdByUserId: input.createdByUserId,
+        createdAt: now,
+        expiresAt: input.expiresAt,
+        consumedAt: null,
+        revokedAt: null,
+      };
+    });
+    return regenerate();
+  }
+  private mapInvitation(row: Record<string, unknown>): InvitationRecord {
+    return {
+      id: String(row.id),
+      role: row.role as InvitationRole,
+      createdByUserId: String(row.createdByUserId),
+      createdAt: String(row.createdAt),
+      expiresAt: String(row.expiresAt),
+      consumedAt: (row.consumedAt as string | null) ?? null,
+      revokedAt: (row.revokedAt as string | null) ?? null,
+    };
   }
   deleteUser(username: string) {
     const user = this.getUserByUsername(username);
@@ -2252,14 +2941,29 @@ export class JobStore {
       .run(errorCode, new Date().toISOString(), userId, platform);
   }
 
-  aiProviderConnection(userId: string) {
+  aiProviderConnections(userId: string) {
     return this.database
       .prepare(
-        "SELECT provider,status,key_hint AS keyHint,verified_at AS verifiedAt,updated_at AS updatedAt FROM ai_provider_connections WHERE user_id=?",
+        "SELECT provider,status,key_hint AS keyHint,verified_at AS verifiedAt,updated_at AS updatedAt FROM ai_provider_connections WHERE user_id=? ORDER BY provider",
       )
-      .get(userId) as
+      .all(userId) as Array<{
+      provider: AiProviderId;
+      status: string;
+      keyHint: string;
+      verifiedAt: string;
+      updatedAt: string;
+    }>;
+  }
+  aiProviderConnection(userId: string, provider?: AiProviderId) {
+    return this.database
+      .prepare(
+        `SELECT provider,status,key_hint AS keyHint,verified_at AS verifiedAt,updated_at AS updatedAt
+         FROM ai_provider_connections WHERE user_id=? ${provider ? "AND provider=?" : ""}
+         ORDER BY updated_at DESC LIMIT 1`,
+      )
+      .get(...(provider ? [userId, provider] : [userId])) as
       | {
-          provider: string;
+          provider: AiProviderId;
           status: string;
           keyHint: string;
           verifiedAt: string;
@@ -2267,13 +2971,14 @@ export class JobStore {
         }
       | undefined;
   }
-  aiProviderConnectionSecret(userId: string) {
+  aiProviderConnectionSecret(userId: string, provider?: AiProviderId) {
     return this.database
       .prepare(
-        "SELECT provider,status,encrypted_payload AS encryptedPayload FROM ai_provider_connections WHERE user_id=?",
+        `SELECT provider,status,encrypted_payload AS encryptedPayload FROM ai_provider_connections
+         WHERE user_id=? ${provider ? "AND provider=?" : ""} ORDER BY updated_at DESC LIMIT 1`,
       )
-      .get(userId) as
-      | { provider: string; status: string; encryptedPayload: string }
+      .get(...(provider ? [userId, provider] : [userId])) as
+      | { provider: AiProviderId; status: string; encryptedPayload: string }
       | undefined;
   }
   saveAiProviderConnection(
@@ -2287,16 +2992,42 @@ export class JobStore {
       .prepare(
         `INSERT INTO ai_provider_connections(user_id,provider,encrypted_payload,status,key_hint,verified_at,created_at,updated_at)
        VALUES(?,?,?,'verified',?,?,?,?)
-       ON CONFLICT(user_id) DO UPDATE SET provider=excluded.provider,encrypted_payload=excluded.encrypted_payload,status='verified',key_hint=excluded.key_hint,verified_at=excluded.verified_at,updated_at=excluded.updated_at`,
+       ON CONFLICT(user_id,provider) DO UPDATE SET encrypted_payload=excluded.encrypted_payload,status='verified',key_hint=excluded.key_hint,verified_at=excluded.verified_at,updated_at=excluded.updated_at`,
       )
       .run(userId, provider, encryptedPayload, keyHint, now, now, now);
   }
-  deleteAiProviderConnection(userId: string) {
-    return (
+  deleteAiProviderConnection(userId: string, provider?: AiProviderId) {
+    return this.database.transaction(() => {
+      const result = this.database
+        .prepare(
+          `DELETE FROM ai_provider_connections WHERE user_id=? ${provider ? "AND provider=?" : ""}`,
+        )
+        .run(...(provider ? [userId, provider] : [userId]));
       this.database
-        .prepare("DELETE FROM ai_provider_connections WHERE user_id=?")
-        .run(userId).changes > 0
-    );
+        .prepare(
+          `DELETE FROM ai_provider_configurations WHERE user_id=? ${provider ? "AND provider=?" : ""}`,
+        )
+        .run(...(provider ? [userId, provider] : [userId]));
+      const current = this.aiTaskSelections(userId);
+      const next: AiTaskSelectionInput = {
+        transcriptionProvider: current.transcriptionProvider,
+        transcriptionModel: current.transcriptionModel,
+        analysisProvider: current.analysisProvider,
+        analysisModel: current.analysisModel,
+        analysisThinkingLevel: current.analysisThinkingLevel,
+      };
+      if (!provider || current.transcriptionProvider === provider) {
+        next.transcriptionProvider = null;
+        next.transcriptionModel = null;
+      }
+      if (!provider || current.analysisProvider === provider) {
+        next.analysisProvider = null;
+        next.analysisModel = null;
+        next.analysisThinkingLevel = null;
+      }
+      this.saveAiTaskSelections(userId, next);
+      return result.changes > 0;
+    })();
   }
   markAiProviderAttention(userId: string, provider: string) {
     this.database
@@ -2306,7 +3037,90 @@ export class JobStore {
       .run(new Date().toISOString(), userId, provider);
   }
 
+  aiTaskSelections(userId: string): AiTaskSelections {
+    const row = this.database
+      .prepare(
+        `SELECT transcription_provider AS transcriptionProvider,transcription_model AS transcriptionModel,
+                analysis_provider AS analysisProvider,analysis_model AS analysisModel,
+                analysis_thinking_level AS analysisThinkingLevel,updated_at AS updatedAt
+         FROM ai_task_selections WHERE user_id=?`,
+      )
+      .get(userId) as AiTaskSelections | undefined;
+    return (
+      row ?? {
+        transcriptionProvider: null,
+        transcriptionModel: null,
+        analysisProvider: null,
+        analysisModel: null,
+        analysisThinkingLevel: null,
+        updatedAt: null,
+      }
+    );
+  }
+
+  saveAiTaskSelections(userId: string, input: AiTaskSelectionInput) {
+    const now = new Date().toISOString();
+    this.database
+      .prepare(
+        `INSERT INTO ai_task_selections(user_id,transcription_provider,transcription_model,analysis_provider,analysis_model,analysis_thinking_level,updated_at)
+         VALUES(?,?,?,?,?,?,?)
+         ON CONFLICT(user_id) DO UPDATE SET transcription_provider=excluded.transcription_provider,transcription_model=excluded.transcription_model,
+           analysis_provider=excluded.analysis_provider,analysis_model=excluded.analysis_model,analysis_thinking_level=excluded.analysis_thinking_level,updated_at=excluded.updated_at`,
+      )
+      .run(
+        userId,
+        input.transcriptionProvider,
+        input.transcriptionModel,
+        input.analysisProvider,
+        input.analysisModel,
+        input.analysisThinkingLevel ?? null,
+        now,
+      );
+    return this.aiTaskSelections(userId);
+  }
+
+  aiProviderConfiguration(userId: string, provider: AiProviderId) {
+    return this.database
+      .prepare(
+        `SELECT transcription_model AS transcriptionModel,analysis_model AS analysisModel,
+                thinking_level AS thinkingLevel
+         FROM ai_provider_configurations WHERE user_id=? AND provider=?`,
+      )
+      .get(userId, provider) as AiProviderConfiguration | undefined;
+  }
+
+  saveAiProviderConfiguration(
+    userId: string,
+    provider: AiProviderId,
+    input: AiProviderConfiguration,
+  ) {
+    const now = new Date().toISOString();
+    this.database
+      .prepare(
+        `INSERT INTO ai_provider_configurations(user_id,provider,transcription_model,analysis_model,thinking_level,updated_at)
+         VALUES(?,?,?,?,?,?)
+         ON CONFLICT(user_id,provider) DO UPDATE SET transcription_model=excluded.transcription_model,
+           analysis_model=excluded.analysis_model,thinking_level=excluded.thinking_level,updated_at=excluded.updated_at`,
+      )
+      .run(
+        userId,
+        provider,
+        input.transcriptionModel,
+        input.analysisModel,
+        input.thinkingLevel,
+        now,
+      );
+    return this.aiProviderConfiguration(userId, provider)!;
+  }
+
   private migrate() {
+    const hadTaskSelections = Boolean(
+      this.database
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ai_task_selections'",
+        )
+        .get(),
+    );
     this.database.exec(`
     CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,owner_user_id TEXT NOT NULL REFERENCES users(id),source_url TEXT NOT NULL,normalized_url TEXT NOT NULL,source_hash TEXT NOT NULL,user_note TEXT,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,error TEXT,result_note_path TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,next_attempt_at TEXT NOT NULL,UNIQUE(owner_user_id,source_hash));
     CREATE INDEX IF NOT EXISTS idx_jobs_queue ON jobs(status,next_attempt_at,created_at);
@@ -2314,10 +3128,13 @@ export class JobStore {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_captures_platform_source ON captures(owner_user_id,platform,source_id);
     CREATE INDEX IF NOT EXISTS idx_captures_owner_created ON captures(owner_user_id,created_at DESC,id DESC);
     CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY,capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,kind TEXT NOT NULL,path TEXT NOT NULL,mime_type TEXT NOT NULL,size_bytes INTEGER NOT NULL,position INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS job_events(id TEXT PRIMARY KEY,job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,status TEXT NOT NULL,message TEXT,created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS job_events(id TEXT PRIMARY KEY,job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,status TEXT NOT NULL,message TEXT,failure_code TEXT,created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,role TEXT NOT NULL,created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,token_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_sessions_hash ON sessions(token_hash);
+    CREATE TABLE IF NOT EXISTS invitations(id TEXT PRIMARY KEY,token_hash TEXT NOT NULL UNIQUE,role TEXT NOT NULL CHECK(role IN ('member','admin')),created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,created_at TEXT NOT NULL,expires_at TEXT NOT NULL,consumed_at TEXT,consumed_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,revoked_at TEXT);
+    CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON invitations(token_hash);
+    CREATE INDEX IF NOT EXISTS idx_invitations_created_at ON invitations(created_at DESC);
     CREATE TABLE IF NOT EXISTS api_keys(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,name TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,prefix TEXT NOT NULL,created_at TEXT NOT NULL,last_used_at TEXT);
     CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(token_hash);
     CREATE TABLE IF NOT EXISTS oauth_clients(client_id TEXT PRIMARY KEY,name TEXT NOT NULL,redirect_uris_json TEXT NOT NULL,created_at TEXT NOT NULL);
@@ -2343,6 +3160,62 @@ export class JobStore {
     CREATE TABLE IF NOT EXISTS platform_connections(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,platform TEXT NOT NULL CHECK(platform IN ('facebook','instagram')),encrypted_payload TEXT NOT NULL,status TEXT NOT NULL,cookie_count INTEGER NOT NULL,last_validated_at TEXT,last_used_at TEXT,last_error_code TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(user_id,platform));
     CREATE TABLE IF NOT EXISTS ai_provider_connections(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('openai','cerebras')),encrypted_payload TEXT NOT NULL,status TEXT NOT NULL,key_hint TEXT NOT NULL,verified_at TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
   `);
+    this.migrateAiProviderConnections();
+    this.database.exec(`
+      CREATE TABLE IF NOT EXISTS ai_task_selections(
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        transcription_provider TEXT CHECK(transcription_provider IN ('openai','cerebras')),
+        transcription_model TEXT,
+        analysis_provider TEXT CHECK(analysis_provider IN ('openai','cerebras')),
+        analysis_model TEXT,
+        analysis_thinking_level TEXT CHECK(analysis_thinking_level IN ('minimal','low','medium','high')),
+        updated_at TEXT NOT NULL
+      );
+    `);
+    const selectionColumns = (
+      this.database
+        .prepare("PRAGMA table_info(ai_task_selections)")
+        .all() as Array<{
+        name: string;
+      }>
+    ).map((column) => column.name);
+    if (!selectionColumns.includes("analysis_thinking_level"))
+      this.database.exec(
+        "ALTER TABLE ai_task_selections ADD COLUMN analysis_thinking_level TEXT CHECK(analysis_thinking_level IN ('minimal','low','medium','high'))",
+      );
+    if (!hadTaskSelections)
+      this.database.exec(`
+        INSERT OR IGNORE INTO ai_task_selections(user_id,transcription_provider,transcription_model,analysis_provider,analysis_model,analysis_thinking_level,updated_at)
+        SELECT user_id,
+               CASE WHEN provider='openai' AND status='verified' THEN 'openai' ELSE NULL END,
+               NULL,
+               CASE WHEN status='verified' THEN provider ELSE NULL END,
+               NULL,
+               NULL,
+               updated_at
+        FROM ai_provider_connections;
+      `);
+    this.database.exec(`
+      CREATE TABLE IF NOT EXISTS ai_provider_configurations(
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL CHECK(provider IN ('openai','cerebras')),
+        transcription_model TEXT,
+        analysis_model TEXT,
+        thinking_level TEXT CHECK(thinking_level IN ('minimal','low','medium','high')),
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(user_id,provider)
+      );
+      INSERT OR IGNORE INTO ai_provider_configurations(user_id,provider,transcription_model,analysis_model,thinking_level,updated_at)
+      SELECT user_id,provider,MAX(transcription_model),MAX(analysis_model),MAX(thinking_level),MAX(updated_at)
+      FROM (
+        SELECT user_id,transcription_provider AS provider,transcription_model,NULL AS analysis_model,NULL AS thinking_level,updated_at
+        FROM ai_task_selections WHERE transcription_provider IS NOT NULL
+        UNION ALL
+        SELECT user_id,analysis_provider AS provider,NULL AS transcription_model,analysis_model,analysis_thinking_level AS thinking_level,updated_at
+        FROM ai_task_selections WHERE analysis_provider IS NOT NULL
+      )
+      GROUP BY user_id,provider;
+    `);
     const exportColumns = (
       this.database
         .prepare("PRAGMA table_info(knowledge_exports)")
@@ -2372,6 +3245,37 @@ export class JobStore {
       this.database.exec(
         "ALTER TABLE jobs ADD COLUMN ai_provider TEXT CHECK(ai_provider IN ('openai','cerebras'))",
       );
+    if (!columns.includes("transcription_provider"))
+      this.database.exec(
+        "ALTER TABLE jobs ADD COLUMN transcription_provider TEXT CHECK(transcription_provider IN ('openai','cerebras'))",
+      );
+    if (!columns.includes("transcription_model"))
+      this.database.exec(
+        "ALTER TABLE jobs ADD COLUMN transcription_model TEXT",
+      );
+    if (!columns.includes("analysis_provider"))
+      this.database.exec(
+        "ALTER TABLE jobs ADD COLUMN analysis_provider TEXT CHECK(analysis_provider IN ('openai','cerebras'))",
+      );
+    if (!columns.includes("analysis_model"))
+      this.database.exec("ALTER TABLE jobs ADD COLUMN analysis_model TEXT");
+    if (!columns.includes("analysis_thinking_level"))
+      this.database.exec(
+        "ALTER TABLE jobs ADD COLUMN analysis_thinking_level TEXT CHECK(analysis_thinking_level IN ('minimal','low','medium','high'))",
+      );
+    const eventColumns = (
+      this.database.prepare("PRAGMA table_info(job_events)").all() as Array<{
+        name: string;
+      }>
+    ).map((column) => column.name);
+    if (!eventColumns.includes("failure_code"))
+      this.database.exec("ALTER TABLE job_events ADD COLUMN failure_code TEXT");
+    this.database.exec(`
+      UPDATE jobs SET analysis_provider=ai_provider
+      WHERE analysis_provider IS NULL AND ai_provider IS NOT NULL;
+      UPDATE jobs SET transcription_provider='openai'
+      WHERE transcription_provider IS NULL AND ai_provider='openai';
+    `);
     const userColumns = (
       this.database.prepare("PRAGMA table_info(users)").all() as Array<{
         name: string;
@@ -2410,7 +3314,9 @@ export class JobStore {
     const messageColumns = (
       this.database
         .prepare("PRAGMA table_info(conversation_messages)")
-        .all() as Array<{ name: string }>
+        .all() as Array<{
+        name: string;
+      }>
     ).map((column) => column.name);
     if (!messageColumns.includes("status"))
       this.database.exec(
@@ -2453,7 +3359,9 @@ export class JobStore {
       this.database.exec("DELETE FROM captures_fts_v2");
       for (const row of this.database
         .prepare("SELECT id FROM captures")
-        .all() as Array<{ id: string }>)
+        .all() as Array<{
+        id: string;
+      }>)
         this.indexCapture(row.id);
     }
     this.database.exec(`
@@ -2468,6 +3376,46 @@ export class JobStore {
         AND result_note_path IS NOT NULL
         AND EXISTS (SELECT 1 FROM captures WHERE captures.note_path LIKE '%' || jobs.result_note_path)
     `);
+  }
+  private migrateAiProviderConnections() {
+    const primaryKey = (
+      this.database
+        .prepare("PRAGMA table_info(ai_provider_connections)")
+        .all() as Array<{
+        name: string;
+        pk: number;
+      }>
+    )
+      .filter((column) => column.pk > 0)
+      .sort((a, b) => a.pk - b.pk)
+      .map((column) => column.name);
+    if (
+      primaryKey.length === 2 &&
+      primaryKey[0] === "user_id" &&
+      primaryKey[1] === "provider"
+    )
+      return;
+    this.database.transaction(() => {
+      this.database.exec(`
+        CREATE TABLE ai_provider_connections_v2(
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          provider TEXT NOT NULL CHECK(provider IN ('openai','cerebras')),
+          encrypted_payload TEXT NOT NULL,
+          status TEXT NOT NULL,
+          key_hint TEXT NOT NULL,
+          verified_at TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(user_id,provider)
+        );
+        INSERT OR IGNORE INTO ai_provider_connections_v2
+          (user_id,provider,encrypted_payload,status,key_hint,verified_at,created_at,updated_at)
+        SELECT user_id,provider,encrypted_payload,status,key_hint,verified_at,created_at,updated_at
+        FROM ai_provider_connections;
+        DROP TABLE ai_provider_connections;
+        ALTER TABLE ai_provider_connections_v2 RENAME TO ai_provider_connections;
+      `);
+    })();
   }
   private migrateOwnership() {
     const columns = (
@@ -2494,11 +3442,11 @@ export class JobStore {
     try {
       this.database.transaction(() => {
         this.database.exec(
-          `CREATE TABLE jobs_owned(id TEXT PRIMARY KEY,owner_user_id TEXT NOT NULL REFERENCES users(id),source_url TEXT NOT NULL,normalized_url TEXT NOT NULL,source_hash TEXT NOT NULL,user_note TEXT,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,error TEXT,result_note_path TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,next_attempt_at TEXT NOT NULL,error_code TEXT,error_detail TEXT,display_title TEXT,ai_provider TEXT CHECK(ai_provider IN ('openai','cerebras')),UNIQUE(owner_user_id,source_hash));`,
+          `CREATE TABLE jobs_owned(id TEXT PRIMARY KEY,owner_user_id TEXT NOT NULL REFERENCES users(id),source_url TEXT NOT NULL,normalized_url TEXT NOT NULL,source_hash TEXT NOT NULL,user_note TEXT,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,error TEXT,result_note_path TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,next_attempt_at TEXT NOT NULL,error_code TEXT,error_detail TEXT,display_title TEXT,ai_provider TEXT CHECK(ai_provider IN ('openai','cerebras')),transcription_provider TEXT CHECK(transcription_provider IN ('openai','cerebras')),transcription_model TEXT,analysis_provider TEXT CHECK(analysis_provider IN ('openai','cerebras')),analysis_model TEXT,analysis_thinking_level TEXT CHECK(analysis_thinking_level IN ('minimal','low','medium','high')),UNIQUE(owner_user_id,source_hash));`,
         );
         this.database
           .prepare(
-            `INSERT INTO jobs_owned SELECT id,?,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at,error_code,error_detail,display_title,ai_provider FROM jobs`,
+            `INSERT INTO jobs_owned SELECT id,?,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at,error_code,error_detail,display_title,ai_provider,transcription_provider,transcription_model,analysis_provider,analysis_model,analysis_thinking_level FROM jobs`,
           )
           .run(owner?.id ?? "");
         this.database.exec(
@@ -2540,6 +3488,16 @@ export class JobStore {
       updatedAt: String(row.updated_at),
       nextAttemptAt: String(row.next_attempt_at),
       aiProvider: (row.ai_provider as JobRecord["aiProvider"]) ?? null,
+      transcriptionProvider:
+        (row.transcription_provider as JobRecord["transcriptionProvider"]) ??
+        null,
+      transcriptionModel: (row.transcription_model as string | null) ?? null,
+      analysisProvider:
+        (row.analysis_provider as JobRecord["analysisProvider"]) ?? null,
+      analysisModel: (row.analysis_model as string | null) ?? null,
+      analysisThinkingLevel:
+        (row.analysis_thinking_level as JobRecord["analysisThinkingLevel"]) ??
+        null,
     };
   }
   private mapAsset(row: Row): AssetRecord {
@@ -2618,4 +3576,39 @@ function normalizePlace(value: string) {
     aliases[cleaned.toLowerCase()] ??
     cleaned.replace(/\b\p{L}/gu, (letter) => letter.toUpperCase())
   );
+}
+
+function captureSortExpression(key: CaptureSortKey) {
+  switch (key) {
+    case "title":
+      return "NULLIF(lower(trim(c.title)), '')";
+    case "savedAt":
+      return "c.created_at";
+    case "source":
+      return `CASE
+        WHEN NULLIF(trim(c.platform), '') IS NULL THEN NULL
+        ELSE lower(trim(c.platform)) || CASE
+          WHEN NULLIF(trim(c.creator), '') IS NULL THEN ''
+          ELSE ' · ' || lower(trim(c.creator))
+        END
+      END`;
+    case "category":
+      return "NULLIF(lower(trim(category.label)), '')";
+    case "topic":
+      return `(
+        SELECT MIN(lower(trim(CAST(topic.value AS TEXT))))
+        FROM json_each(
+          CASE
+            WHEN json_valid(c.analysis_json) THEN
+              CASE
+                WHEN json_type(c.analysis_json, '$.topics')='array'
+                THEN json_extract(c.analysis_json, '$.topics')
+                ELSE '[]'
+              END
+            ELSE '[]'
+          END
+        ) AS topic
+        WHERE topic.type='text' AND trim(CAST(topic.value AS TEXT))<>''
+      )`;
+  }
 }

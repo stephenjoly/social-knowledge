@@ -69,7 +69,13 @@ export class JobWorker {
       const job = this.services.store.claimNext();
       if (!job) return;
       this.services.aiProviders.enterUser(
-        `${job.ownerUserId}:${job.aiProvider ?? ""}`,
+        job.ownerUserId,
+        job.analysisProvider,
+        job.analysisModel ??
+          (job.analysisProvider === "cerebras"
+            ? this.config.cerebrasAnalysisModel
+            : this.config.analysisModel),
+        job.analysisThinkingLevel,
       );
 
       const log = this.logger.child({
@@ -119,6 +125,8 @@ export class JobWorker {
         });
         const transcript = await this.services.transcriber.transcribe(
           media.audioPath,
+          job.ownerUserId,
+          job.transcriptionModel ?? this.config.transcriptionModel,
         );
 
         this.services.store.setStatus(job.id, "translating");

@@ -1,6 +1,6 @@
 # Durable thumbnail fallback and archive backfill
 
-Status: active
+Status: completed
 Owner: Codex
 Started: 2026-09-11
 
@@ -37,8 +37,8 @@ then back up SQLite and apply the production repair as the container runtime use
 - [x] Implement maintenance CLI and rollback journal.
 - [x] Add focused regression and recovery tests.
 - [x] Pass repository checks and container build.
-- [ ] Validate staging, deploy production, and apply the backfill.
-- [ ] Reconcile homelab documentation and archive this plan.
+- [x] Validate staging, deploy production, and apply the backfill.
+- [x] Reconcile homelab documentation and archive this plan.
 
 ## Decisions
 
@@ -74,9 +74,32 @@ UI spot checks.
 
 The final local production image ID is
 `sha256:0c40a2752befb6b52b2d5bb06c6c4a78c68c2f5841426758b7dab7e401f28d4f`.
-Fixes are recorded in `48a3459`, preserving the earlier reviewed commits. Source publication,
-GitHub CI, preview/staging acceptance, production deployment, and production backfill remain pending.
-The user's explicit source-push approval gate still applies.
+Fixes are recorded in `48a3459`, preserving the earlier reviewed commits.
+
+## Production result — 2026-09-11
+
+- Feature PR #9 and release PR #10 passed GitHub CI and merged through staging to main.
+- Accepted staging: `ff51e4cb2eac5c809749e63f394ee4ab0638e884`.
+- Production source: `d41d5c11b696bd7577ea51c67dae7e87151987dc`.
+- Production image: `sha256:3a86ca9e58c7a8e736a8258181dc044950e915b16050d72f0eac669af609d4cb`.
+- Online backup: `/data/backups/social-knowledge-pre-thumbnails-20260911T020349055Z.sqlite3`,
+  independently verified with integrity `ok` and zero foreign-key violations.
+- Rollback image: `social-knowledge:rollback-before-thumbnails-20260911`
+  (`sha256:97da76a34fecbdcf67b0a665dc059f09572a6f87c51603d1d285d6d4c267f24e`).
+- Manifest: `/data/backups/thumbnail-backfill-2026-09-11T021027607Z.jsonl`.
+- Pre-deploy baseline: 350 captures, 82 missing thumbnails. New imports continued during rollout;
+  dry-run found 83 valid candidates, zero topology/target conflicts, and 21 GB available space.
+- Apply as `node`: 83 committed, zero failed/adopted/skipped, 7,482,835 bytes generated.
+- Post-apply: 357 captures, zero missing thumbnails, zero duplicate thumbnails, integrity `ok`,
+  zero foreign-key violations, and no residual synthetic test accounts. Imports remained active.
+- Synthetic two-second fallback processing, archive publication, Inbox image decoding, JPEG asset
+  endpoint, detail poster, login, and reload acceptance passed in preview, staging, and production.
+  Staging/production health, search/export, Agent API, and OAuth/MCP acceptance also passed.
+- Backfilled short (5.248 s), long (179.769 s), and vertical (88.422 s) captures passed real
+  Inbox image decoding and detail-poster checks. The two-second synthetic fixture covered landscape
+  orientation. No horizontal video was found among the 83 backfilled captures.
+- Canonical homelab host and release runbook documentation updated with these artifacts and recovery
+  instructions; staging follows `staging`, and approved release merges deploy `main` automatically.
 
 ## Risks and recovery
 

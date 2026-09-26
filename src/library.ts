@@ -32,6 +32,31 @@ export interface LibraryNode {
   childCount: number;
 }
 
+/**
+ * The compact, source-attributed capture projection used to browse a library
+ * node. It intentionally omits archive paths, media, transcripts, jobs, and
+ * account identifiers.
+ */
+export interface LibraryCaptureSummary {
+  id: string;
+  title: string;
+  platform: string;
+  creator: string | null;
+  creatorUrl: string | null;
+  sourceUrl: string;
+  synopsis: string;
+  takeaways: string[];
+  createdAt: string;
+  assignedNode: { id: string; label: string };
+  breadcrumb: Array<{ id: string; label: string }>;
+}
+
+export interface LibraryContentNode extends LibraryNode {
+  breadcrumb: LibraryNode[];
+  children: LibraryNode[];
+  captures: LibraryCaptureSummary[];
+}
+
 export const unclassified: LibraryClassification = {
   primaryDomain: "Other", country: null, city: null, subcategory: "Other",
   secondaryTopics: [], confidence: 0,

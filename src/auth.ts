@@ -19,6 +19,9 @@ export class AuthService {
   async login(username: string, password: string) {
     const user = this.store.getUserByUsername(username);
     if (!user || !(await verify(user.passwordHash, password))) return null;
+    return this.issueSession(user);
+  }
+  issueSession(user: { id: string; username: string; role: string }) {
     const token = randomBytes(32).toString("base64url");
     const expiresAt = new Date(
       Date.now() + this.config.sessionDays * 86400000,

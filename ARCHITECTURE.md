@@ -27,15 +27,16 @@ Apple Shortcut / browser / MCP client
 
 | Area | Primary files | Responsibility |
 |---|---|---|
-| HTTP and sessions | `src/app.ts`, `src/auth.ts` | Input validation, authentication, ownership, response shaping |
+| HTTP and sessions | `src/app.ts`, `src/auth.ts` | Input validation, authentication, ownership, response shaping; the anonymous `/roadmap` static page is the explicit public exception |
 | Capture queue | `src/worker.ts`, `src/failures.ts`, `src/events.ts` | Job lifecycle, retry, recovery, progress events |
+| Activity read model | `src/activity.ts`, `src/app.ts`, `src/db.ts` | Owner-scoped counts and pages, safe job and event projections, five-stage timing, bulk retry |
 | Acquisition | `src/url.ts`, `src/downloader.ts`, `src/media-processor.ts` | URL allowlisting, bounded download, metadata, audio and frames |
 | AI processing | `src/transcriber.ts`, `src/translator.ts`, `src/title-generator.ts`, `src/analyzer.ts` | Typed model interactions and knowledge extraction |
 | Persistence | `src/db.ts` | SQLite schema, migrations, account-scoped records and queries |
 | Archive | `src/archive.ts`, `src/vault-writer.ts`, `src/library-publisher.ts` | Durable media, Markdown notes, library publication |
 | Knowledge access | `src/knowledge.ts`, `src/ask.ts`, `src/mcp.ts`, `src/openapi.ts` | Search, role-preserving conversational retrieval, compaction checkpoints, read-only agent access and contracts |
 | Connections | `src/oauth.ts`, `src/platform-connections.ts` | MCP authorization and encrypted platform credentials |
-| Browser UI | `web/` | Authenticated dashboard; it consumes HTTP APIs rather than storage directly |
+| Browser UI | `web/`, `docs/roadmap/2026-09-24/` | Authenticated dashboard consumes HTTP APIs rather than storage directly; the canonical roadmap dashboard and its Markdown source are copied into the UI build for the public `/roadmap` route |
 | Operations | `Dockerfile`, `compose*.yaml`, `deploy/`, `scripts/` | Reproducible build, deployment, smoke checks and rollback |
 
 ## Dependency direction
@@ -47,12 +48,17 @@ index/app/worker -> domain services -> db/config/types
 web UI          -> HTTP contracts
 ```
 
+Library browsing uses owner-scoped populated trees and a compact recursive content projection for node maps. Captures in descendant categories are included, with stored summaries and takeaways linked to their source notes. Markdown text is escaped; the browser projection omits archive paths and raw capture records.
+
 Domain services must not depend on initialized server instances or UI code. The UI must not rely on database layout or private archive paths. Cross-cutting services such as events and notifications are injected into the worker.
 
 ## Data and trust boundaries
 
 - Every account-owned job, capture, connection, export, API key, and OAuth grant is scoped to a user.
+- AI provider credentials and task assignments are separate records. Task assignments own the validated provider, model, and thinking level. Legacy per-provider preferences remain compatible but do not change saved task assignments. Capture jobs snapshot selected models and thinking level at submission or manual retry; Ask uses the current shared analysis assignment. Updating settings does not mutate already queued jobs.
+- Explicit AI connection diagnostics use the account's saved task selection with bounded sample requests. They do not create archive or conversation records. Uploaded test audio stays in memory, and responses contain controlled result codes and selection metadata rather than provider output or raw diagnostics.
 - SQLite is the catalog and queue source of truth. Media and generated notes are referenced durable filesystem artifacts.
+- Activity responses use an explicit public projection. Raw job records, diagnostic errors, cookie data, credentials, and internal note paths stay behind the persistence boundary. Failed events persist an optional, allowlisted failure code per attempt; legacy causes are inferred only from known historical message prefixes, otherwise remain unavailable. Raw diagnostic text never supplies UI copy. The failure list pages independently of the capture table; bulk retry selects all eligible account-owned failures in one transaction.
 - Social content and model inputs are untrusted. Model outputs are accepted only through explicit structured schemas.
 - Platform cookies are filtered by domain, encrypted at rest, materialized only in a mode-`0600` temporary file, and excluded from exports.
 - External programs are invoked with bounded inputs and argument arrays; the application does not assemble shell commands.

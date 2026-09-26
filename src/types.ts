@@ -30,6 +30,11 @@ export interface JobRecord {
   updatedAt: string;
   nextAttemptAt: string;
   aiProvider?: "openai" | "cerebras" | null;
+  transcriptionProvider?: "openai" | "cerebras" | null;
+  transcriptionModel?: string | null;
+  analysisProvider?: "openai" | "cerebras" | null;
+  analysisModel?: string | null;
+  analysisThinkingLevel?: "minimal" | "low" | "medium" | "high" | null;
 }
 
 export type SourceType = "video" | "image" | "carousel" | "mixed";

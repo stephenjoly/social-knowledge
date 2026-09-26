@@ -20,7 +20,7 @@ The worker retries transient failures and recovers interrupted jobs after a rest
 - Node.js 22+
 - FFmpeg
 - `yt-dlp`
-- An OpenAI API key for audio transcription; each user connects OpenAI or Cerebras for generation in Settings
+- An account-scoped OpenAI connection for audio transcription; users may independently choose OpenAI or Cerebras for analysis
 
 Docker includes all runtime dependencies.
 
@@ -29,15 +29,15 @@ Docker includes all runtime dependencies.
 The safest first run uses disposable project-local storage rather than your real Obsidian vault:
 
 1. Copy `.env.example` to `.env`.
-2. Put a long random value in `API_TOKEN` and add `OPENAI_API_KEY` locally for audio transcription. Never commit `.env`.
+2. Put a long random value in `API_TOKEN`. Never commit `.env`. `API_TOKEN` is for legacy Shortcut capture and an encryption-compatibility fallback; it is not a browser sign-up credential.
 3. Set `DATA_DIR=/data`, `VAULT_DIR=/vault`, and `MEDIA_DIR=/media` for Docker.
 4. Create the local `data`, `vault`, and `media` directories.
 5. Run `docker compose up --build -d`.
-6. Open the application and create the first administrator with a strong password. The setup form also requires the `API_TOKEN`; this prevents another network client from claiming a fresh instance.
-7. In **Settings → AI provider**, connect an OpenAI or Cerebras API key. The app tests the key before encrypting and storing it.
+6. Keep the fresh application private until this step: open it and create the first administrator with a strong password, confirmation, and acknowledgement of administrator authority. The first successful registration is signed in immediately; an unclaimed, publicly reachable deployment can be claimed by its first visitor.
+7. In the onboarding step, connect provider keys. Capture requires an OpenAI connection for transcription and either OpenAI or Cerebras for analysis; Ask requires only an analysis selection. The app tests each key before encrypting and storing it.
 8. Submit one public Reel, watch Activity, then open the completed card in Inbox.
 
-Capture and Ask requests are blocked until the signed-in account has a verified AI provider. Provider definitions and routing live in `src/ai-providers.ts`, so another OpenAI-compatible generation provider can be added without changing the capture pipeline. Cerebras generation uses `CEREBRAS_ANALYSIS_MODEL` (default `qwen-3.8-27b`). Audio transcription remains on the server-side OpenAI transcription configuration because Cerebras Inference does not expose the audio transcription endpoint used by this application.
+Transcription and analysis are separate account-scoped selections. Provider definitions and routing live in `src/ai-providers.ts`. OpenAI supplies transcription and can also supply analysis; Cerebras supplies analysis only. `OPENAI_TRANSCRIPTION_MODEL`, `OPENAI_ANALYSIS_MODEL`, and `CEREBRAS_ANALYSIS_MODEL` define the supported model catalog, while credentials remain encrypted per user. The application does not require or fall back to a deployment-wide `OPENAI_API_KEY`.
 
 Provider credentials use versioned AES-256-GCM encryption. Set `AI_CREDENTIALS_KEY` to a stable random value of at least 32 characters. To rotate it, set the new value and temporarily list old values, comma-separated, in `AI_CREDENTIALS_PREVIOUS_KEYS` until users replace their stored credentials. Existing deployments fall back to `PLATFORM_CREDENTIALS_KEY`, then `API_TOKEN`.
 
@@ -63,7 +63,15 @@ E2E_PASSWORD=your-test-password \
 npm run test:e2e
 ```
 
-Set a long random `API_TOKEN`, provide `OPENAI_API_KEY`, and use disposable local directories for `VAULT_DIR` and `MEDIA_DIR` until the configuration has been validated.
+The dashboard uses a desktop sidebar and mobile bottom navigation. Inbox has tile and table views, archive-wide sorting, and filters for search, platform, category, and topic. Capture opens a dialog on desktop or a mobile overlay; Activity separates failures, active processing, and completed jobs. Settings groups AI, connections, API keys, export/language, and account controls by topic. The app remembers the Inbox view on the current device.
+
+Set a long random `API_TOKEN` and use disposable local directories for `VAULT_DIR` and `MEDIA_DIR` until the configuration has been validated. Keep a fresh local or preview deployment off public networks until its first administrator has registered.
+
+### Non-production demo accounts
+
+Staging and pull-request previews can show one-click synthetic member and administrator accounts on the login page. Set `DEMO_ACCOUNTS_ENABLED=true` only on the non-production Dokploy Application. The default public credentials are `demo-member` / `DemoMember123!` and `demo-admin` / `DemoAdmin123!`; they can be changed with the corresponding `DEMO_MEMBER_*` and `DEMO_ADMIN_*` variables.
+
+The application creates missing demo users and reconciles their passwords and roles at every startup. Staging keeps these users in its dedicated volume. Each preview has a separate disposable database, so previews do not share users or data; they merely recreate the same credentials from inherited environment settings. Never enable demo accounts or store real information in them in production.
 
 Capture failures are stored as a stable category, friendly recovery guidance, and a separate bounded technical diagnostic. Activity keeps the diagnostic collapsed by default so normal users see what happened and what to do rather than raw downloader output.
 
@@ -89,7 +97,7 @@ Content-Type: application/json
 }
 ```
 
-The API returns `202` for a new job and `200` for an already-captured URL. The dashboard uses session-authenticated catalog, Activity, and account-wide Inbox analytics APIs; `GET /api/v1/inbox-analytics` returns total captures, captures created in the previous 24 hours, and currently failed imports without exposing job details.
+The API returns `202` for a new job and `200` for an already-captured URL. The dashboard uses session-authenticated catalog, Activity, and account-wide Inbox analytics APIs; `GET /api/v1/inbox-analytics` returns total captures, captures created in the previous 24 hours and seven days, and currently failed imports without exposing job details. `GET /api/v1/captures` remains newest-first by default and additionally accepts `sort=title|savedAt|source|category|topic` plus `direction=asc|desc`; each listed capture includes `categoryLabel`, the top-level domain of its current library assignment or `null`. Sorted cursors are opaque and must be reused with the same sort; Source uses the normalized platform-and-creator pair, Category uses the top-level domain of the current library assignment, empty category/topic values sort last, and a multi-topic capture sorts by its lexicographically first normalized topic.
 
 Agent endpoints are documented by the OpenAPI 3.1 contract at `/openapi.json`:
 
@@ -101,7 +109,13 @@ Agent endpoints are documented by the OpenAPI 3.1 contract at `/openapi.json`:
 
 Signed-in users can also create a complete portable backup under **Settings → Export library**. The resulting 24-hour `.tar.gz` contains account-owned structured metadata, transcripts, selected comments, generated Markdown notes, and every archived media asset. It excludes passwords, sessions, API keys, OAuth credentials, social-platform cookies, and server configuration. Full-library backups use session-authenticated `/api/v1/library-exports` routes and are intentionally unavailable to bearer-key clients.
 
-Search ranks the complete matching account archive before applying its stable result cursor. Agent responses contain source links and asset metadata but never archive filesystem paths or media-download URLs. The legacy deployment `API_TOKEN` remains capture-only. Interrupted exports are marked `export_interrupted` during startup so clients can retry instead of polling forever; export records are streamed into gzip rather than assembled in memory.
+Search ranks the complete matching account archive before applying its stable result cursor. Agent responses contain source links and asset metadata but never archive filesystem paths or media-download URLs. The legacy deployment `API_TOKEN` remains capture-only and is never required for browser registration or login. Interrupted exports are marked `export_interrupted` during startup so clients can retry instead of polling forever; export records are streamed into gzip rather than assembled in memory.
+
+### Accounts and invitations
+
+The first successful registration creates the archive administrator. Once claimed, new accounts are created only from an administrator-issued invitation in **Settings → User management**. Invitations are single-use bearer links that expire after 24 hours; they can grant either member access or administrator access, and an administrator can revoke or regenerate them.
+
+Treat an invitation link like a password: send it only through a trusted private channel, do not place it in tickets or chat transcripts, and revoke it if it may have been exposed. Administrators manage accounts and invitations, but every archive, provider credential, connection, export, and API key remains scoped to its owning account.
 
 ### ChatGPT and Codex via MCP
 
@@ -140,11 +154,11 @@ Prefer an internal route reachable over WireGuard. Do not expose this endpoint p
 
 Dokploy builds the root `Dockerfile` directly from the GitHub repository. GitHub Actions validates the source but does not publish deployment images. Production and staging are separate Dokploy Applications; pull-request previews are created only for collaborator-authorized PRs and use disposable container-local data plus preview-only credentials.
 
-Set a stable, randomly generated `PLATFORM_CREDENTIALS_KEY` of at least 32 characters in production. Signed-in users can upload platform-specific Netscape `cookies.txt` exports under **Settings → Facebook and Instagram**. Social Knowledge removes unrelated domains, encrypts the remaining cookies at rest, and never returns them through the API or includes them in backups. `API_TOKEN` is used as a compatibility fallback encryption key only when `PLATFORM_CREDENTIALS_KEY` is absent; set the dedicated key before storing UI-managed connections.
+Set a stable, randomly generated `PLATFORM_CREDENTIALS_KEY` of at least 32 characters in production. Signed-in users can upload platform-specific Netscape `cookies.txt` exports under **Settings → Facebook and Instagram**. Social Knowledge removes unrelated domains, encrypts the remaining cookies at rest, and never returns them through the API or includes them in backups. `API_TOKEN` is used as a compatibility fallback encryption key only when `PLATFORM_CREDENTIALS_KEY` is absent; set the dedicated key before storing UI-managed connections. It does not protect first-run browser registration.
 
 For a remote deployment, set `BIND_ADDRESS`, `APP_URL`, and `TRUSTED_PROXIES` explicitly. Keep the application bound to loopback or a private interface, terminate TLS at a trusted reverse proxy, and list only that proxy's address or CIDR in `TRUSTED_PROXIES`. Public static documentation does not require exposing the application itself.
 
-`compose.dokploy-managed.yaml` is the dashboard-managed deployment definition. It uses the already-built local image and declares the original sandbox volumes as external, allowing Dokploy to control service lifecycle without replacing or deleting existing data. Runtime variables, including `OPENAI_API_KEY` and optional `NTFY_*` values, are editable in the Dokploy service UI.
+`compose.dokploy-managed.yaml` is the dashboard-managed deployment definition. It uses the already-built local image and declares the original sandbox volumes as external, allowing Dokploy to control service lifecycle without replacing or deleting existing data. Optional runtime variables such as `NTFY_*` are editable in the Dokploy service UI; AI credentials belong to users and are managed in the application.
 
 Set `NTFY_URL`, `NTFY_TOPIC`, and, when required by the ntfy server, `NTFY_TOKEN` to receive completion and final-failure pushes. Notifications contain only the platform, a bounded safe title, and a link to the authenticated Activity page.
 

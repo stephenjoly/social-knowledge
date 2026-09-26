@@ -1,19 +1,20 @@
 import { createReadStream } from "node:fs";
 import OpenAI from "openai";
-import type { AppConfig } from "./config.js";
 
 export class Transcriber {
-  constructor(
-    private readonly client: OpenAI,
-    private readonly config: AppConfig,
-  ) {}
+  constructor(private readonly userClient: (userId: string) => OpenAI) {}
 
-  async transcribe(audioPath: string): Promise<string> {
-    const result = await this.client.audio.transcriptions.create({
+  async transcribe(
+    audioPath: string,
+    userId: string,
+    model: string,
+  ): Promise<string> {
+    const client = this.userClient(userId);
+    const result = await client.audio.transcriptions.create({
       file: createReadStream(audioPath),
-      model: this.config.transcriptionModel,
-      response_format: "text",
+      model,
+      response_format: "json",
     });
-    return result.trim();
+    return result.text.trim();
   }
 }

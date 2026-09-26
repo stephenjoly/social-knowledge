@@ -1,0 +1,143 @@
+.auth {
+  min-height: 100vh;
+  padding: 40px 20px;
+  background: #fafafa;
+  color: #18181b;
+}
+
+.auth-card {
+  width: min(100%, 440px);
+  padding: 32px;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 40px rgb(24 24 27 / 4%);
+}
+
+.auth-wordmark {
+  margin-bottom: 38px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.auth-card h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.2;
+}
+
+.auth-card > p {
+  margin: 10px 0 0;
+  color: #71717a;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.auth form {
+  gap: 19px;
+  margin-top: 28px;
+}
+
+.auth form label {
+  display: grid;
+  gap: 8px;
+  color: #27272a;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.auth form input,
+.auth form select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #d4d4d8;
+  border-radius: 6px;
+  background: #fff;
+  color: #18181b;
+  font: inherit;
+}
+
+.auth form input:focus-visible,
+.auth form select:focus-visible {
+  outline: 2px solid #71717a;
+  outline-offset: 2px;
+}
+
+.auth form > button:not(.secondary-button) {
+  min-height: 42px;
+  border: 0;
+  border-radius: 6px;
+  background: #18181b;
+  color: #fff;
+  cursor: pointer;
+}
+
+.auth form > button:not(.secondary-button):disabled {
+  opacity: .5;
+  cursor: wait;
+}
+
+.auth .secondary-button {
+  border: 1px solid #d4d4d8;
+  border-radius: 6px;
+  background: #fff;
+  color: #18181b;
+}
+
+.auth-acknowledgement {
+  display: flex;
+  gap: 10px;
+  color: #52525b;
+  font-weight: 400;
+}
+
+.auth-acknowledgement input {
+  width: 16px !important;
+  min-height: 16px !important;
+  height: 16px;
+}
+
+.auth .error {
+  margin: 0;
+  color: #b42318;
+  font-size: 13px;
+}
+
+.demo-accounts {
+  margin-top: 28px;
+  border-color: #e4e4e7;
+  background: #fafafa;
+}
+
+.demo-accounts article {
+  border-color: #e4e4e7;
+  background: #fff;
+}
+
+.onboarding-card .step-label {
+  margin: 0 0 10px;
+  color: #71717a;
+  font-size: 12px;
+}
+
+.onboarding-card .model-choice,
+.onboarding-card .connected-choice {
+  padding: 12px;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+@media (max-width: 520px) {
+  .auth {
+    padding: 24px 16px;
+    align-items: start;
+  }
+
+  .auth-card {
+    padding: 26px 20px;
+  }
+}

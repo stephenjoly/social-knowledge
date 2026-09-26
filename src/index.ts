@@ -1,5 +1,4 @@
 import { mkdir } from "node:fs/promises";
-import OpenAI from "openai";
 import { Analyzer } from "./analyzer.js";
 import { buildApp } from "./app.js";
 import { MediaArchive } from "./archive.js";
@@ -18,6 +17,7 @@ import { TitleGenerator } from "./title-generator.js";
 import { LibraryPublisher } from "./library-publisher.js";
 import { PlatformConnectionService } from "./platform-connections.js";
 import { AiProviderService } from "./ai-providers.js";
+import { ensureDemoAccounts } from "./demo-accounts.js";
 
 const config = loadConfig();
 await Promise.all([
@@ -35,11 +35,11 @@ if (store.userCount() === 0 && config.bootstrapAdminPasswordHash)
     config.bootstrapAdminUsername,
     config.bootstrapAdminPasswordHash,
   );
+await ensureDemoAccounts(store, config);
 const events = new EventHub();
 const platformConnections = new PlatformConnectionService(store, config);
 const aiProviders = new AiProviderService(store, config);
 const app = buildApp(config, store, events, platformConnections, aiProviders);
-const openai = new OpenAI({ apiKey: config.openAiApiKey });
 const generationClient = aiProviders.routedClient();
 const worker = new JobWorker(
   config,
@@ -47,7 +47,9 @@ const worker = new JobWorker(
     store,
     downloader: new MediaDownloader(config, platformConnections),
     processor: new MediaProcessor(),
-    transcriber: new Transcriber(openai, config),
+    transcriber: new Transcriber(
+      (userId) => aiProviders.client(userId, "openai").client,
+    ),
     translator: new Translator(generationClient, config),
     titleGenerator: new TitleGenerator(generationClient, config),
     analyzer: new Analyzer(generationClient, config),

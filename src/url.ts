@@ -29,6 +29,9 @@ export function normalizeSocialUrl(input: string): NormalizedSocialUrl {
   if (url.protocol !== "https:") {
     throw new Error("Only HTTPS URLs are accepted");
   }
+  if (url.username || url.password) {
+    throw new Error("URLs with embedded credentials are not accepted");
+  }
 
   const hostname = url.hostname.toLowerCase();
   if (!allowedHosts.has(hostname)) {

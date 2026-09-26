@@ -7,6 +7,10 @@ export const failureCodes = [
   "platform_temporary",
   "processing_failed",
   "ai_failed",
+  "ai_credentials_rejected",
+  "ai_quota_exceeded",
+  "ai_rate_limited",
+  "ai_model_unavailable",
   "unknown",
 ] as const;
 
@@ -49,6 +53,22 @@ const copy: Record<FailureCode, { title: string; message: string }> = {
     message:
       "The media was downloaded, but transcription or analysis did not finish.",
   },
+  ai_credentials_rejected: {
+    title: "AI credentials rejected",
+    message: "Reconnect the AI provider, then retry this capture.",
+  },
+  ai_quota_exceeded: {
+    title: "AI provider quota exceeded",
+    message: "Add provider credits or increase the quota, then retry.",
+  },
+  ai_rate_limited: {
+    title: "AI provider rate limit reached",
+    message: "Wait a little, then retry this capture.",
+  },
+  ai_model_unavailable: {
+    title: "AI model unavailable",
+    message: "Choose or configure an available AI model, then retry.",
+  },
   unknown: {
     title: "Capture failed",
     message:
@@ -79,6 +99,11 @@ export function normalizeFailure(error: unknown, stage?: string) {
     };
   }
   const diagnostic = error instanceof Error ? error.message : String(error);
+  const providerCode = ["transcribing", "translating", "analyzing"].includes(stage ?? "")
+    ? providerFailureCode(error, diagnostic)
+    : null;
+  if (providerCode)
+    return { code: providerCode, ...copy[providerCode], diagnostic };
   const code: FailureCode =
     stage === "transcribing" || stage === "translating" || stage === "analyzing"
       ? "ai_failed"
@@ -86,6 +111,24 @@ export function normalizeFailure(error: unknown, stage?: string) {
         ? "processing_failed"
         : "unknown";
   return { code, ...copy[code], diagnostic };
+}
+
+function providerFailureCode(
+  error: unknown,
+  diagnostic: string,
+): FailureCode | null {
+  if (diagnostic === "model_unavailable") return "ai_model_unavailable";
+  if (!error || typeof error !== "object") return null;
+  const status = "status" in error ? error.status : undefined;
+  const code = "code" in error ? error.code : undefined;
+  if (status === 401 || status === 403) return "ai_credentials_rejected";
+  if (status === 429)
+    return code === "insufficient_quota"
+      ? "ai_quota_exceeded"
+      : "ai_rate_limited";
+  if (status === 404 && code === "model_not_found")
+    return "ai_model_unavailable";
+  return null;
 }
 
 export function classifyPlatformFailure(detailInput: string) {
