@@ -7,6 +7,15 @@
 * {
   box-sizing: border-box;
 }
+html {
+  /* Keep centered content still when navigation adds a vertical scrollbar. */
+  scrollbar-gutter: stable;
+}
+@supports not (scrollbar-gutter: stable) {
+  html {
+    overflow-y: scroll;
+  }
+}
 body {
   margin: 0;
   background:
