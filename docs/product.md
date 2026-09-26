@@ -24,7 +24,7 @@ Social Knowledge turns Facebook and Instagram media a person deliberately submit
 
 ## Activity behavior
 
-Activity opens on active captures and expands the newest one. Each capture has an inline processing log; expanding another closes the previous log. All shows active, failed, and completed captures. Stage circles convey queued, active, completed, and failed states, with duration on hover and in the expanded log for touch devices. Needs attention keeps a fixed-height, scrollable list ordered by failure priority. Retry all re-queues every account-owned failed capture, including failures outside the currently loaded activity page. Processing logs expose only known-safe event copy and timestamps, never raw diagnostics or internal paths.
+Activity opens on active captures and expands the newest one. A compact table shows each capture's source, status, updated time, and five stages: Added, Found, Media, Text, and Saved. Expanding another row closes the previous log. All includes active, failed, and completed captures, with more history available through pagination. Stage circles convey queued, active, completed, and failed states; durations appear on hover and inside expanded logs on touch devices. The summary counts active and queued jobs, failures, captures saved in the viewer's local day, and recent events. Needs attention keeps a fixed-height, scrollable list ordered by failure priority. Retry all re-queues every account-owned failed capture, including failures outside the currently loaded page, and shows pending feedback. Processing logs expose only known-safe event copy and timestamps, never raw diagnostics or internal paths. The account trigger opens a compact menu; its adjacent gear opens Settings directly on desktop.
 
 ## Current scope
 

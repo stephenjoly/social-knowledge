@@ -4026,6 +4026,7 @@ function App() {
   const [failedJobs, setFailedJobs] = useState<ActivityJob[]>([]);
   const [failedNextCursor, setFailedNextCursor] = useState<string | null>(null);
   const [failedTotal, setFailedTotal] = useState(0);
+  const [failedError, setFailedError] = useState(false);
   const [failedLoadingMore, setFailedLoadingMore] = useState(false);
   const failedRequest = useRef(0);
   const [search, setSearch] = useState("");
@@ -4248,10 +4249,11 @@ function App() {
       });
       setFailedNextCursor(page.nextCursor);
       setFailedTotal(page.total);
+      setFailedError(false);
     } catch {
       if (requestId === failedRequest.current && !append) {
         setFailedJobs([]);
-        setFailedTotal(0);
+        setFailedError(true);
       }
     } finally {
       if (requestId === failedRequest.current && append)
@@ -4384,6 +4386,7 @@ function App() {
     (job) => job.status === "queued",
   );
   const newestActiveId = inProgressJobs[0]?.id ?? queuedJobs[0]?.id ?? null;
+  const attentionTotal = Math.max(activityCounts.failed, failedTotal);
   useEffect(() => {
     if (activityFilter !== "active") return;
     if (newestActiveId && newestActiveId !== lastNewestActive.current) {
@@ -4425,7 +4428,7 @@ function App() {
     }
   }
   async function retryAll() {
-    if (retryPending || failedTotal === 0) return;
+    if (retryPending || attentionTotal === 0) return;
     setRetryPending(true);
     setMessage("Retrying failed captures…");
     try {
@@ -5198,7 +5201,7 @@ function App() {
                           </button>
                           {expanded && (
                             <div className="activity-inline-log" id={`activity-log-${job.id}`}>
-                              <div className="activity-inline-log-heading"><div><strong>Processing logs</strong><span>Attempt {job.attempts}</span></div><button type="button" onClick={() => void copyActivityLogs(events)}><Copy aria-hidden="true" /> Copy logs</button></div>
+                              <div className="activity-inline-log-heading"><div><strong>Processing logs</strong><span>Attempt {job.attempts + 1}</span></div><button type="button" onClick={() => void copyActivityLogs(events)}><Copy aria-hidden="true" /> Copy logs</button></div>
                               {copyFeedback && <p className="activity-copy-feedback" role="status">{copyFeedback}</p>}
                               {detailsLoading && events.length === 0 ? <p>Loading logs…</p> : detailsError ? <p role="alert">Logs are unavailable. Close and reopen this capture to retry.</p> : safeEvents.length > 0 ? (
                                 <ol>
@@ -5224,15 +5227,15 @@ function App() {
               </section>
               <section className="activity-attention" aria-labelledby="attention-title">
                 <div className="activity-attention-heading">
-                  <div><h2 id="attention-title">Needs attention</h2><span>{failedTotal} {failedTotal === 1 ? "item" : "items"}</span><small>Highest priority first</small></div>
-                  <button type="button" onClick={() => void retryAll()} disabled={retryPending || failedTotal === 0}><RotateCw aria-hidden="true" />{retryPending ? "Retrying…" : "Retry all"}</button>
+                  <div><h2 id="attention-title">Needs attention</h2><span>{attentionTotal} {attentionTotal === 1 ? "item" : "items"}</span><small>Highest priority first</small></div>
+                  <button type="button" onClick={() => void retryAll()} disabled={retryPending || attentionTotal === 0}><RotateCw aria-hidden="true" />{retryPending ? "Retrying…" : "Retry all"}</button>
                 </div>
                 <div className="activity-attention-list" role="list">
-                  {failedJobs.length === 0 ? <p>Nothing needs attention.</p> : failedJobs.map((job) => (
+                  {failedError ? <p role="alert">Unable to load failures. <button type="button" onClick={() => void loadFailedJobs()}>Retry list</button></p> : failedJobs.length === 0 ? <p>Nothing needs attention.</p> : failedJobs.map((job) => (
                     <div className="activity-attention-item" role="listitem" key={job.id}>
                       <span className="activity-attention-dot" aria-hidden="true" />
                       <div><strong>{job.displayTitle || sourceReference(job.normalizedUrl)}</strong><small>{sourceLabel(job.normalizedUrl)} · {failureFor(job).message}</small></div>
-                      <span className="activity-retry-count">{job.attempts} {job.attempts === 1 ? "try" : "tries"}</span>
+                      <span className="activity-retry-count">{job.attempts} {job.attempts === 1 ? "retry" : "retries"}</span>
                       <button type="button" disabled={retryPending || retryingIds.includes(job.id)} onClick={() => void retryJob(job)}>{retryingIds.includes(job.id) ? "Retrying…" : "Retry"}</button>
                     </div>
                   ))}

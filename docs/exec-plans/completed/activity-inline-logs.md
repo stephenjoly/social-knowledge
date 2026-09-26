@@ -1,14 +1,14 @@
 # 04D Activity and inline logs
 
-Status: active; owner approved implementation
+Status: complete; implementation ready for draft PR review
 Owner: Codex foreman
 Started: 2026-09-25
 
 ## Reference and current state
 
-The design source is frame 04D · Activity / inline logs (A5sRX) in /Users/stephenjoly/Documents/Coding/social-knowledge/ui.pen. The ui.pen in this Paseo worktree is an older, different copy. Read the main checkout file through Pencil MCP for comparison; do not edit either design file.
+The design source is frame 04D · Activity / inline logs (A5sRX) in /Users/stephenjoly/Documents/Coding/social-knowledge/ui.pen. The ui.pen in this Paseo worktree is an older, different copy. A reviewable export of the approved frame is in [the 04D reference image](../../design/activity-04d-reference.png). Read the canonical file through Pencil MCP for its editable structure; do not edit either design file.
 
-The worktree has an uncommitted Activity prototype (about 480 added and 507 deleted lines across eight tracked files, plus this plan). It contains useful state and retry logic, but its card layout does not match 04D. Its API still sends an internal note path in job responses, and its Retry all button can be disabled when failures fall outside the first 100 jobs. Treat the prototype as source material, not accepted implementation. Preserve it before reworking; do not discard unrelated changes.
+At the start of this work, the worktree had an uncommitted Activity prototype. Its card layout did not match 04D; its API sent an internal note path in job responses, and its Retry all button could be disabled when failures fell outside the first 100 jobs. The prototype was preserved in checkpoint `b35e3dc` before the 04D rebuild.
 
 ## Scope and decisions
 
@@ -63,5 +63,8 @@ The worktree has an uncommitted Activity prototype (about 480 added and 507 dele
 - [x] Reviewed the uncommitted prototype and identified reusable logic and defects.
 - [x] Confirmed scope, supported platforms, and desktop Settings navigation with the owner.
 - [x] Owner approves this plan.
-- [ ] API and UI workers implement in isolated worktrees.
-- [ ] Foreman integrates, verifies, documents, and opens the review checkpoint.
+- [x] API and UI workers implemented in isolated worktrees (`01361e0`, `3a0a1ca`).
+- [x] Foreman integrated both commits, corrected running durations and displayed source links, and passed `npm run check` (108 tests) plus the focused authenticated Activity browser test.
+- [x] Independent read-only review found malformed-ID responses and a stale branch-local design file. Malformed IDs now return fixed 400 responses; the canonical 04D frame is exported into `docs/design/` for PR review without altering either `.pen` file.
+- [x] Final `npm run check`: 23 files, 108 tests passed. Focused Activity Playwright passed at desktop, tablet, and mobile widths on a disposable local app. The full local browser run passed nine cases; its seeded Lisbon archive case cannot run against this empty disposable account.
+- [x] Documentation and draft PR checkpoint prepared. Broader redesign preview acceptance remains tracked in `pen-dev-ui-refresh.md`.

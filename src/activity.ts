@@ -68,7 +68,7 @@ const activeStatuses = new Set<JobStatus>([
 
 const statusStages: Record<JobStatus, ActivityStageName | null> = {
   queued: "added",
-  downloading: "found",
+  downloading: "media",
   processing: "media",
   transcribing: "text",
   translating: "text",
@@ -223,6 +223,10 @@ function projectStages(
     const eventStatus = event.status as JobStatus;
     const stage = statusStages[eventStatus];
     if (!stage) return;
+    if (stage === "media" && !reached.includes("found")) {
+      reached.push("found");
+      durations.set("found", 0);
+    }
     if (!reached.includes(stage)) reached.push(stage);
     lastStage = stage;
     const nextAt = currentEvents[index + 1]

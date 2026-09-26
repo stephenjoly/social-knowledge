@@ -182,8 +182,8 @@ describe("Activity API", () => {
       reachedStages: ["added", "found", "media", "text"],
       stages: [
         { name: "added", state: "completed", durationMs: 125 },
-        { name: "found", state: "completed", durationMs: 1000 },
-        { name: "media", state: "completed", durationMs: 0 },
+        { name: "found", state: "completed", durationMs: 0 },
+        { name: "media", state: "completed", durationMs: 1000 },
         { name: "text", state: "failed", durationMs: 1500 },
         { name: "saved", state: "queued", durationMs: null },
       ],
@@ -213,6 +213,15 @@ describe("Activity API", () => {
         })
       ).statusCode,
     ).toBe(404);
+    for (const method of ["GET", "POST"] as const) {
+      const invalid = await app.inject({
+        method,
+        url: `/api/v1/jobs/not-a-uuid${method === "POST" ? "/retry" : ""}`,
+        headers: { cookie },
+      });
+      expect(invalid.statusCode).toBe(400);
+      expect(invalid.json()).toEqual({ error: "invalid_request" });
+    }
 
     const retry = await app.inject({
       method: "POST",
@@ -222,10 +231,11 @@ describe("Activity API", () => {
     expect(retry.statusCode).toBe(200);
     expect(retry.body).not.toContain(secret);
     expect(retry.json().job.attempts).toBe(1);
-    expect(retry.json().job.stages.slice(0, 2)).toEqual([
-      { name: "added", state: "active", durationMs: 0 },
+    expect(retry.json().job.stages.slice(0, 2)).toMatchObject([
+      { name: "added", state: "active" },
       { name: "found", state: "queued", durationMs: null },
     ]);
+    expect(retry.json().job.stages[0].durationMs).toBeGreaterThanOrEqual(0);
     const afterRetry = await app.inject({
       method: "GET",
       url: `/api/v1/jobs/${job.id}`,
@@ -262,6 +272,11 @@ describe("Activity API", () => {
     });
     expect(detail.json().job.stages[1]).toMatchObject({
       name: "found",
+      state: "completed",
+      durationMs: 0,
+    });
+    expect(detail.json().job.stages[2]).toMatchObject({
+      name: "media",
       state: "active",
       durationMs: 2000,
     });
@@ -303,6 +318,18 @@ describe("Activity API", () => {
         recentEvents: 0,
       },
     });
+    const nextAll = await app.inject({
+      method: "GET",
+      url: `/api/v1/jobs?filter=all&limit=100&cursor=${encodeURIComponent(list.json().nextCursor)}`,
+      headers: { cookie },
+    });
+    expect(nextAll.statusCode).toBe(200);
+    expect(nextAll.json().jobs).toHaveLength(2);
+    expect(nextAll.json().nextCursor).toBeNull();
+    const allJobs = [...list.json().jobs, ...nextAll.json().jobs];
+    expect(new Set(allJobs.map((job: { id: string }) => job.id)).size).toBe(102);
+    expect(allJobs.some((job: { status: string }) => job.status === "queued")).toBe(true);
+    expect(allJobs.some((job: { id: string }) => job.id === otherFailure.id)).toBe(false);
     const utcList = await app.inject({
       method: "GET",
       url: "/api/v1/jobs?filter=all&timeZone=UTC",

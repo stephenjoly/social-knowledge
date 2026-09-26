@@ -29,6 +29,7 @@ Apple Shortcut / browser / MCP client
 |---|---|---|
 | HTTP and sessions | `src/app.ts`, `src/auth.ts` | Input validation, authentication, ownership, response shaping |
 | Capture queue | `src/worker.ts`, `src/failures.ts`, `src/events.ts` | Job lifecycle, retry, recovery, progress events |
+| Activity read model | `src/activity.ts`, `src/app.ts`, `src/db.ts` | Owner-scoped counts and pages, safe job and event projections, five-stage timing, bulk retry |
 | Acquisition | `src/url.ts`, `src/downloader.ts`, `src/media-processor.ts` | URL allowlisting, bounded download, metadata, audio and frames |
 | AI processing | `src/transcriber.ts`, `src/translator.ts`, `src/title-generator.ts`, `src/analyzer.ts` | Typed model interactions and knowledge extraction |
 | Persistence | `src/db.ts` | SQLite schema, migrations, account-scoped records and queries |
@@ -53,6 +54,7 @@ Domain services must not depend on initialized server instances or UI code. The 
 
 - Every account-owned job, capture, connection, export, API key, and OAuth grant is scoped to a user.
 - SQLite is the catalog and queue source of truth. Media and generated notes are referenced durable filesystem artifacts.
+- Activity responses use an explicit public projection. Raw job records, diagnostic errors, cookie data, credentials, and internal note paths stay behind the persistence boundary. The failure list pages independently of the capture table; bulk retry selects all eligible account-owned failures in one transaction.
 - Social content and model inputs are untrusted. Model outputs are accepted only through explicit structured schemas.
 - Platform cookies are filtered by domain, encrypted at rest, materialized only in a mode-`0600` temporary file, and excluded from exports.
 - External programs are invoked with bounded inputs and argument arrays; the application does not assemble shell commands.

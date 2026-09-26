@@ -12,10 +12,19 @@
 .app-account-menu { position: fixed; bottom: 63px; left: 12px; width: 202px; padding: 12px; border: 0; border-radius: 8px; background: #fff; box-shadow: 0 7px 18px #1d201e18; }
 .app-account-menu-heading, .app-account-menu-heading > div { display: flex; align-items: center; }.app-account-menu-heading > div { gap: 9px; }.app-account-menu-heading > div > span:last-child { display: grid; gap: 2px; }.app-account-menu-heading strong { color: #1d201e; font-size: 12px; font-weight: 650; }.app-account-menu-heading small { color: #68716b; font-size: 9px; }
 .app-account-menu-item { display: flex; align-items: center; gap: 11px; width: 100%; height: 31px; padding: 0 1px; border: 0; background: transparent; color: #1d201e; font: inherit; font-size: 11px; font-weight: 550; text-align: left; }.app-account-menu-item:first-of-type { margin-top: 11px; padding-top: 11px; border-top: 1px solid #dde1dc; height: 42px; }.app-account-menu-item svg { width: 15px; height: 15px; color: #68716b; }.app-account-menu-item:hover { color: #42664e; }.account-menu-signout { color: #68716b; }
+@media (min-width: 781px) {
+  .app-frame:has(.activity-view) .app-sidebar { background: #fff; }
+  .app-frame:has(.activity-view) .app-wordmark { font-weight: 400; }
+  .app-frame:has(.activity-view) .app-workspace-label { font-size: 9px; font-weight: 500; }
+  .app-frame:has(.activity-view) .app-nav button { min-height: 32px; padding: 6px 12px; font-size: 12px; font-weight: 400; }
+  .app-frame:has(.activity-view) .app-nav button.active { background: #e9f0e8; font-weight: 500; }
+  .app-frame:has(.activity-view) .app-nav-icon { width: 16px; height: 16px; }
+  .app-frame:has(.activity-view) .app-sidebar .app-nav-badge { display: none; }
+}
 .activity-view { padding: 0 0 43px; color: #1d201e; }
 .activity-heading { position: static; display: block; height: 91px; padding: 0; border: 0; border-bottom: 1px solid #dde1dc; background: transparent; backdrop-filter: none; }
 .activity-eyebrow { display: block; margin: 0; color: #68716b; font-size: 10px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
-.activity-heading h1 { margin: 5px 0 0; color: #1d201e; font-size: 27px; font-weight: 650; letter-spacing: -.045em; line-height: 1.16; }
+.activity-heading h1 { margin: 5px 0 0; color: #1d201e; font-size: 27px; font-weight: 400; letter-spacing: -.035em; line-height: 1.16; }
 .activity-heading p { margin: 8px 0 0; color: #68716b; font-size: 12px; }
 .activity-summary { display: flex; align-items: center; height: 47px; gap: 42px; }
 .activity-kpi { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
@@ -93,6 +102,7 @@
 .activity-attention-heading button:disabled, .activity-attention-item button:disabled { cursor: default; opacity: .48; }
 .activity-attention-list { height: 127px; overflow-y: auto; overscroll-behavior: contain; }
 .activity-attention-list > p { margin: 0; padding: 24px 16px; color: #68716b; font-size: 12px; }
+.activity-attention-list > p button { border: 0; background: transparent; color: #42664e; font: inherit; font-weight: 650; cursor: pointer; }
 .activity-attention-item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto auto; align-items: center; min-height: 36px; gap: 9px; padding: 4px 14px; border-bottom: 1px solid #edf0ec; }
 .activity-attention-dot { width: 7px; height: 7px; border-radius: 50%; background: #b66a45; }
 .activity-attention-item > div { display: grid; min-width: 0; gap: 2px; }

@@ -27,7 +27,7 @@ const job = (
   status,
   normalizedUrl: `https://www.instagram.com/reel/${id}/`,
   displayTitle: options.title ?? id,
-  attempts: options.attempts ?? 1,
+  attempts: options.attempts ?? 0,
   errorCode: options.errorCode ?? null,
   createdAt,
   updatedAt: createdAt,
@@ -111,6 +111,10 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await expect(page.locator(".activity-inline-log")).not.toContainText("/private/internal");
   await expect(page.locator(".activity-card.expanded .activity-stage").filter({ hasText: "Text" })).toHaveAttribute("title", /running/);
   await page.screenshot({ path: "test-results/activity-04d-desktop.png", fullPage: true });
+  await page.locator(".activity-card").filter({ hasText: "Earlier capture" }).locator(".activity-row-trigger").click();
+  await expect(page.locator(".activity-card.expanded")).toHaveCount(1);
+  await expect(page.locator(".activity-card.expanded")).toContainText("Earlier capture");
+  await page.locator(".activity-card").filter({ hasText: "Newest capture" }).locator(".activity-row-trigger").click();
   await page.getByRole("button", { name: "Copy logs" }).click();
   await expect(page.getByRole("status")).toContainText("Safe logs copied.");
   await expect(page.locator(".activity-attention-item")).toHaveCount(2);
@@ -136,6 +140,8 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await page.locator(".app-profile-settings").click();
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await page.setViewportSize({ width: 900, height: 900 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator(".activity-card.expanded .activity-row-copy strong")).toHaveText("Newest capture");
   await expect(page.locator(".activity-card.expanded .activity-row-copy strong")).toBeVisible();
@@ -145,4 +151,11 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await expect(page.getByRole("dialog").getByRole("button", { name: "Settings", exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({ path: "test-results/activity-04d-mobile.png", fullPage: true });
+
+  await page.route(/\/api\/v1\/jobs\/failed\?/, (route) => route.fulfill({ status: 503, body: "{}" }));
+  await page.reload();
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await expect(page.locator(".activity-attention")).toContainText("2 items");
+  await expect(page.getByRole("button", { name: "Retry all" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Retry list" })).toBeVisible();
 });

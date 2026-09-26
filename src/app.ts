@@ -1089,7 +1089,9 @@ export function buildApp(
     });
     protectedApi.get("/api/v1/jobs/:id", async (request, reply) => {
       reply.header("Cache-Control", "no-store");
-      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_request" });
+      const { id } = params.data;
       const user = auth.user(request)!;
       const job = store.getOwned(user.id, id);
       const now = Date.now();
@@ -1117,7 +1119,9 @@ export function buildApp(
       return { requested: result.requested, retried: result.retriedIds.length };
     });
     protectedApi.post("/api/v1/jobs/:id/retry", async (request, reply) => {
-      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_request" });
+      const { id } = params.data;
       const user = auth.user(request)!;
       if (!store.getOwned(user.id, id))
         return reply.code(404).send({ error: "not_found" });

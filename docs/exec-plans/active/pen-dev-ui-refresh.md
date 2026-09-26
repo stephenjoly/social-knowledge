@@ -54,7 +54,7 @@ Implement frames 01–03, 09–11, 14–15, and 31–32. Build tile and semantic
 
 ### 3. Capture and Activity
 
-Implement frames 04–08 and 12–13. Redesign Capture as desktop dialog/mobile sheet wired to the existing submission flow. Redesign Activity into needs attention, processing, and completed sections over the current jobs endpoint. Preserve retry, job details, diagnostics, live updates, and error guidance.
+Implement frames 04–08 and 12–13. Redesign Capture as desktop dialog/mobile sheet wired to the existing submission flow. Activity was subsequently revised to the owner-approved `04D · Activity / inline logs` frame; its focused design, [reference export](../../design/activity-04d-reference.png), safe API, behavior, and verification are tracked in [the completed Activity plan](../completed/activity-inline-logs.md). Preserve retry, live updates, and safe error guidance while keeping raw diagnostics behind the server boundary.
 
 ### 4. Knowledge Base and Ask
 
@@ -90,7 +90,7 @@ Create a separate `codex/` branch and worktree from fresh `origin/staging`, sepa
 - [ ] Complete integrated checks and preview acceptance.
 - [ ] Move this plan to `completed/` after UI acceptance.
 
-The integration branch now contains the full light UI, owner-scoped Inbox sorting and category labels, seven-day analytics, Activity, the responsive Capture dialog, Knowledge Base, Ask, Settings, and matching auth/onboarding styling. All three Terra xhigh UI workers have finished. The provider-selection race found during Settings work is fixed. The latest integrated `npm run check` passes 105 tests; seven focused synthetic-data browser cases plus onboarding and provider-settings cases pass. Local desktop/mobile screenshots were compared with the pen.dev references. A disposable Dokploy preview and owner visual acceptance remain.
+The integration branch now contains the full light UI, owner-scoped Inbox sorting and category labels, seven-day analytics, the revised 04D Activity, the responsive Capture dialog, Knowledge Base, Ask, Settings, and matching auth/onboarding styling. The provider-selection race found during Settings work is fixed. The latest integrated `npm run check` passes 108 tests. The focused Activity browser case passes on a disposable local instance; the full local browser run passed nine cases and could not exercise the archive fixture case because that account lacks its seeded Lisbon archive. Local desktop/mobile Activity screenshots were compared with the 04D reference. A disposable Dokploy preview and owner visual acceptance of the wider redesign remain.
 
 ## Decisions
 
