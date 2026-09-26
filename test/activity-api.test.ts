@@ -352,6 +352,63 @@ describe("Activity API", () => {
     ]);
   });
 
+  it("maps terminal legacy failure prefixes without assigning the current code to earlier failures", async () => {
+    const { app, store, owner, cookie } = await signedInApp();
+    const job = createJob(store, owner.id, "terminal-legacy-failure");
+    const secret = "legacy diagnostic /private/runtime/cookies.txt";
+    store.database
+      .prepare(
+        "UPDATE jobs SET status='failed',error_code='ai_failed',error=?,error_detail=?,updated_at=? WHERE id=?",
+      )
+      .run(
+        secret,
+        secret,
+        "2026-01-02T12:00:08.000Z",
+        job.id,
+      );
+    store.database.prepare("DELETE FROM job_events WHERE job_id=?").run(job.id);
+    for (const [status, message, createdAt] of [
+      ["queued", "Capture accepted", "2026-01-02T12:00:00.000Z"],
+      ["downloading", "Download started", "2026-01-02T12:00:01.000Z"],
+      ["failed", secret, "2026-01-02T12:00:02.000Z"],
+      ["queued", "Manual retry requested", "2026-01-02T12:00:03.000Z"],
+      ["downloading", "Download started", "2026-01-02T12:00:04.000Z"],
+      [
+        "failed",
+        `Media processing failed: ${secret}`,
+        "2026-01-02T12:00:05.000Z",
+      ],
+      ["queued", "Manual retry requested", "2026-01-02T12:00:06.000Z"],
+      ["downloading", "Download started", "2026-01-02T12:00:07.000Z"],
+      ["failed", null, "2026-01-02T12:00:08.000Z"],
+    ] as const)
+      store.database
+        .prepare(
+          "INSERT INTO job_events(id,job_id,status,message,created_at) VALUES(?,?,?,?,?)",
+        )
+        .run(randomUUID(), job.id, status, message, createdAt);
+
+    const detail = await app.inject({
+      method: "GET",
+      url: `/api/v1/jobs/${job.id}`,
+      headers: { cookie },
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.body).not.toContain(secret);
+    expect(
+      detail.json().events
+        .filter((event: { status: string }) => event.status === "failed")
+        .map((event: { attempt: number | null; failureCode: string | null }) => ({
+          attempt: event.attempt,
+          failureCode: event.failureCode,
+        })),
+    ).toEqual([
+      { attempt: 1, failureCode: null },
+      { attempt: 2, failureCode: "processing_failed" },
+      { attempt: 3, failureCode: "ai_failed" },
+    ]);
+  });
+
   it("does not invent an attempt or duration from an unknown legacy diagnostic", async () => {
     const { app, store, owner, cookie } = await signedInApp();
     const job = createJob(store, owner.id, "incomplete-legacy-history");

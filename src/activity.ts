@@ -188,7 +188,11 @@ type TimelineEvent = {
 };
 
 function legacyFailureCode(event: JobEventRecord): FailureCode | null {
-  if (event.status !== "queued" || !event.message) return null;
+  if (
+    (event.status !== "queued" && event.status !== "failed") ||
+    !event.message
+  )
+    return null;
   for (const code of failureCodes)
     if (event.message.startsWith(`${failureCopy(code).title}: `)) return code;
   return null;
@@ -250,6 +254,8 @@ function projectEvents(
   const status = safeStatus(job.status);
   const terminalAt = timestamp(job.updatedAt) ?? now;
   const timeline = projectTimeline(events);
+  const currentFailureCode =
+    job.status === "failed" ? safeFailureCode(job.errorCode) : null;
   return timeline.map((event, index) => {
     const eventStatus = event.status;
     const next = timeline[index + 1];
@@ -281,6 +287,13 @@ function projectEvents(
           event.createdAt,
           nextAt ?? (isFinal && state === "running" ? now : terminalAt),
         );
+    const failureCode =
+      event.failureCode ??
+      (eventStatus === "failed" &&
+      events.at(-1)?.id === event.id &&
+      currentFailureCode
+        ? currentFailureCode
+        : null);
     return {
       id: event.id,
       status: eventStatus,
@@ -288,7 +301,7 @@ function projectEvents(
       createdAt: event.createdAt,
       label: labels[eventStatus],
       message: safeMessages.has(event.message ?? "") ? event.message : null,
-      failureCode: event.failureCode,
+      failureCode,
       durationMs,
       state,
     };
