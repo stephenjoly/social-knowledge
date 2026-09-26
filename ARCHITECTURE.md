@@ -27,7 +27,7 @@ Apple Shortcut / browser / MCP client
 
 | Area | Primary files | Responsibility |
 |---|---|---|
-| HTTP and sessions | `src/app.ts`, `src/auth.ts` | Input validation, authentication, ownership, response shaping |
+| HTTP and sessions | `src/app.ts`, `src/auth.ts` | Input validation, authentication, ownership, response shaping; the anonymous `/roadmap` static page is the explicit public exception |
 | Capture queue | `src/worker.ts`, `src/failures.ts`, `src/events.ts` | Job lifecycle, retry, recovery, progress events |
 | Acquisition | `src/url.ts`, `src/downloader.ts`, `src/media-processor.ts` | URL allowlisting, bounded download, metadata, audio and frames |
 | AI processing | `src/transcriber.ts`, `src/translator.ts`, `src/title-generator.ts`, `src/analyzer.ts` | Typed model interactions and knowledge extraction |
@@ -35,7 +35,7 @@ Apple Shortcut / browser / MCP client
 | Archive | `src/archive.ts`, `src/vault-writer.ts`, `src/library-publisher.ts` | Durable media, Markdown notes, library publication |
 | Knowledge access | `src/knowledge.ts`, `src/ask.ts`, `src/mcp.ts`, `src/openapi.ts` | Search, role-preserving conversational retrieval, compaction checkpoints, read-only agent access and contracts |
 | Connections | `src/oauth.ts`, `src/platform-connections.ts` | MCP authorization and encrypted platform credentials |
-| Browser UI | `web/` | Authenticated dashboard; it consumes HTTP APIs rather than storage directly |
+| Browser UI | `web/`, `docs/roadmap/2026-09-24/` | Authenticated dashboard consumes HTTP APIs rather than storage directly; the canonical roadmap dashboard and its Markdown source are copied into the UI build for the public `/roadmap` route |
 | Operations | `Dockerfile`, `compose*.yaml`, `deploy/`, `scripts/` | Reproducible build, deployment, smoke checks and rollback |
 
 ## Dependency direction
