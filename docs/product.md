@@ -42,6 +42,12 @@ For release verification boundaries, see [Preview acceptance](preview-acceptance
 
 Knowledge base browsing uses linked content maps: Home shows populated branches; category pages browse child categories, existing extracted insights, and captures across their subtree. Empty categories stay out of the browsing UI without removing stored taxonomy. Local Back/Forward controls navigate reading history, with Open capture on the right of capture notes. Expand all and Collapse all control the visible tree. Move capture is not exposed in this view. The global Capture link action is shown on Inbox only.
 
+## AI setup
+
+AI settings separates provider setup from task assignment. Add provider connects OpenAI or Cerebras and saves compatible model preferences, with a thinking-level choice only where supported. The provider list contains existing connections rather than unconnected placeholders. Transcription and Analysis & Ask then select configured providers; Analysis and Ask share their selection. New connections do not assign tasks automatically. Editing an assigned provider updates future task selections, while queued captures retain their saved models and thinking level. Disconnecting clears the affected assignments.
+
+Settings topics share their layout and reserve scrollbar space to avoid horizontal shifts when switching between short and long pages. Provider verification confirms credentials; it does not replace live model and capture acceptance before production.
+
 ## Current scope
 
 The supported source platforms are Facebook and Instagram. The application provides a private dashboard, Apple Shortcut ingestion, account API keys, OAuth-backed read-only MCP access, Obsidian Markdown output, and complete library exports.

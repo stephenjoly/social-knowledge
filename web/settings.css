@@ -753,10 +753,20 @@
   width: auto;
   min-height: 31px;
   margin: 0;
+  padding: 0 10px;
+  border: 1px solid var(--sk-border);
+  border-radius: 5px;
+  background: var(--sk-surface);
+  color: var(--sk-ink);
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .settings-workspace .ai-provider-actions .danger-button {
   padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--sk-danger);
 }
 
 .settings-workspace .ai-provider-empty {
@@ -833,10 +843,14 @@
 .settings-workspace .ai-task-list .ai-task > div > p {
   min-height: 0;
   margin: 5px 0 0;
+  color: var(--sk-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .settings-workspace .ai-task-list .task-status {
   grid-column: 2;
+  min-height: 0;
   margin: 0;
   line-height: 1.4;
 }
@@ -881,6 +895,10 @@
 .settings-workspace .ai-provider-dialog header h3 {
   margin: 4px 0 0;
   font-size: 17px;
+}
+
+.settings-workspace .ai-provider-dialog header > div {
+  display: block;
 }
 
 .settings-workspace .ai-provider-dialog header button {

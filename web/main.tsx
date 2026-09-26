@@ -1868,6 +1868,7 @@ function Settings({ user }: { user: AccountUser | null }) {
     "openai" | "cerebras"
   >("openai");
   const [providerDialogOpen, setProviderDialogOpen] = useState(false);
+  const providerDialogTrigger = useRef<HTMLElement | null>(null);
   const [providerApiKey, setProviderApiKey] = useState("");
   const [replaceProviderKey, setReplaceProviderKey] = useState(false);
   const [providerTranscriptionModel, setProviderTranscriptionModel] =
@@ -1904,6 +1905,7 @@ function Settings({ user }: { user: AccountUser | null }) {
     setReplaceProviderKey(!definition?.connected);
   };
   const openProviderDialog = (providerId: AiSelection["provider"]) => {
+    providerDialogTrigger.current = document.activeElement as HTMLElement | null;
     applyProviderDraft(providerId);
     setProviderMessage("");
     setProviderDialogOpen(true);
@@ -1912,6 +1914,7 @@ function Settings({ user }: { user: AccountUser | null }) {
     setProviderApiKey("");
     setReplaceProviderKey(false);
     setProviderDialogOpen(false);
+    window.requestAnimationFrame(() => providerDialogTrigger.current?.focus());
   };
   async function load(showLoading = false) {
     if (showLoading) setLoading(true);
@@ -2546,15 +2549,12 @@ function Settings({ user }: { user: AccountUser | null }) {
                       return (
                         <article className="ai-task" key={task}>
                           <div>
-                            <span className="step-label">
-                              {task === "transcription" ? "TRANSCRIPTION" : "ANALYSIS & ASK"}
-                            </span>
                             <h3>
                               {task === "transcription" ? "Transcription" : "Analysis & Ask"}
                             </h3>
                             <p>
                               {task === "transcription"
-                                ? "Uses an audio model. Thinking levels apply to Analysis & Ask, not transcription."
+                                ? "Turns captured audio into searchable text."
                                 : "One shared assignment powers capture analysis and Ask."}
                             </p>
                           </div>
@@ -2596,7 +2596,7 @@ function Settings({ user }: { user: AccountUser | null }) {
                       );
                     })}
                   </div>
-                  {providerMessage && (
+                  {providerMessage && !providerDialogOpen && (
                     <p
                       className={`action-feedback ${providerMessageKind === "error" ? "error" : ""}`}
                       role={providerMessageKind === "error" ? "alert" : "status"}
@@ -2610,7 +2610,7 @@ function Settings({ user }: { user: AccountUser | null }) {
                       className="ai-provider-dialog-layer"
                       role="presentation"
                       onMouseDown={(event) => {
-                        if (event.target === event.currentTarget) closeProviderDialog();
+                        if (!verifyingProvider && event.target === event.currentTarget) closeProviderDialog();
                       }}
                     >
                       <section
@@ -2620,7 +2620,7 @@ function Settings({ user }: { user: AccountUser | null }) {
                         aria-labelledby="provider-dialog-title"
                         onKeyDown={(event) => {
                           if (event.key === "Escape") {
-                            closeProviderDialog();
+                            if (!verifyingProvider) closeProviderDialog();
                             return;
                           }
                           if (event.key !== "Tab") return;
@@ -2651,6 +2651,7 @@ function Settings({ user }: { user: AccountUser | null }) {
                           <button
                             type="button"
                             aria-label="Close provider settings"
+                            disabled={verifyingProvider}
                             onClick={closeProviderDialog}
                           >
                             <X aria-hidden="true" />
@@ -2764,6 +2765,15 @@ function Settings({ user }: { user: AccountUser | null }) {
                           <p className="settings-help">
                             Thinking is only available for compatible analysis models.
                           </p>
+                          {providerMessage && (
+                            <p
+                              className={`action-feedback ${providerMessageKind === "error" ? "error" : ""}`}
+                              role={providerMessageKind === "error" ? "alert" : "status"}
+                              aria-live="polite"
+                            >
+                              {providerMessage}
+                            </p>
+                          )}
                           <div className="ai-provider-dialog-actions">
                             <button type="button" onClick={closeProviderDialog} disabled={verifyingProvider}>
                               Cancel

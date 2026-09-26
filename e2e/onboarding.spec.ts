@@ -11,6 +11,7 @@ const port = 8800;
 let root = "";
 let store: JobStore;
 let app: ReturnType<typeof buildApp>;
+let originalFetch: typeof fetch;
 
 test.beforeAll(async () => {
   root = await mkdtemp(
@@ -20,11 +21,19 @@ test.beforeAll(async () => {
   const config = testConfig(root);
   config.appUrl = `http://127.0.0.1:${port}`;
   store = new JobStore(config.databasePath);
+  originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url === "https://api.openai.com/v1/models")
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    return originalFetch(input, init);
+  }) as typeof fetch;
   app = buildApp(config, store, new EventHub());
   await app.listen({ host: "127.0.0.1", port });
 });
 
 test.afterAll(async () => {
+  globalThis.fetch = originalFetch;
   await app.close();
   store.close();
   await rm(root, { recursive: true, force: true });
@@ -50,7 +59,11 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   await expect(
     page.getByRole("heading", { name: "Transcribe your captures" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Set up later" }).click();
+  await page.getByLabel("OpenAI API key").fill("sk-synthetic-onboarding-fixture");
+  await page.getByRole("button", { name: "Connect transcription" }).click();
+  await expect(page.getByRole("heading", { name: "Analyze your archive" })).toBeVisible();
+  await page.getByRole("button", { name: "Use for analysis" }).click();
+  await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
 
   await page.goto(`${baseUrl}/?tab=settings`);
   await page
