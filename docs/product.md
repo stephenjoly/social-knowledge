@@ -22,9 +22,15 @@ Social Knowledge turns Facebook and Instagram media a person deliberately submit
 - **Recoverable.** Interrupted jobs and exports should have clear retry behavior, and the complete library should be portable.
 - **Low-friction ingestion.** The common capture path should remain quick enough to use habitually from a phone.
 
+## Inbox behavior
+
+Inbox opens directly into capture search, filters, sorting, and tile/table views. It has no top summary cards. The loaded capture count remains beside the collection controls; account-wide summary APIs remain available to existing clients.
+
 ## Activity behavior
 
 Activity opens on active captures and expands the newest one. A compact table shows each capture's source, status, updated time, and five stages: Added, Found, Media, Text, and Saved. Expanding another row closes the previous log. All includes active, failed, and completed captures, with more history available through pagination. Stage circles convey queued, active, completed, and failed states; durations appear on hover and inside expanded logs on touch devices. The summary counts active and queued jobs, failures, captures saved in the viewer's local day, and recent events. Needs attention keeps a fixed-height, scrollable list ordered by failure priority. Retry all re-queues every account-owned failed capture, including failures outside the currently loaded page, and shows pending feedback. Processing logs expose only known-safe event copy and timestamps, never raw diagnostics or internal paths. The account trigger opens a compact menu; its adjacent gear opens Settings directly on desktop.
+
+Logs retain previous attempts when a capture was retried. Their action labels are derived from known pipeline statuses, so changes in display wording cannot hide valid success events. Historical failures remain visible as failures alongside a later saved outcome.
 
 ## Current scope
 

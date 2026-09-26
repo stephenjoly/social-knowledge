@@ -184,13 +184,6 @@ type CaptureFacets = {
   }>;
   topics: Array<{ label: string; count: number }>;
 };
-type InboxAnalytics = {
-  totalCaptures: number;
-  capturesLast24Hours: number;
-  capturesLast7Days: number;
-  failedImports: number;
-  generatedAt: string;
-};
 type InboxView = "tiles" | "table";
 type InboxSortKey = "title" | "savedAt" | "source" | "category" | "topic";
 
@@ -487,6 +480,18 @@ function formatPreciseDuration(durationMs: number | null) {
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 }
 
+function formatEventDuration(event: ActivityEvent) {
+  if (event.state === "running") return "running";
+  if (event.state === "pending") return "pending";
+  return event.durationMs === null ? "—" : formatPreciseDuration(event.durationMs);
+}
+
+function formatStageDuration(stage: ActivityStage | undefined) {
+  if (!stage || stage.state === "queued") return "pending";
+  if (stage.state === "active") return "running";
+  return stage.durationMs === null ? "—" : formatPreciseDuration(stage.durationMs);
+}
+
 function formatActivityTime(value: string) {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return "—";
@@ -510,21 +515,17 @@ function formatEventTime(value: string) {
   }).format(new Date(timestamp));
 }
 
-const safeActivityLabels = new Set([
-  "Capture created",
-  "Capture accepted",
-  "Source found",
-  "Source resolved",
-  "Media download",
-  "Media prepared",
-  "Transcript preparation",
-  "Transcript ready",
-  "Knowledge extracted",
-  "Capture saved",
-  "Capture archived",
-  "Manual retry requested",
-  "Capture failed",
-]);
+const activityLogLabels: Record<string, string> = {
+  queued: "Queued",
+  downloading: "Finding source",
+  processing: "Processing media",
+  transcribing: "Transcribing",
+  translating: "Translating",
+  analyzing: "Extracting knowledge",
+  writing: "Saving capture",
+  complete: "Saved",
+  failed: "Capture failed",
+};
 const safeActivityMessages = new Set([
   "URL accepted and queued",
   "Capture accepted",
@@ -538,12 +539,20 @@ const safeActivityMessages = new Set([
   "Knowledge extracted",
   "Capture archived",
   "Manual retry requested",
+  "Retry scheduled",
+  "AI title ready; extracting detailed knowledge",
 ]);
 
 function safeActivityEvent(event: ActivityEvent) {
-  if (!safeActivityLabels.has(event.label)) return null;
+  const label = Object.hasOwn(activityLogLabels, event.status)
+    ? activityLogLabels[event.status]
+    : null;
+  if (!label) return null;
   return {
     ...event,
+    label: event.status === "queued" && event.message === "Manual retry requested"
+      ? "Retry requested"
+      : label,
     message: safeActivityMessages.has(event.message ?? "")
       ? event.message
       : null,
@@ -4056,17 +4065,6 @@ function App() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [inboxError, setInboxError] = useState<string | null>(null);
   const inboxRequest = useRef(0);
-  const [inboxAnalytics, setInboxAnalytics] = useState<InboxAnalytics | null>(
-    null,
-  );
-  const [loadingAnalytics, setLoadingAnalytics] = useState(true);
-  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
-  const [analyticsStale, setAnalyticsStale] = useState(false);
-  const analyticsRequest = useRef(0);
-  const analyticsLoaded = useRef(false);
-  const analyticsRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
   const liveRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inboxFilters = useRef({
     search: "",
@@ -4158,32 +4156,6 @@ function App() {
         else setLoadingInbox(false);
       }
     }
-  }
-  async function loadInboxAnalytics() {
-    const requestId = ++analyticsRequest.current;
-    setAnalyticsError(null);
-    setLoadingAnalytics(true);
-    try {
-      const result = await api<InboxAnalytics>("/api/v1/inbox-analytics");
-      if (requestId !== analyticsRequest.current) return;
-      setInboxAnalytics(result);
-      setAnalyticsError(null);
-      setAnalyticsStale(false);
-      analyticsLoaded.current = true;
-    } catch {
-      if (requestId !== analyticsRequest.current) return;
-      setAnalyticsError("Unable to refresh inbox summary. Try again.");
-      setAnalyticsStale(analyticsLoaded.current);
-    } finally {
-      if (requestId === analyticsRequest.current) setLoadingAnalytics(false);
-    }
-  }
-  function scheduleAnalyticsRefresh() {
-    if (analyticsRefreshTimer.current) return;
-    analyticsRefreshTimer.current = setTimeout(() => {
-      analyticsRefreshTimer.current = null;
-      void loadInboxAnalytics();
-    }, 250);
   }
   async function loadActivityPage(
     filter: "active" | "all" = activityFilter,
@@ -4303,39 +4275,14 @@ function App() {
   useEffect(() => {
     if (authState !== "ready") return;
     void loadSupportingData();
-    void loadInboxAnalytics();
     const stream = new EventSource("/api/v1/events");
-    stream.onmessage = (message) => {
-      scheduleLiveRefresh();
-      try {
-        const event = JSON.parse(message.data) as {
-          type?: string;
-          payload?: { status?: string };
-        };
-        if (
-          event.type === "capture" ||
-          (event.type === "job" &&
-            ["complete", "failed", "queued"].includes(
-              event.payload?.status ?? "",
-            ))
-        ) {
-          scheduleAnalyticsRefresh();
-        }
-      } catch {
-        // Keep the existing live refresh behavior for malformed event data.
-      }
-    };
+    stream.onmessage = () => scheduleLiveRefresh();
     return () => {
       stream.close();
-      if (analyticsRefreshTimer.current) {
-        clearTimeout(analyticsRefreshTimer.current);
-        analyticsRefreshTimer.current = null;
-      }
       if (liveRefreshTimer.current) {
         clearTimeout(liveRefreshTimer.current);
         liveRefreshTimer.current = null;
       }
-      analyticsRequest.current += 1;
     };
   }, [authState]);
   useEffect(() => {
@@ -4345,15 +4292,6 @@ function App() {
   useEffect(() => {
     if (authState !== "ready") return;
     void loadFailedJobs();
-  }, [authState]);
-  useEffect(() => {
-    if (authState === "ready") return;
-    analyticsRequest.current += 1;
-    analyticsLoaded.current = false;
-    setInboxAnalytics(null);
-    setLoadingAnalytics(true);
-    setAnalyticsError(null);
-    setAnalyticsStale(false);
   }, [authState]);
   const hasInboxFilters = Boolean(search || platform || category || topic);
   const activeCategory =
@@ -4454,11 +4392,7 @@ function App() {
           formatEventTime(event.createdAt),
           event.label,
           event.message,
-          event.state === "running"
-            ? "running"
-            : event.state === "pending"
-              ? "pending"
-              : formatPreciseDuration(event.durationMs),
+          formatEventDuration(event),
         ]
           .filter(Boolean)
           .join(" · "),
@@ -4682,96 +4616,12 @@ function App() {
                 </button>
               </div>
               <section
-                className="inbox-analytics"
-                aria-label="Inbox summary"
-                aria-busy={loadingAnalytics}
-              >
-                {loadingAnalytics && !inboxAnalytics ? (
-                  <>
-                    <div className="analytics-cards" aria-hidden="true">
-                      {["Total captures", "Past 7 days", "Failed imports"].map(
-                        (label) => (
-                          <div
-                            className="analytics-card analytics-skeleton"
-                            key={label}
-                          >
-                            <span>{label}</span>
-                            <strong />
-                          </div>
-                        ),
-                      )}
-                    </div>
-                    <span className="sr-only">Loading inbox summary…</span>
-                  </>
-                ) : inboxAnalytics ? (
-                  <>
-                    <div className="analytics-cards">
-                      {(
-                        [
-                          ["Total captures", inboxAnalytics.totalCaptures],
-                          ["Past 7 days", inboxAnalytics.capturesLast7Days],
-                          ["Failed imports", inboxAnalytics.failedImports],
-                        ] as const
-                      ).map(([label, value]) => {
-                        const formatted = value.toLocaleString();
-                        return (
-                          <div
-                            className="analytics-card"
-                            key={label}
-                            role="group"
-                            aria-label={`${label}: ${formatted}`}
-                          >
-                            <span>{label}</span>
-                            <strong>{formatted}</strong>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {analyticsError && (
-                      <div className="analytics-feedback" role="alert">
-                        <span>
-                          {analyticsStale
-                            ? "Summary temporarily stale."
-                            : analyticsError}
-                        </span>
-                        <button
-                          type="button"
-                          disabled={loadingAnalytics}
-                          onClick={() => void loadInboxAnalytics()}
-                        >
-                          Retry
-                        </button>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="analytics-feedback" role="alert">
-                    <span>
-                      {analyticsError ?? "Inbox summary unavailable."}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={loadingAnalytics}
-                      onClick={() => void loadInboxAnalytics()}
-                    >
-                      Retry
-                    </button>
-                  </div>
-                )}
-              </section>
-              <section
                 className="inbox-collection"
                 aria-labelledby="captures-heading"
               >
                 <header className="inbox-collection-heading">
                   <div>
                     <h2 id="captures-heading">Captures</h2>
-                    <span>
-                      {(
-                        inboxAnalytics?.totalCaptures ?? captures.length
-                      ).toLocaleString()}{" "}
-                      saved
-                    </span>
                   </div>
                 </header>
                 <div className="inbox-filter-panel">
@@ -5191,7 +5041,7 @@ function App() {
                               {activityStages.map((stage) => {
                                 const stageState = job.stages.find((item) => item.name === stage);
                                 const state = stageState?.state ?? "queued";
-                                const duration = state === "active" ? "running" : formatPreciseDuration(stageState?.durationMs ?? null);
+                                const duration = formatStageDuration(stageState);
                                 return <span className={`activity-stage ${state}`} title={`${activityStageCopy[stage]} · ${duration}`} aria-label={`${activityStageCopy[stage]}: ${state}, ${duration}`} key={stage}><span className="activity-stage-marker" /><span className="activity-stage-label">{activityStageCopy[stage]}</span></span>;
                               })}
                             </span>
@@ -5201,17 +5051,17 @@ function App() {
                           </button>
                           {expanded && (
                             <div className="activity-inline-log" id={`activity-log-${job.id}`}>
-                              <div className="activity-inline-log-heading"><div><strong>Processing logs</strong><span>Attempt {job.attempts + 1}</span></div><button type="button" onClick={() => void copyActivityLogs(events)}><Copy aria-hidden="true" /> Copy logs</button></div>
+                              <div className="activity-inline-log-heading"><div><strong>Processing logs</strong><span>{(job.attempts > 0 || (job.status !== "failed" && safeEvents.some((event) => event.state === "failed"))) ? "Includes previous attempts" : "Current capture"}</span></div><button type="button" onClick={() => void copyActivityLogs(events)}><Copy aria-hidden="true" /> Copy logs</button></div>
                               {copyFeedback && <p className="activity-copy-feedback" role="status">{copyFeedback}</p>}
                               {detailsLoading && events.length === 0 ? <p>Loading logs…</p> : detailsError ? <p role="alert">Logs are unavailable. Close and reopen this capture to retry.</p> : safeEvents.length > 0 ? (
                                 <ol>
-                                  {safeEvents.map((event) => <li key={event.id}><span className={`activity-log-dot ${event.state}`} aria-hidden="true" /><time className="activity-log-time" dateTime={event.createdAt}>{formatEventTime(event.createdAt)}</time><strong>{event.label}</strong><span className="activity-log-message">{event.message || "—"}</span><span className="activity-log-duration">{event.state === "running" ? "running" : event.state === "pending" ? "pending" : formatPreciseDuration(event.durationMs)}</span></li>)}
+                                  {safeEvents.map((event) => <li key={event.id}><span className={`activity-log-dot ${event.state}`} aria-hidden="true" /><time className="activity-log-time" dateTime={event.createdAt}>{formatEventTime(event.createdAt)}</time><strong>{event.label}</strong><span className="activity-log-message">{event.message || "—"}</span><span className="activity-log-duration">{formatEventDuration(event)}</span></li>)}
                                 </ol>
                               ) : <p>Safe processing events will appear here.</p>}
                               <div className="activity-stage-durations" aria-label="Stage durations">
                                 {activityStages.map((stage) => {
                                   const stageState = job.stages.find((item) => item.name === stage);
-                                  const duration = stageState?.state === "active" ? "running" : formatPreciseDuration(stageState?.durationMs ?? null);
+                                  const duration = formatStageDuration(stageState);
                                   return <span key={stage}><strong>{activityStageCopy[stage]}</strong> {duration}</span>;
                                 })}
                               </div>

@@ -28,47 +28,12 @@
   line-height: 1.55;
 }
 
-.inbox-page .inbox-analytics {
-  margin-bottom: 31px;
-}
 
-.inbox-page .analytics-cards {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  max-width: 740px;
-}
 
-.inbox-page .analytics-card {
-  min-height: 82px;
-  padding: 15px 16px;
-  border: 1px solid var(--sk-border);
-  border-radius: 7px;
-  background: var(--sk-surface);
-  box-shadow: 0 1px 1px rgb(24 24 27 / 2%);
-}
 
-.inbox-page .analytics-card span {
-  color: var(--sk-muted);
-  font-size: 12px;
-  font-weight: 550;
-}
 
-.inbox-page .analytics-card strong {
-  color: var(--sk-ink);
-  font-size: 24px;
-  font-weight: 650;
-}
 
-.inbox-page .analytics-skeleton strong {
-  height: 24px;
-  background: #ececed;
-}
 
-.inbox-page .analytics-feedback {
-  max-width: 740px;
-  margin-top: 10px;
-}
 
 .inbox-collection-heading {
   position: static;
@@ -759,26 +724,10 @@
     height: 14px;
   }
 
-  .inbox-page .inbox-analytics {
-    margin-bottom: 24px;
-  }
 
-  .inbox-page .analytics-cards {
-    gap: 8px;
-  }
 
-  .inbox-page .analytics-card {
-    min-height: 65px;
-    padding: 9px 10px;
-  }
 
-  .inbox-page .analytics-card span {
-    font-size: 10px;
-  }
 
-  .inbox-page .analytics-card strong {
-    font-size: 19px;
-  }
 
   .inbox-collection-heading {
     margin-bottom: 10px;

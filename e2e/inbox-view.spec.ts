@@ -72,18 +72,6 @@ test("switches real Inbox controls over a sorted capture response", async ({
   page,
 }) => {
   const captureQueries: URL[] = [];
-  await page.route("**/api/v1/inbox-analytics", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        totalCaptures: captures.length,
-        capturesLast24Hours: 1,
-        capturesLast7Days: captures.length,
-        failedImports: 0,
-        generatedAt: "2026-09-24T12:00:00.000Z",
-      }),
-    });
-  });
   await page.route("**/api/v1/captures?**", async (route) => {
     captureQueries.push(new URL(route.request().url()));
     await route.fulfill({
@@ -98,9 +86,7 @@ test("switches real Inbox controls over a sorted capture response", async ({
   await page.getByRole("button", { name: "Continue" }).click();
 
   await expect(page.locator(".inbox-tile")).toHaveCount(2);
-  await expect(
-    page.getByRole("group", { name: "Past 7 days: 2" }),
-  ).toBeVisible();
+  await expect(page.locator(".analytics-card")).toHaveCount(0);
 
   await page.getByLabel("Sort captures").selectOption("title:asc");
   await expect

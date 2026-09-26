@@ -32,10 +32,13 @@ const job = (
   createdAt,
   updatedAt: createdAt,
   reachedStages: [options.stage ?? "added"],
-  stages: stages(options.stage ?? "added", status === "failed"),
+  stages: status === "complete"
+    ? stages("saved").map((stage) => ({ ...stage, state: "completed", durationMs: 1000 }))
+    : stages(options.stage ?? "added", status === "failed"),
 });
 
 test("Activity uses safe inline logs, complete failure counts, and compact account controls", async ({ page, context }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   const failedCookie = job("failed-cookie", "failed", "2026-09-24T12:01:00.000Z", {
     errorCode: "authentication_required",
     title: "Reconnect account",
@@ -56,7 +59,7 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
     stage: "text",
   });
   const queued = job("queued", "queued", "2026-09-24T12:04:00.000Z", { title: "Queued capture" });
-  const complete = job("complete", "complete", "2026-09-22T12:01:00.000Z", { title: "Saved capture", stage: "saved" });
+  const complete = job("complete", "complete", "2026-09-22T12:01:00.000Z", { title: "Saved capture", stage: "saved", attempts: 1 });
   const olderComplete = job("older-complete", "complete", "2026-09-20T12:01:00.000Z", { title: "Older saved capture", stage: "saved" });
   const retried: string[] = [];
 
@@ -64,7 +67,6 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await page.route("**/api/auth/me", (route) => route.fulfill({ contentType: "application/json", body: '{"user":{"id":"fixture-user","username":"Stephen","role":"admin"}}' }));
   await page.route("**/api/v1/capture-facets", (route) => route.fulfill({ contentType: "application/json", body: '{"categories":[],"topics":[]}' }));
   await page.route("**/api/v1/captures**", (route) => route.fulfill({ contentType: "application/json", body: '{"captures":[],"nextCursor":null}' }));
-  await page.route("**/api/v1/inbox-analytics", (route) => route.fulfill({ contentType: "application/json", body: '{"totalCaptures":0,"capturesLast24Hours":0,"capturesLast7Days":0,"failedImports":0,"generatedAt":"2026-09-24T12:08:00.000Z"}' }));
   await page.route("**/api/v1/events", (route) => route.abort());
   await page.route("**/api/v1/jobs**", (route) => {
     const request = new URL(route.request().url());
@@ -76,9 +78,13 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
       const id = request.pathname.split("/").pop()!;
       return route.fulfill({ contentType: "application/json", body: JSON.stringify({
         job: [failedCookie, failedMedia, activeOld, activeNew, queued, complete, olderComplete].find((item) => item.id === id),
-        events: [
-          { id: `${id}-created`, status: "queued", label: "Capture accepted", message: "URL accepted and queued", createdAt: "2026-09-24T12:00:00.000Z", durationMs: 124, state: "completed" },
-          { id: `${id}-media`, status: "processing", label: "Media download", message: "secret=value /private/internal/cookie.txt", createdAt: "2026-09-24T12:00:08.000Z", durationMs: null, state: "running" },
+        events: id === "complete" ? [
+          { id: "prior-failure", status: "failed", label: "Capture failed", message: null, createdAt: "2026-09-22T11:00:00.000Z", durationMs: 0, state: "failed" },
+          { id: "retry", status: "queued", label: "Queued", message: "Manual retry requested", createdAt: "2026-09-22T12:00:00.000Z", durationMs: 124, state: "completed" },
+          { id: "saved", status: "complete", label: "Saved", message: "Capture archived", createdAt: "2026-09-22T12:01:00.000Z", durationMs: 0, state: "completed" },
+        ] : [
+          { id: `${id}-created`, status: "queued", label: "Queued", message: "Capture accepted", createdAt: "2026-09-24T12:00:00.000Z", durationMs: 124, state: "completed" },
+          { id: `${id}-media`, status: "processing", label: "Processing media", message: "secret=value /private/internal/cookie.txt", createdAt: "2026-09-24T12:00:08.000Z", durationMs: null, state: "running" },
         ],
       }) });
     }
@@ -106,14 +112,28 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await expect(page.locator(".activity-kpi")).toHaveCount(4);
   await expect(page.locator(".activity-card")).toHaveCount(3);
   await expect(page.locator(".activity-card.expanded")).toContainText("Newest capture");
-  await expect(page.locator(".activity-inline-log")).toContainText("URL accepted and queued");
+  await expect(page.locator(".activity-inline-log")).toContainText("Capture accepted");
   await expect(page.locator(".activity-inline-log")).not.toContainText("secret=value");
   await expect(page.locator(".activity-inline-log")).not.toContainText("/private/internal");
   await expect(page.locator(".activity-card.expanded .activity-stage").filter({ hasText: "Text" })).toHaveAttribute("title", /running/);
+  const railAlignment = await page.locator(".activity-card.expanded .activity-stages").evaluate((rail) => {
+    const marker = rail.querySelector(".activity-stage-marker")!.getBoundingClientRect();
+    const line = getComputedStyle(rail, "::before");
+    return {
+      width: rail.getBoundingClientRect().width,
+      offset: Math.abs(marker.y + marker.height / 2 - rail.getBoundingClientRect().y - parseFloat(line.top) - parseFloat(line.height) / 2),
+    };
+  });
+  expect(railAlignment.width).toBeLessThanOrEqual(320);
+  expect(railAlignment.offset).toBeLessThanOrEqual(1);
   await page.screenshot({ path: "test-results/activity-04d-desktop.png", fullPage: true });
   await page.locator(".activity-card").filter({ hasText: "Earlier capture" }).locator(".activity-row-trigger").click();
   await expect(page.locator(".activity-card.expanded")).toHaveCount(1);
   await expect(page.locator(".activity-card.expanded")).toContainText("Earlier capture");
+  await expect(page.locator(".activity-card.expanded .activity-row-trigger")).toHaveCSS("outline-style", "none");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.locator(".activity-card.expanded .activity-row-trigger")).toHaveCSS("outline-style", "solid");
   await page.locator(".activity-card").filter({ hasText: "Newest capture" }).locator(".activity-row-trigger").click();
   await page.getByRole("button", { name: "Copy logs" }).click();
   await expect(page.getByRole("status")).toContainText("Safe logs copied.");
@@ -122,6 +142,14 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
 
   await page.getByRole("button", { name: "All", exact: true }).click();
   await expect(page.locator(".activity-card")).toHaveCount(6);
+  await page.locator(".activity-card").filter({ hasText: "Saved capture" }).locator(".activity-row-trigger").click();
+  await expect(page.locator(".activity-inline-log")).toContainText("Saved");
+  await expect(page.locator(".activity-inline-log")).toContainText("Capture archived");
+  await expect(page.locator(".activity-inline-log .activity-log-dot.failed")).toHaveCount(1);
+  await expect(page.locator(".activity-inline-log")).toContainText("Retry requested");
+  await page.getByRole("button", { name: "Copy logs" }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Saved");
+  await page.locator(".activity-card").filter({ hasText: "Newest capture" }).locator(".activity-row-trigger").click();
   await page.getByRole("button", { name: "Load more captures" }).click();
   await expect(page.locator(".activity-card")).toHaveCount(7);
   await page.getByRole("button", { name: "Retry all" }).click();
@@ -147,10 +175,10 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await expect(page.locator(".activity-card.expanded .activity-row-copy strong")).toBeVisible();
   await expect(page.getByLabel("Stage durations")).toContainText("Text running");
   await expect(page.locator('.app-nav button[data-tab="settings"]')).toBeVisible();
+  await page.screenshot({ path: "test-results/activity-04d-mobile.png", fullPage: true });
   await page.locator(".app-menu-trigger").click();
   await expect(page.getByRole("dialog").getByRole("button", { name: "Settings", exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.screenshot({ path: "test-results/activity-04d-mobile.png", fullPage: true });
 
   await page.route(/\/api\/v1\/jobs\/failed\?/, (route) => route.fulfill({ status: 503, body: "{}" }));
   await page.reload();
