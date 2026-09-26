@@ -674,8 +674,10 @@ describe("capture pagination and count queries", () => {
     expect(activityList.body).not.toContain(otherFailed.id);
     expect(activityList.body).not.toContain("synthetic-secret");
     expect(activityList.body).not.toContain("/private/internal");
-    expect(activityList.json().jobs[0].stageDurations).toEqual(
-      expect.objectContaining({ queued: expect.any(Number) }),
+    expect(activityList.json().jobs[0].stages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "added", durationMs: expect.any(Number) }),
+      ]),
     );
     const activityDetail = await app.inject({
       method: "GET",
@@ -772,7 +774,7 @@ describe("capture pagination and count queries", () => {
       url: "/api/v1/jobs/retry-failed",
       headers: { cookie: cookie! },
     });
-    expect(retryAll.json()).toEqual({ retried: 2 });
+    expect(retryAll.json()).toEqual({ requested: 2, retried: 2 });
     expect(store.listFailed(owner.id)).toHaveLength(0);
     expect(store.listFailed(other.id)).toHaveLength(1);
   });

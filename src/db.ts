@@ -10,6 +10,7 @@ import type {
   SocialComment,
   SourceType,
 } from "./types.js";
+import type { JobEventRecord } from "./activity.js";
 import {
   libraryDomains,
   slugifyLibraryLabel,
@@ -66,6 +67,33 @@ export type InboxAnalyticsCounts = {
   capturesLast7Days: number;
   failedImports: number;
 };
+
+export type ActivityFilter = "active" | "all";
+export type ActivityCursor = { createdAt: string; id: string };
+export type FailedActivityCursor = {
+  priority: number;
+  updatedAt: string;
+  id: string;
+};
+export type ActivityCounts = {
+  active: number;
+  queued: number;
+  failed: number;
+  savedToday: number;
+  recentEvents: number;
+};
+
+const failedJobPrioritySql = `CASE COALESCE(error_code, 'unknown')
+  WHEN 'authentication_required' THEN 0
+  WHEN 'private_post' THEN 1
+  WHEN 'ai_failed' THEN 2
+  WHEN 'processing_failed' THEN 3
+  WHEN 'platform_temporary' THEN 4
+  WHEN 'unavailable' THEN 5
+  WHEN 'unsupported_format' THEN 6
+  WHEN 'archive_limit' THEN 7
+  ELSE 8
+END`;
 
 export type ConversationCompaction = {
   id: string;
@@ -196,6 +224,128 @@ export class JobStore {
         )
         .all(userId, limit) as Row[]
     ).map((row) => this.mapJob(row) as JobRecord);
+  }
+  listActivityJobs(input: {
+    userId: string;
+    filter: ActivityFilter;
+    limit: number;
+    cursor?: ActivityCursor;
+  }) {
+    const where = ["owner_user_id=?"];
+    const params: unknown[] = [input.userId];
+    if (input.filter === "active")
+      where.push(
+        "status IN ('queued','downloading','processing','transcribing','translating','analyzing','writing')",
+      );
+    if (input.cursor) {
+      where.push("(created_at < ? OR (created_at = ? AND id < ?))");
+      params.push(
+        input.cursor.createdAt,
+        input.cursor.createdAt,
+        input.cursor.id,
+      );
+    }
+    params.push(input.limit + 1);
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM jobs WHERE ${where.join(" AND ")}
+         ORDER BY created_at DESC,id DESC LIMIT ?`,
+      )
+      .all(...params) as Row[];
+    const hasMore = rows.length > input.limit;
+    const page = rows.slice(0, input.limit);
+    const last = page.at(-1);
+    return {
+      jobs: page.map((row) => this.mapJob(row) as JobRecord),
+      nextCursor:
+        hasMore && last
+          ? { createdAt: String(last.created_at), id: String(last.id) }
+          : null,
+    };
+  }
+  listFailedActivityJobs(input: {
+    userId: string;
+    limit: number;
+    cursor?: FailedActivityCursor;
+  }) {
+    const where = ["owner_user_id=?", "status='failed'"];
+    const params: unknown[] = [input.userId];
+    if (input.cursor) {
+      where.push(
+        `(${failedJobPrioritySql} > ? OR
+          (${failedJobPrioritySql} = ? AND (updated_at < ? OR (updated_at = ? AND id < ?))))`,
+      );
+      params.push(
+        input.cursor.priority,
+        input.cursor.priority,
+        input.cursor.updatedAt,
+        input.cursor.updatedAt,
+        input.cursor.id,
+      );
+    }
+    params.push(input.limit + 1);
+    const rows = this.database
+      .prepare(
+        `SELECT *,${failedJobPrioritySql} AS activity_failure_priority
+         FROM jobs WHERE ${where.join(" AND ")}
+         ORDER BY activity_failure_priority ASC,updated_at DESC,id DESC LIMIT ?`,
+      )
+      .all(...params) as Row[];
+    const hasMore = rows.length > input.limit;
+    const page = rows.slice(0, input.limit);
+    const last = page.at(-1);
+    return {
+      jobs: page.map((row) => this.mapJob(row) as JobRecord),
+      nextCursor:
+        hasMore && last
+          ? {
+              priority: Number(last.activity_failure_priority),
+              updatedAt: String(last.updated_at),
+              id: String(last.id),
+            }
+      : null,
+    };
+  }
+  countFailedActivityJobs(userId: string) {
+    const row = this.database
+      .prepare("SELECT COUNT(*) AS total FROM jobs WHERE owner_user_id=? AND status='failed'")
+      .get(userId) as Row;
+    return Number(row.total ?? 0);
+  }
+  activityCounts(input: {
+    userId: string;
+    savedTodayStart: string;
+    savedTodayEnd: string;
+    recentEventsStart: string;
+    recentEventsEnd: string;
+  }): ActivityCounts {
+    const row = this.database
+      .prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND status IN ('downloading','processing','transcribing','translating','analyzing','writing')) AS active,
+           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND status='queued') AS queued,
+           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND status='failed') AS failed,
+           (SELECT COUNT(*) FROM captures WHERE owner_user_id=? AND created_at>=? AND created_at<?) AS savedToday,
+           (SELECT COUNT(*) FROM job_events e JOIN jobs j ON j.id=e.job_id WHERE j.owner_user_id=? AND e.created_at>=? AND e.created_at<=?) AS recentEvents`,
+      )
+      .get(
+        input.userId,
+        input.userId,
+        input.userId,
+        input.userId,
+        input.savedTodayStart,
+        input.savedTodayEnd,
+        input.userId,
+        input.recentEventsStart,
+        input.recentEventsEnd,
+      ) as Row;
+    return {
+      active: Number(row.active ?? 0),
+      queued: Number(row.queued ?? 0),
+      failed: Number(row.failed ?? 0),
+      savedToday: Number(row.savedToday ?? 0),
+      recentEvents: Number(row.recentEvents ?? 0),
+    };
   }
   listFailed(userId: string) {
     return (
@@ -349,6 +499,48 @@ export class JobStore {
     this.addEvent(id, "queued", "Manual retry requested");
     return true;
   }
+  retryAllFailed(
+    ownerUserId: string,
+    selections?: AiTaskSelectionInput | AiProviderId | null,
+  ) {
+    return this.database.transaction(() => {
+      const rows = this.database
+        .prepare("SELECT id FROM jobs WHERE owner_user_id=? AND status='failed'")
+        .all(ownerUserId) as Array<{ id: string }>;
+      const now = new Date().toISOString();
+      const snapshot =
+        typeof selections === "string"
+          ? { analysisProvider: selections }
+          : selections;
+      const retry = this.database.prepare(
+        `UPDATE jobs SET status='queued',attempts=0,error=NULL,error_code=NULL,error_detail=NULL,next_attempt_at=?,updated_at=?,
+         ai_provider=COALESCE(?,ai_provider),transcription_provider=COALESCE(?,transcription_provider),transcription_model=COALESCE(?,transcription_model),analysis_provider=COALESCE(?,analysis_provider),analysis_model=COALESCE(?,analysis_model) WHERE id=? AND owner_user_id=? AND status='failed'`,
+      );
+      const retriedIds: string[] = [];
+      for (const row of rows) {
+        const result = retry.run(
+          now,
+          now,
+          snapshot?.analysisProvider ?? null,
+          snapshot && "transcriptionProvider" in snapshot
+            ? snapshot.transcriptionProvider
+            : null,
+          snapshot && "transcriptionModel" in snapshot
+            ? snapshot.transcriptionModel
+            : null,
+          snapshot?.analysisProvider ?? null,
+          snapshot && "analysisModel" in snapshot ? snapshot.analysisModel : null,
+          row.id,
+          ownerUserId,
+        );
+        if (result.changes === 1) {
+          this.addEvent(row.id, "queued", "Manual retry requested");
+          retriedIds.push(row.id);
+        }
+      }
+      return { requested: rows.length, retriedIds };
+    })();
+  }
   addEvent(jobId: string, status: string, message: string | null) {
     this.database
       .prepare(
@@ -359,9 +551,9 @@ export class JobStore {
   events(jobId: string) {
     return this.database
       .prepare(
-        "SELECT id,status,message,created_at AS createdAt FROM job_events WHERE job_id=? ORDER BY created_at",
+        "SELECT id,status,message,created_at AS createdAt FROM job_events WHERE job_id=? ORDER BY created_at,rowid",
       )
-      .all(jobId);
+      .all(jobId) as JobEventRecord[];
   }
 
   createCapture(input: {

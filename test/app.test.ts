@@ -285,11 +285,13 @@ describe("API", () => {
       payload: { url: "https://www.instagram.com/reel/key-test/" },
     });
     expect(keyedSubmission.statusCode).toBe(202);
-    expect(keyedSubmission.json().job.aiProvider).toBe("cerebras");
+    expect(keyedSubmission.json().job.aiProvider).toBeUndefined();
+    const keyedJob = store.get(keyedSubmission.json().job.id)!;
+    expect(keyedJob.aiProvider).toBe("cerebras");
     const archivedVideo = path.join(root, "archived-video.mp4");
     await writeFile(archivedVideo, Buffer.from("test-video-bytes"));
     const captured = store.createCapture({
-      job: keyedSubmission.json().job,
+      job: keyedJob,
       sourceType: "video",
       sourceId: "key-test",
       platform: "instagram",

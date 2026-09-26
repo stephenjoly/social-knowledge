@@ -16,6 +16,7 @@ import {
   type CaptureCursor,
   type JobStore,
 } from "./db.js";
+import { activityEvents, activityJob } from "./activity.js";
 import type { EventHub } from "./events.js";
 import { normalizeSocialUrl } from "./url.js";
 import { LibraryPublisher } from "./library-publisher.js";
@@ -48,6 +49,92 @@ const requestIdSchema = z
   .min(8)
   .max(128)
   .regex(/^[A-Za-z0-9._~-]+$/);
+
+const activityCursorSchema = z.object({
+  createdAt: z.string().datetime(),
+  id: z.string().uuid(),
+  filter: z.enum(["active", "all"]),
+});
+const failedActivityCursorSchema = z.object({
+  priority: z.number().int().min(0).max(8),
+  updatedAt: z.string().datetime(),
+  id: z.string().uuid(),
+});
+
+function encodeActivityCursor(value: object) {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+function decodeActivityCursor<T>(value: string, schema: z.ZodType<T>) {
+  try {
+    return schema.parse(JSON.parse(Buffer.from(value, "base64url").toString()));
+  } catch {
+    throw new Error("invalid_cursor");
+  }
+}
+
+function localDateParts(now: number, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(new Date(now));
+  const value = (name: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === name)?.value);
+  return { year: value("year"), month: value("month"), day: value("day") };
+}
+
+function localOffsetAt(now: number, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(new Date(now));
+  const value = (name: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === name)?.value);
+  return (
+    Date.UTC(
+      value("year"),
+      value("month") - 1,
+      value("day"),
+      value("hour"),
+      value("minute"),
+      value("second"),
+    ) - now
+  );
+}
+
+function localMidnight(year: number, month: number, day: number, timeZone: string) {
+  const base = Date.UTC(year, month - 1, day);
+  let instant = base;
+  for (let index = 0; index < 3; index++) instant = base - localOffsetAt(instant, timeZone);
+  return new Date(instant).toISOString();
+}
+
+function viewerDayBounds(now: number, timeZone: string) {
+  const today = localDateParts(now, timeZone);
+  const next = new Date(Date.UTC(today.year, today.month - 1, today.day + 1));
+  return {
+    start: localMidnight(today.year, today.month, today.day, timeZone),
+    end: localMidnight(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), timeZone),
+  };
+}
+
+function validTimeZone(value: string | undefined) {
+  const timeZone = value ?? "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format();
+    return timeZone;
+  } catch {
+    return null;
+  }
+}
 
 export function canReceiveLiveEvent(
   store: JobStore,
@@ -535,7 +622,14 @@ export function buildApp(
         events.publish("job", { id: result.job.id, status: job?.status });
         return reply
           .code(result.created || retried ? 202 : 200)
-          .send({ created: result.created, retried, job });
+          .send({
+            created: result.created,
+            retried,
+            job: activityJob(
+              job ?? result.job,
+              store.events(result.job.id),
+            ),
+          });
       } catch (error) {
         const code = error instanceof Error ? error.message : "invalid_url";
         if (["transcription_required", "analysis_provider_required"].includes(code))
@@ -902,86 +996,122 @@ export function buildApp(
         generatedAt,
       };
     });
-    protectedApi.get("/api/v1/jobs", async (request) => {
+    protectedApi.get("/api/v1/jobs", async (request, reply) => {
       const user = auth.user(request)!;
-      const q = z
-        .object({ limit: z.coerce.number().int().min(1).max(100).default(50) })
-        .parse(request.query);
+      const parsed = z
+        .object({
+          limit: z.coerce.number().int().min(1).max(100).default(50),
+          filter: z.enum(["active", "all"]).optional(),
+          cursor: z.string().max(300).optional(),
+          timeZone: z.string().min(1).max(100).optional(),
+          timezone: z.string().min(1).max(100).optional(),
+        })
+        .safeParse(request.query);
+      if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+      if (
+        parsed.data.timeZone &&
+        parsed.data.timezone &&
+        parsed.data.timeZone !== parsed.data.timezone
+      )
+        return reply.code(400).send({ error: "invalid_request" });
+      const timeZone = validTimeZone(parsed.data.timeZone ?? parsed.data.timezone);
+      if (!timeZone) return reply.code(400).send({ error: "invalid_request" });
+      const filter = parsed.data.filter ?? "all";
+      let cursor: { createdAt: string; id: string } | undefined;
+      if (parsed.data.cursor) {
+        try {
+          const decoded = decodeActivityCursor(
+            parsed.data.cursor,
+            activityCursorSchema,
+          );
+          if (decoded.filter !== filter) throw new Error("invalid_cursor");
+          cursor = { createdAt: decoded.createdAt, id: decoded.id };
+        } catch {
+          return reply.code(400).send({ error: "invalid_cursor" });
+        }
+      }
+      const now = Date.now();
+      const page = store.listActivityJobs({
+        userId: user.id,
+        filter,
+        limit: parsed.data.limit,
+        ...(cursor ? { cursor } : {}),
+      });
+      const day = viewerDayBounds(now, timeZone);
       return {
-        jobs: store.list(user.id, q.limit).map((job) => {
-          const history = store.events(job.id) as Array<{
-            status: string;
-            createdAt: string;
-          }>;
-          const stageDurations: Record<string, number> = {};
-          history.forEach((event, index) => {
-            const start = Date.parse(event.createdAt);
-            const end = history[index + 1]
-              ? Date.parse(history[index + 1]!.createdAt)
-              : ["complete", "failed"].includes(job.status)
-                ? Date.parse(job.updatedAt)
-                : Date.now();
-            if (Number.isFinite(start) && Number.isFinite(end))
-              stageDurations[event.status] =
-                (stageDurations[event.status] ?? 0) +
-                Math.max(0, Math.round((end - start) / 1000));
-          });
-          return {
-            ...job,
-            error: null,
-            errorDetail: null,
-            reachedStages: [...new Set(history.map((event) => event.status))],
-            stageDurations,
-          };
+        jobs: page.jobs.map((job) => activityJob(job, store.events(job.id), now)),
+        nextCursor: page.nextCursor
+          ? encodeActivityCursor({ ...page.nextCursor, filter })
+          : null,
+        generatedAt: new Date(now).toISOString(),
+        counts: store.activityCounts({
+          userId: user.id,
+          savedTodayStart: day.start,
+          savedTodayEnd: day.end,
+          recentEventsStart: new Date(now - 10 * 60 * 1000).toISOString(),
+          recentEventsEnd: new Date(now).toISOString(),
         }),
+      };
+    });
+    protectedApi.get("/api/v1/jobs/failed", async (request, reply) => {
+      const user = auth.user(request)!;
+      const parsed = z
+        .object({
+          limit: z.coerce.number().int().min(1).max(100).default(50),
+          cursor: z.string().max(300).optional(),
+        })
+        .safeParse(request.query);
+      if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+      let cursor: { priority: number; updatedAt: string; id: string } | undefined;
+      if (parsed.data.cursor) {
+        try {
+          cursor = decodeActivityCursor(
+            parsed.data.cursor,
+            failedActivityCursorSchema,
+          );
+        } catch {
+          return reply.code(400).send({ error: "invalid_cursor" });
+        }
+      }
+      const now = Date.now();
+      const page = store.listFailedActivityJobs({
+        userId: user.id,
+        limit: parsed.data.limit,
+        ...(cursor ? { cursor } : {}),
+      });
+      return {
+        failures: page.jobs.map((job) => activityJob(job, store.events(job.id), now)),
+        nextCursor: page.nextCursor ? encodeActivityCursor(page.nextCursor) : null,
+        total: store.countFailedActivityJobs(user.id),
       };
     });
     protectedApi.get("/api/v1/jobs/:id", async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
       const user = auth.user(request)!;
       const job = store.getOwned(user.id, id);
+      const now = Date.now();
+      const jobEvents = job ? store.events(id) : [];
       return job
         ? {
-            job: { ...job, error: null, errorDetail: null },
-            events: (store.events(id) as Array<{
-              id: string;
-              status: string;
-              message: string | null;
-              createdAt: string;
-            }>).map((event) => ({
-              ...event,
-              message: [
-                "Capture accepted",
-                "Download started",
-                "Capture archived",
-                "Manual retry requested",
-                "AI title ready; extracting detailed knowledge",
-              ].includes(event.message ?? "")
-                ? event.message
-                : null,
-            })),
+            job: activityJob(job, jobEvents, now),
+            events: activityEvents(job, jobEvents, now),
           }
         : reply.code(404).send({ error: "not_found" });
     });
     protectedApi.post("/api/v1/jobs/retry-failed", async (request, reply) => {
       const user = auth.user(request)!;
-      const failed = store.listFailed(user.id);
-      if (failed.length === 0) return { retried: 0 };
+      if (store.countFailedActivityJobs(user.id) === 0)
+        return { requested: 0, retried: 0 };
       let selections;
       try {
         selections = aiProviderService.captureSelections(user.id);
       } catch (error) {
-        return reply.code(428).send({
-          error: error instanceof Error ? error.message : "analysis_provider_required",
-        });
+        return reply.code(428).send({ error: "analysis_provider_required" });
       }
-      let retried = 0;
-      for (const job of failed) {
-        if (!store.retry(job.id, selections)) continue;
-        retried += 1;
-        events.publish("job", { id: job.id, status: "queued" });
-      }
-      return { retried };
+      const result = store.retryAllFailed(user.id, selections);
+      for (const id of result.retriedIds)
+        events.publish("job", { id, status: "queued" });
+      return { requested: result.requested, retried: result.retriedIds.length };
     });
     protectedApi.post("/api/v1/jobs/:id/retry", async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
@@ -992,14 +1122,13 @@ export function buildApp(
       try {
         selections = aiProviderService.captureSelections(user.id);
       } catch (error) {
-        return reply.code(428).send({
-          error: error instanceof Error ? error.message : "analysis_provider_required",
-        });
+        return reply.code(428).send({ error: "analysis_provider_required" });
       }
       if (!store.retry(id, selections))
         return reply.code(409).send({ error: "not_retryable" });
       events.publish("job", { id, status: "queued" });
-      return { job: store.get(id) };
+      const retried = store.getOwned(user.id, id)!;
+      return { job: activityJob(retried, store.events(id)) };
     });
     protectedApi.get("/api/v1/api-keys", async (request) => {
       const user = auth.user(request)!;
