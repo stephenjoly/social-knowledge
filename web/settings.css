@@ -679,11 +679,11 @@
 
 .settings-workspace .ai-provider {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(190px, 0.8fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
-  min-height: 94px;
-  padding: 15px 0;
+  min-height: 58px;
+  padding: 12px 0;
   border-bottom: 1px solid var(--sk-border);
 }
 
@@ -707,36 +707,6 @@
   overflow: hidden;
   color: var(--sk-muted);
   font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.settings-workspace .ai-provider-models {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0;
-}
-
-.settings-workspace .ai-provider-models div {
-  min-width: 0;
-}
-
-.settings-workspace .ai-provider-models dt {
-  margin: 0 0 3px;
-  color: var(--sk-muted);
-  font-size: 10px;
-  font-weight: 720;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-
-.settings-workspace .ai-provider-models dd {
-  overflow: hidden;
-  margin: 0;
-  color: var(--sk-muted-strong);
-  font-size: 11px;
-  font-weight: 630;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -789,7 +759,7 @@
 
 .settings-workspace .ai-assignment-heading {
   align-items: center;
-  margin: 28px 0 0;
+  margin: 32px 0 0;
 }
 
 .settings-workspace .ai-assignment-heading h3 {
@@ -816,8 +786,8 @@
 }
 
 .settings-workspace .ai-task-list .ai-task {
-  grid-template-columns: minmax(0, 1fr) minmax(170px, 0.65fr);
-  align-items: end;
+  grid-template-columns: minmax(190px, 0.8fr) minmax(0, 1.2fr);
+  align-items: start;
   gap: 10px 18px;
   min-height: 0;
   padding: 15px 0;
@@ -852,7 +822,124 @@
   grid-column: 2;
   min-height: 0;
   margin: 0;
+  color: var(--sk-muted);
+  font-size: 11px;
   line-height: 1.4;
+}
+
+.settings-workspace .ai-task-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-column: 2;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-workspace .ai-task-controls label {
+  min-width: 0;
+  margin: 0;
+  color: var(--sk-muted-strong);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.settings-workspace .ai-task-controls select {
+  width: 100%;
+  min-width: 0;
+  margin-top: 5px;
+  overflow: visible;
+  font-size: 12px;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.settings-workspace .ai-test-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin: 32px 0 0;
+}
+
+.settings-workspace .ai-test-heading h3 {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 680;
+}
+
+.settings-workspace .ai-test-intro {
+  max-width: 680px;
+  margin: 9px 0 0;
+}
+
+.settings-workspace .ai-test-list {
+  display: grid;
+  margin-top: 12px;
+  border-top: 1px solid var(--sk-border);
+}
+
+.settings-workspace .ai-test-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.7fr);
+  align-items: start;
+  gap: 12px 18px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--sk-border);
+}
+
+.settings-workspace .ai-test-row h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.settings-workspace .ai-test-row > div > p {
+  margin: 5px 0 0;
+  color: var(--sk-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-workspace .ai-test-file {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0 0;
+  color: var(--sk-muted-strong);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.settings-workspace .ai-test-file input {
+  max-width: 340px;
+  font-size: 12px;
+}
+
+.settings-workspace .ai-test-action {
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+}
+
+.settings-workspace .ai-test-action .secondary-button {
+  width: auto;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.settings-workspace .ai-test-status,
+.settings-workspace .ai-test-guidance {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.settings-workspace .ai-test-status {
+  color: var(--sk-muted);
+}
+
+.settings-workspace .ai-test-status.error,
+.settings-workspace .ai-test-guidance {
+  color: #8b3529;
 }
 
 .settings-workspace .ai-provider-dialog-layer {
@@ -1338,12 +1425,8 @@
 
   .settings-workspace .ai-provider {
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 9px;
     padding: 14px 0;
-  }
-
-  .settings-workspace .ai-provider-models {
-    max-width: 320px;
   }
 
   .settings-workspace .ai-provider-actions {
@@ -1363,8 +1446,21 @@
     grid-template-columns: 1fr;
   }
 
+  .settings-workspace .ai-task-controls,
   .settings-workspace .ai-task-list .task-status {
     grid-column: 1;
+  }
+
+  .settings-workspace .ai-task-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-workspace .ai-test-row {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-workspace .ai-test-file input {
+    max-width: 100%;
   }
 
   .settings-workspace .ai-provider-dialog-layer {

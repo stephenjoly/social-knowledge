@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { hash } from "@node-rs/argon2";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { buildApp } from "../src/app.js";
@@ -14,10 +14,35 @@ let store: JobStore;
 let app: ReturnType<typeof buildApp>;
 let originalFetch: typeof fetch;
 let config: ReturnType<typeof testConfig>;
+let nextDiagnosticFailure: "quota" | null = null;
+let audioOne = "";
+let audioTwo = "";
+
+function diagnosticStream() {
+  return new Response(
+    [
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"diagnostic-ok"}\n\n',
+      'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+    ].join(""),
+    { headers: { "content-type": "text/event-stream" } },
+  );
+}
 
 test.beforeAll(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), "social-knowledge-e2e-ai-"));
   await mkdir(path.join(root, "data"));
+  await mkdir(path.join(process.cwd(), "output", "playwright"), {
+    recursive: true,
+  });
+  audioOne = path.join(root, "short-one.wav");
+  audioTwo = path.join(root, "short-two.wav");
+  const audio = Buffer.concat([
+    Buffer.from("RIFF"),
+    Buffer.alloc(4),
+    Buffer.from("WAVEfmt "),
+  ]);
+  await Promise.all([writeFile(audioOne, audio), writeFile(audioTwo, audio)]);
+
   config = testConfig(root);
   config.appUrl = `http://127.0.0.1:${port}`;
   store = new JobStore(config.databasePath);
@@ -40,10 +65,39 @@ test.beforeAll(async () => {
             { id: config.transcriptionModel },
           ],
         }),
-        {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        },
+        { headers: { "content-type": "application/json" } },
+      );
+    if (url.endsWith("/audio/transcriptions"))
+      return new Response(JSON.stringify({ text: "diagnostic transcript" }), {
+        headers: { "content-type": "application/json" },
+      });
+    if (url.endsWith("/responses")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        stream?: boolean;
+      };
+      if (nextDiagnosticFailure === "quota") {
+        nextDiagnosticFailure = null;
+        return new Response(
+          JSON.stringify({ error: { code: "insufficient_quota" } }),
+          { status: 429, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (body.stream) return diagnosticStream();
+      return new Response(JSON.stringify({ output_text: '{"ok":true}' }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.endsWith("/chat/completions"))
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: { content: '{"ok":true}' },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+        { headers: { "content-type": "application/json" } },
       );
     return originalFetch(input, init);
   }) as typeof fetch;
@@ -58,7 +112,7 @@ test.afterAll(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-test("configures providers before assigning tasks and disconnects safely", async ({
+test("assigns saved models and tests connections without archive data", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -66,12 +120,8 @@ test("configures providers before assigning tasks and disconnects safely", async
   await page.getByLabel("Username").fill("qa-user");
   await page.getByLabel("Password").fill("a-strong-qa-password");
   await page.getByRole("button", { name: "Continue" }).click();
-  await page
-    .getByRole("button", { name: "Capture a post", exact: true })
-    .click();
-  await page
-    .getByLabel("Post URL")
-    .fill("https://www.instagram.com/reel/qa-test/");
+  await page.getByRole("button", { name: "Capture a post", exact: true }).click();
+  await page.getByLabel("Post URL").fill("https://www.instagram.com/reel/qa-test/");
   await page.getByRole("button", { name: "Capture post", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   await page
@@ -82,92 +132,96 @@ test("configures providers before assigning tasks and disconnects safely", async
   await expect(page.getByText("No providers connected")).toBeVisible();
   await page.getByRole("button", { name: "Add provider" }).click();
   const openAiDialog = page.getByRole("dialog", { name: "Add provider" });
-  await openAiDialog
-    .getByLabel("OpenAI API key")
-    .fill("sk-browser-secret-1234");
-  await openAiDialog.getByLabel("Audio model").selectOption(config.transcriptionModel);
-  await openAiDialog
-    .getByLabel("Analysis model")
-    .selectOption(config.analysisModel);
-  await openAiDialog.getByLabel("Thinking level").selectOption("high");
-  await page.route("**/api/v1/ai-providers/openai", route => route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "invalid_api_key" }) }), { times: 1 });
-  await openAiDialog
-    .getByRole("button", { name: "Connect and save" })
-    .click();
-  await expect(openAiDialog.getByRole("alert")).toContainText("The provider rejected that API key");
-  await page.screenshot({ path: "test-results/provider-dialog-desktop.png" });
-  await openAiDialog.getByRole("button", { name: "Connect and save" }).click();
-  await expect(
-    page.getByText("OpenAI preferences saved. Assign it to a task below when ready."),
-  ).toBeVisible();
-  await expect(page.getByText("Capture needs setup")).toBeVisible();
-  await expect(page.locator("body")).not.toContainText(
-    "sk-browser-secret-1234",
+  await openAiDialog.getByLabel("OpenAI API key").fill("sk-browser-secret-1234");
+  await page.route(
+    "**/api/v1/ai-providers/openai",
+    (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "invalid_api_key" }),
+      }),
+    { times: 1 },
   );
+  await openAiDialog.getByRole("button", { name: "Connect provider" }).click();
+  await expect(openAiDialog.getByRole("alert")).toContainText(
+    "The provider rejected that API key",
+  );
+  await openAiDialog.getByRole("button", { name: "Connect provider" }).click();
+  await expect(page.getByText("OpenAI connected. Assign it to a task below.")).toBeVisible();
+  await expect(page.getByText("Needs setup")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("sk-browser-secret-1234");
 
   const transcriptionTask = page
     .locator(".ai-task")
     .filter({ has: page.getByRole("heading", { name: "Transcription" }) });
   await transcriptionTask.getByLabel("Provider").selectOption("openai");
-  await expect(transcriptionTask).toContainText(config.transcriptionModel);
-  await expect(transcriptionTask.locator("select")).toHaveCount(1);
+  await expect(transcriptionTask.getByLabel("Model")).toHaveValue(
+    config.transcriptionModel,
+  );
 
-  const openAiRow = page.locator(".ai-provider").filter({ hasText: "OpenAI" });
-  await openAiRow.getByRole("button", { name: "Edit settings" }).click();
-  const editDialog = page.getByRole("dialog", { name: "Edit provider" });
-  await expect(editDialog.getByLabel("Thinking level")).toHaveValue("high");
-  await editDialog.getByLabel("Audio model").selectOption("gpt-4o-transcribe");
-  await editDialog.getByLabel("Analysis model").selectOption("gpt-5");
-  await editDialog.getByLabel("Thinking level").selectOption("low");
-  await editDialog.getByRole("button", { name: "Save provider settings" }).click();
-  await expect(transcriptionTask).toContainText("gpt-4o-transcribe");
-  await page.reload();
-  await page.getByRole("navigation", { name: "Settings topics" }).getByRole("button", { name: "AI", exact: true }).click();
-  await expect(openAiRow).toContainText("gpt-5 · low");
-  await page.setViewportSize({ width: 390, height: 844 });
-  await openAiRow.getByRole("button", { name: "Edit settings" }).click();
-  await expect(editDialog.getByLabel("Thinking level")).toHaveValue("low");
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.screenshot({ path: "test-results/provider-dialog-mobile.png" });
-  await editDialog.getByRole("button", { name: "Cancel" }).click();
-  await page.setViewportSize({ width: 1440, height: 900 });
-
-  await page.getByRole("button", { name: "Add provider" }).click();
-  const cerebrasDialog = page.getByRole("dialog", { name: "Add provider" });
-  await cerebrasDialog
-    .getByRole("combobox", { name: "Provider", exact: true })
-    .selectOption("cerebras");
-  await cerebrasDialog
-    .getByLabel("Cerebras API key")
-    .fill("csk-browser-secret-1234");
-  await cerebrasDialog
-    .getByLabel("Analysis model")
-    .selectOption("qwen-3.8-27b");
-  await cerebrasDialog
-    .getByRole("button", { name: "Connect and save" })
-    .click();
-  await expect(
-    page.getByText("Cerebras preferences saved. Assign it to a task below when ready."),
-  ).toBeVisible();
   const analysisTask = page
     .locator(".ai-task")
-    .filter({ has: page.getByRole("heading", { name: "Analysis & Ask" }) })
-  await analysisTask.getByLabel("Provider").selectOption("cerebras");
-  await expect(analysisTask).toContainText("Cerebras · qwen-3.8-27b");
-  await expect(page.getByText("Capture ready")).toBeVisible();
-  await expect(page.getByText("Ask ready")).toBeVisible();
-  await page.screenshot({ path: "test-results/provider-settings-desktop.png" });
+    .filter({ has: page.getByRole("heading", { name: "Analysis & Ask" }) });
+  await analysisTask.getByLabel("Provider").selectOption("openai");
+  await analysisTask.getByLabel("Model").selectOption("gpt-5");
+  await expect(analysisTask.getByLabel("Thinking level")).toHaveValue("");
+  await analysisTask.getByLabel("Thinking level").selectOption("high");
+  await expect(analysisTask).toContainText("Thinking: high");
+  await expect(page.getByText("Tasks configured")).toBeVisible();
+  await page.screenshot({
+    path: "output/playwright/provider-settings-desktop.png",
+    fullPage: true,
+  });
 
-  await page
-    .locator(".ai-provider")
-    .filter({ hasText: "OpenAI" })
-    .getByRole("button", { name: "Disconnect" })
-    .click();
+  const transcriptionTest = page
+    .locator(".ai-test-row")
+    .filter({ has: page.getByRole("heading", { name: "Transcription" }) });
+  await transcriptionTest.locator('input[type="file"]').setInputFiles(audioOne);
+  await transcriptionTest.getByRole("button", { name: "Test transcription" }).click();
+  await expect(transcriptionTest).toContainText("Passed in");
+  await transcriptionTest.locator('input[type="file"]').setInputFiles(audioTwo);
+  await expect(transcriptionTest).toContainText("Test result discarded");
+
+  const analysisTest = page
+    .locator(".ai-test-row")
+    .filter({ has: page.getByRole("heading", { name: "Analysis" }) });
+  await analysisTest.getByRole("button", { name: "Test analysis" }).click();
+  await expect(analysisTest).toContainText("Passed in");
+  await analysisTask.getByLabel("Thinking level").selectOption("low");
+  await expect(analysisTest).toContainText("Test result discarded");
+
+  const askTest = page
+    .locator(".ai-test-row")
+    .filter({ has: page.getByRole("heading", { name: "Ask" }) });
+  await expect(askTest.getByRole("button", { name: "Test ask" })).toBeEnabled();
+  await askTest.getByRole("button", { name: "Test ask" }).click();
+  await expect(askTest).toContainText("Passed in");
+
+  const openAiRow = page.locator(".ai-provider").filter({ hasText: "OpenAI" });
+  await openAiRow.getByRole("button", { name: "Manage key" }).click();
+  const manageDialog = page.getByRole("dialog", { name: "Manage provider" });
+  await manageDialog.getByRole("button", { name: "Replace API key" }).click();
+  await manageDialog.getByLabel("OpenAI API key").fill("sk-browser-secret-5678");
+  await manageDialog.getByRole("button", { name: "Connect provider" }).click();
+  await expect(askTest).toContainText("Test result discarded");
+
+  nextDiagnosticFailure = "quota";
   await expect(
-    page.getByText(
-      "OpenAI disconnected. Its assignments now need a provider.",
+    analysisTest.getByRole("button", { name: "Test analysis" }),
+  ).toBeEnabled();
+  await analysisTest.getByRole("button", { name: "Test analysis" }).click();
+  await expect(analysisTest).toContainText("Failed in");
+  await expect(analysisTest).toContainText("Add provider credits or increase its quota");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
     ),
-  ).toBeVisible();
-  await expect(page.getByText("Capture needs setup")).toBeVisible();
-  await expect(page.getByText("Ask ready")).toBeVisible();
+  ).toBe(true);
+  await page.screenshot({
+    path: "output/playwright/provider-settings-mobile.png",
+    fullPage: true,
+  });
 });
