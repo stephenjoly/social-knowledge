@@ -420,6 +420,7 @@ export function buildApp(
   });
   app.get("/health", async () => ({ status: "ok" }));
   app.get("/openapi.json", async () => openApiDocument(config.appUrl));
+  app.get("/roadmap", async (_request, reply) => reply.sendFile("roadmap.html"));
   registerOAuth(app, config, store, auth);
   registerMcp(app, config, store, auth);
 

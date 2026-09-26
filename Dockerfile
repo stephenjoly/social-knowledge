@@ -5,6 +5,8 @@ RUN npm ci --no-audit --no-fund
 COPY tsconfig.json tsconfig.build.json tsconfig.web.json vite.config.ts ./
 COPY src ./src
 COPY web ./web
+COPY scripts/copy-roadmap.mjs ./scripts/copy-roadmap.mjs
+COPY docs/roadmap/2026-09-24 ./docs/roadmap/2026-09-24
 RUN npm run build && npm prune --omit=dev --no-audit --no-fund
 
 FROM node:22-bookworm-slim AS runtime

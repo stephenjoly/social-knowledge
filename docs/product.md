@@ -36,7 +36,7 @@ Logs retain previous attempts when a capture was retried. Their action labels ar
 
 The supported source platforms are Facebook and Instagram. The application provides a private dashboard, Apple Shortcut ingestion, account API keys, OAuth-backed read-only MCP access, Obsidian Markdown output, and complete library exports.
 
-The service does not bypass DRM, paywalls, access controls, or platform permissions. It is not a general-purpose social crawler, shared multi-tenant social network, or public media proxy.
+The service does not bypass DRM, paywalls, access controls, or platform permissions. It is not a general-purpose social crawler, shared multi-tenant social network, or public media proxy. Its anonymous `/roadmap` page publishes only the maintained product roadmap and its source document; it never exposes account or archive data.
 
 ## Definition of a good change
 
