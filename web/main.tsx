@@ -637,6 +637,16 @@ type ApiKey = {
   createdAt: string;
   lastUsedAt: string | null;
 };
+type AiThinkingLevel = "minimal" | "low" | "medium" | "high";
+type AiTaskOption = { model: string };
+type AiAnalysisTaskOption = AiTaskOption & {
+  thinkingLevels: AiThinkingLevel[];
+};
+type AiProviderConfiguration = {
+  transcriptionModel: string | null;
+  analysisModel: string | null;
+  thinkingLevel: AiThinkingLevel | null;
+};
 type AiProvider = {
   id: "openai" | "cerebras";
   name: string;
@@ -648,16 +658,75 @@ type AiProvider = {
   supportsVision: boolean;
   capabilities: { transcription: boolean; analysis: boolean };
   models: { transcription: string[]; analysis: string[] };
+  taskOptions: {
+    transcription: AiTaskOption[];
+    analysis: AiAnalysisTaskOption[];
+  };
+  configuration: AiProviderConfiguration | null;
 };
-type AiSelection = { provider: "openai" | "cerebras"; model: string };
+type AiSelection = {
+  provider: "openai" | "cerebras";
+  model: string;
+};
+type AiAnalysisSelection = AiSelection & { thinkingLevel: AiThinkingLevel | null };
 type AiProviderState = {
   providers: AiProvider[];
   selections: {
     transcription: AiSelection | null;
-    analysis: AiSelection | null;
+    analysis: AiAnalysisSelection | null;
   };
   readiness: { capture: boolean; ask: boolean };
 };
+
+function transcriptionOptions(provider: AiProvider) {
+  return provider.taskOptions?.transcription?.length
+    ? provider.taskOptions.transcription
+    : provider.models.transcription.map((model) => ({ model }));
+}
+
+function analysisOptions(provider: AiProvider) {
+  return provider.taskOptions?.analysis?.length
+    ? provider.taskOptions.analysis
+    : provider.models.analysis.map((model) => ({
+        model,
+        thinkingLevels: [] as AiThinkingLevel[],
+      }));
+}
+
+function defaultProviderConfiguration(provider: AiProvider): AiProviderConfiguration {
+  if (provider.configuration) return { ...provider.configuration };
+  const transcriptionModel =
+    transcriptionOptions(provider)[0]?.model ?? null;
+  const analysisModel =
+    analysisOptions(provider)[0]?.model ?? null;
+  const analysisOption = analysisOptions(provider).find(
+    (option) => option.model === analysisModel,
+  );
+  const thinkingLevel = analysisOption?.thinkingLevels[0] ?? null;
+  return { transcriptionModel, analysisModel, thinkingLevel };
+}
+
+function onboardingProviderConfiguration(
+  provider: AiProvider,
+  step: "transcription" | "analysis",
+): AiProviderConfiguration {
+  const current = provider.configuration ?? {
+    transcriptionModel: null,
+    analysisModel: null,
+    thinkingLevel: null,
+  };
+  if (step === "transcription" && current.transcriptionModel === null)
+    return {
+      ...current,
+      transcriptionModel: transcriptionOptions(provider)[0]?.model ?? null,
+    };
+  if (step === "analysis" && current.analysisModel === null)
+    return {
+      ...current,
+      analysisModel: analysisOptions(provider)[0]?.model ?? null,
+    };
+  return { ...current };
+}
 type SettingsTopic =
   "overview" | "ai" | "connections" | "api" | "data" | "account" | "all";
 type AccountUser = {
@@ -1073,12 +1142,23 @@ function ProviderOnboarding({ onDone }: { onDone: () => void }) {
   );
   async function choose(
     selection: "transcription" | "analysis",
-    selected: AiSelection,
+    selectedProvider: AiSelection["provider"],
   ) {
     const result = await api<AiProviderState>("/api/v1/ai-settings", {
       method: "PUT",
-      body: JSON.stringify({ [selection]: selected }),
+      body: JSON.stringify({ [selection]: { provider: selectedProvider } }),
     });
+    setState(result);
+    return result;
+  }
+  async function configure(definition: AiProvider) {
+    const result = await api<AiProviderState>(
+      `/api/v1/ai-providers/${definition.id}/configuration`,
+      {
+        method: "PUT",
+        body: JSON.stringify(onboardingProviderConfiguration(definition, step)),
+      },
+    );
     setState(result);
     return result;
   }
@@ -1117,9 +1197,8 @@ function ProviderOnboarding({ onDone }: { onDone: () => void }) {
               const definition = result.providers.find(
                 (item) => item.id === provider,
               )!;
-              const model = definition.models[step][0];
-              if (!model) throw new Error("model_unavailable");
-              result = await choose(step, { provider, model });
+              result = await configure(definition);
+              result = await choose(step, provider);
               setApiKey("");
               if (step === "transcription") {
                 setStep("analysis");
@@ -1160,14 +1239,19 @@ function ProviderOnboarding({ onDone }: { onDone: () => void }) {
               </select>
             </label>
           )}
-          {selectedProvider?.models[step][0] && (
+          {selectedProvider && (
             <p className="model-choice">
               <span>
                 {step === "transcription"
                   ? "Transcription model"
                   : "Analysis model"}
               </span>
-              <strong>{selectedProvider.models[step][0]}</strong>
+              <strong>
+                {step === "transcription"
+                  ? defaultProviderConfiguration(selectedProvider)
+                      .transcriptionModel
+                  : defaultProviderConfiguration(selectedProvider).analysisModel}
+              </strong>
             </p>
           )}
           {selectedProvider?.connected ? (
@@ -1782,13 +1866,52 @@ function Settings({ user }: { user: AccountUser | null }) {
   const aiStateRef = useRef<AiProviderState | null>(null);
   const [selectedAiProvider, setSelectedAiProvider] = useState<
     "openai" | "cerebras"
-  >("cerebras");
+  >("openai");
+  const [providerDialogOpen, setProviderDialogOpen] = useState(false);
   const [providerApiKey, setProviderApiKey] = useState("");
+  const [replaceProviderKey, setReplaceProviderKey] = useState(false);
+  const [providerTranscriptionModel, setProviderTranscriptionModel] =
+    useState("");
+  const [providerAnalysisModel, setProviderAnalysisModel] = useState("");
+  const [providerThinkingLevel, setProviderThinkingLevel] = useState<
+    AiThinkingLevel | ""
+  >("");
   const [providerMessage, setProviderMessage] = useState("");
+  const [providerMessageKind, setProviderMessageKind] = useState<
+    "pending" | "success" | "error"
+  >("success");
   const [verifyingProvider, setVerifyingProvider] = useState(false);
   const applyAiState = (nextState: AiProviderState) => {
     aiStateRef.current = nextState;
     setAiState(nextState);
+  };
+  const applyProviderDraft = (providerId: AiSelection["provider"]) => {
+    const definition = aiStateRef.current?.providers.find(
+      (item) => item.id === providerId,
+    );
+    const configuration = definition
+      ? defaultProviderConfiguration(definition)
+      : {
+          transcriptionModel: null,
+          analysisModel: null,
+          thinkingLevel: null,
+        };
+    setSelectedAiProvider(providerId);
+    setProviderTranscriptionModel(configuration.transcriptionModel ?? "");
+    setProviderAnalysisModel(configuration.analysisModel ?? "");
+    setProviderThinkingLevel(configuration.thinkingLevel ?? "");
+    setProviderApiKey("");
+    setReplaceProviderKey(!definition?.connected);
+  };
+  const openProviderDialog = (providerId: AiSelection["provider"]) => {
+    applyProviderDraft(providerId);
+    setProviderMessage("");
+    setProviderDialogOpen(true);
+  };
+  const closeProviderDialog = () => {
+    setProviderApiKey("");
+    setReplaceProviderKey(false);
+    setProviderDialogOpen(false);
   };
   async function load(showLoading = false) {
     if (showLoading) setLoading(true);
@@ -1895,24 +2018,96 @@ function Settings({ user }: { user: AccountUser | null }) {
       );
     }
   }
-  async function saveTaskSelection(
+  async function saveTaskAssignment(
     task: "transcription" | "analysis",
-    provider: AiSelection["provider"],
-    model: string,
+    provider: AiSelection["provider"] | null,
   ) {
+    setProviderMessageKind("pending");
+    setProviderMessage(
+      `Saving ${task === "transcription" ? "transcription" : "analysis"} assignment…`,
+    );
     try {
       const result = await api<AiProviderState>("/api/v1/ai-settings", {
         method: "PUT",
-        body: JSON.stringify({ [task]: { provider, model } }),
+        body: JSON.stringify({
+          [task]: provider ? { provider } : null,
+        }),
       });
       applyAiState(result);
+      setProviderMessageKind("success");
       setProviderMessage(
-        `${task === "transcription" ? "Transcription" : "Analysis"} selection updated.`,
+        `${task === "transcription" ? "Transcription" : "Analysis & Ask"} assignment updated.`,
       );
-    } catch {
+    } catch (error) {
+      setProviderMessageKind("error");
+      const code = (error as { body?: { error?: string } }).body?.error;
       setProviderMessage(
-        `The ${task === "transcription" ? "transcription" : "analysis"} selection could not be updated. Try again.`,
+        code === "provider_configuration_required"
+          ? "Choose a model in that provider’s settings before assigning it."
+          : `The ${task === "transcription" ? "transcription" : "analysis"} assignment could not be updated. Try again.`,
       );
+    }
+  }
+  async function submitProviderConfiguration(event: FormEvent) {
+    event.preventDefault();
+    const definition = aiStateRef.current?.providers.find(
+      (item) => item.id === selectedAiProvider,
+    );
+    const needsKey = !definition?.connected || replaceProviderKey;
+    if (needsKey && !providerApiKey.trim()) {
+      setProviderMessageKind("error");
+      setProviderMessage("Enter an API key to connect this provider.");
+      return;
+    }
+    setVerifyingProvider(true);
+    setProviderMessageKind("pending");
+    setProviderMessage(
+      needsKey ? "Verifying the key…" : "Saving provider preferences…",
+    );
+    try {
+      let state = aiStateRef.current;
+      if (needsKey) {
+        state = await api<AiProviderState>(
+          `/api/v1/ai-providers/${selectedAiProvider}`,
+          { method: "PUT", body: JSON.stringify({ apiKey: providerApiKey }) },
+        );
+        applyAiState(state);
+        setProviderApiKey("");
+      }
+      const current = state?.providers.find(
+        (item) => item.id === selectedAiProvider,
+      );
+      if (!current?.connected) throw new Error("provider_unavailable");
+      const result = await api<AiProviderState>(
+        `/api/v1/ai-providers/${selectedAiProvider}/configuration`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            transcriptionModel: providerTranscriptionModel || null,
+            analysisModel: providerAnalysisModel || null,
+            thinkingLevel: providerThinkingLevel || null,
+          }),
+        },
+      );
+      applyAiState(result);
+      setProviderApiKey("");
+      setProviderMessageKind("success");
+      setProviderMessage(
+        `${current.name} preferences saved. Assign it to a task below when ready.`,
+      );
+      closeProviderDialog();
+    } catch (error) {
+      setProviderMessageKind("error");
+      const code = (error as { body?: { error?: string } }).body?.error;
+      setProviderMessage(
+        code === "invalid_api_key"
+          ? "The provider rejected that API key. Check it and try again."
+          : code === "model_unavailable"
+            ? "That model is no longer available from this provider. Choose another model."
+            : "The provider settings could not be saved. Try again.",
+      );
+    } finally {
+      setVerifyingProvider(false);
     }
   }
   const topics: Array<{
@@ -1963,6 +2158,21 @@ function Settings({ user }: { user: AccountUser | null }) {
   );
   const openAi = aiState?.providers.find(
     (provider) => provider.id === "openai",
+  );
+  const configuredAiProviders = (aiState?.providers ?? []).filter(
+    (provider) => provider.status !== "not_connected",
+  );
+  const dialogProvider = aiState?.providers.find(
+    (provider) => provider.id === selectedAiProvider,
+  );
+  const dialogTranscriptionOptions = dialogProvider
+    ? transcriptionOptions(dialogProvider)
+    : [];
+  const dialogAnalysisOptions = dialogProvider
+    ? analysisOptions(dialogProvider)
+    : [];
+  const dialogAnalysisOption = dialogAnalysisOptions.find(
+    (option) => option.model === providerAnalysisModel,
   );
   const activeTopic = topics.find((item) => item.id === topic);
   const showTopic = (value: SettingsTopic) =>
@@ -2193,257 +2403,382 @@ function Settings({ user }: { user: AccountUser | null }) {
               )}
               {showTopic("ai") && (
                 <section className="settings-card ai-provider-settings">
-                  <div className="settings-card-heading">
-                    <span className="settings-section-kicker">
-                      1 · PROVIDER CONNECTIONS
-                    </span>
-                    <h2>AI processing</h2>
+                  <div className="ai-provider-heading">
+                    <div className="settings-card-heading">
+                      <span className="settings-section-kicker">1 · PROVIDERS</span>
+                      <h2>Providers</h2>
+                    </div>
+                    <button
+                      type="button"
+                      className="settings-quick-action"
+                      onClick={() =>
+                        openProviderDialog(
+                          (aiState?.providers.find(
+                            (provider) => provider.status === "not_connected",
+                          )?.id ?? "openai") as AiSelection["provider"],
+                        )
+                      }
+                    >
+                      <Plus aria-hidden="true" /> Add provider
+                    </button>
                   </div>
                   <p className="settings-help">
-                    Choose transcription and analysis separately. Provider keys
-                    are encrypted at rest and never shown again.
+                    Connect a provider, then save its model preferences before assigning it to work. Keys are encrypted and never shown again.
                   </p>
-                  <div className="ai-readiness" role="status">
-                    <strong>
-                      {aiState?.readiness.capture
-                        ? "Capture ready"
-                        : "Capture needs transcription and analysis"}
-                    </strong>
-                    <span>
-                      {aiState?.readiness.ask
-                        ? "Ask is ready."
-                        : "Ask needs an analysis provider."}
-                    </span>
+                  {configuredAiProviders.length ? (
+                    <div className="ai-provider-list">
+                      {configuredAiProviders.map((provider) => {
+                        const configuration = provider.configuration;
+                        return (
+                          <article className="ai-provider" key={provider.id}>
+                            <div className="ai-provider-summary">
+                              <div>
+                                <strong>{provider.name}</strong>
+                                <span
+                                  className={`connection-state ${provider.connected ? "connected" : ""}`}
+                                >
+                                  {provider.connected
+                                    ? "Verified"
+                                    : "Reconnect needed"}
+                                </span>
+                              </div>
+                              {provider.connected && provider.keyHint && (
+                                <small>{provider.keyHint}</small>
+                              )}
+                            </div>
+                            <dl className="ai-provider-models">
+                              {provider.capabilities.transcription && (
+                                <div>
+                                  <dt>Audio</dt>
+                                  <dd>{configuration?.transcriptionModel ?? "Not configured"}</dd>
+                                </div>
+                              )}
+                              {provider.capabilities.analysis && (
+                                <div>
+                                  <dt>Analysis</dt>
+                                  <dd>
+                                    {configuration?.analysisModel ?? "Not configured"}
+                                    {configuration?.analysisModel &&
+                                    configuration.thinkingLevel
+                                      ? ` · ${configuration.thinkingLevel}`
+                                      : ""}
+                                  </dd>
+                                </div>
+                              )}
+                            </dl>
+                            <div className="ai-provider-actions">
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => openProviderDialog(provider.id)}
+                              >
+                                Edit settings
+                              </button>
+                              {provider.connected && (
+                                <button
+                                  type="button"
+                                  className="text-button danger-button"
+                                  onClick={async () => {
+                                    setProviderMessageKind("pending");
+                                    setProviderMessage(`Disconnecting ${provider.name}…`);
+                                    try {
+                                      const result = await api<AiProviderState>(
+                                        `/api/v1/ai-providers/${provider.id}`,
+                                        { method: "DELETE" },
+                                      );
+                                      applyAiState(result);
+                                      setProviderMessageKind("success");
+                                      setProviderMessage(
+                                        `${provider.name} disconnected. Its assignments now need a provider.`,
+                                      );
+                                    } catch {
+                                      setProviderMessageKind("error");
+                                      setProviderMessage(
+                                        `${provider.name} could not be disconnected. Try again.`,
+                                      );
+                                    }
+                                  }}
+                                >
+                                  Disconnect
+                                </button>
+                              )}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="ai-provider-empty">
+                      <strong>No providers connected</strong>
+                      <span>Add OpenAI or Cerebras to choose task models.</span>
+                    </div>
+                  )}
+                  <div className="ai-assignment-heading">
+                    <div>
+                      <span className="settings-section-kicker">2 · ASSIGN TASKS</span>
+                      <h3>Assign tasks</h3>
+                    </div>
+                    <div className="ai-readiness" role="status">
+                      <strong>
+                        {aiState?.readiness.capture ? "Capture ready" : "Capture needs setup"}
+                      </strong>
+                      <span>{aiState?.readiness.ask ? "Ask ready" : "Ask needs analysis"}</span>
+                    </div>
                   </div>
-                  <div className="ai-task-grid">
+                  <div className="ai-task-list">
                     {(["transcription", "analysis"] as const).map((task) => {
                       const selection = aiState?.selections[task];
+                      const thinkingLevel =
+                        task === "analysis"
+                          ? (selection as AiAnalysisSelection | null)?.thinkingLevel
+                          : null;
                       const options = (aiState?.providers ?? []).filter(
-                        (item) => item.capabilities[task],
+                        (provider) =>
+                          provider.connected &&
+                          provider.capabilities[task] &&
+                          (task === "transcription"
+                            ? Boolean(provider.configuration?.transcriptionModel)
+                            : Boolean(provider.configuration?.analysisModel)),
+                      );
+                      const assignedProvider = options.find(
+                        (provider) => provider.id === selection?.provider,
                       );
                       return (
                         <article className="ai-task" key={task}>
-                          <span className="step-label">
-                            {task === "transcription" ? "Step 1" : "Step 2"}
-                          </span>
-                          <h3>
-                            {task === "transcription"
-                              ? "Transcription"
-                              : "Analysis & Ask"}
-                          </h3>
-                          <p>
-                            {task === "transcription"
-                              ? "Turns audio into searchable text. OpenAI is currently required."
-                              : "Creates summaries, topics, vision insights, and answers."}
-                          </p>
+                          <div>
+                            <span className="step-label">
+                              {task === "transcription" ? "TRANSCRIPTION" : "ANALYSIS & ASK"}
+                            </span>
+                            <h3>
+                              {task === "transcription" ? "Transcription" : "Analysis & Ask"}
+                            </h3>
+                            <p>
+                              {task === "transcription"
+                                ? "Uses an audio model. Thinking levels apply to Analysis & Ask, not transcription."
+                                : "One shared assignment powers capture analysis and Ask."}
+                            </p>
+                          </div>
                           <label>
                             Provider
                             <select
                               value={selection?.provider ?? ""}
-                              onChange={async (event) => {
-                                const provider = event.target.value as
-                                  "openai" | "cerebras";
-                                const currentOptions = (
-                                  aiStateRef.current?.providers ?? options
-                                ).filter((item) => item.capabilities[task]);
-                                const definition = currentOptions.find(
-                                  (item) => item.id === provider,
-                                );
-                                if (!definition?.connected) {
-                                  setSelectedAiProvider(provider);
-                                  setProviderMessage(
-                                    `Connect ${definition?.name ?? provider} below before selecting it for ${task}.`,
-                                  );
-                                  return;
-                                }
-                                const model = definition.models[task][0];
-                                if (!model) {
-                                  setProviderMessage(
-                                    `${definition.name} has no ${task} model available.`,
-                                  );
-                                  return;
-                                }
-                                await saveTaskSelection(task, provider, model);
-                              }}
+                              disabled={providerMessageKind === "pending"}
+                              onChange={(event) =>
+                                void saveTaskAssignment(
+                                  task,
+                                  event.target.value
+                                    ? (event.target.value as AiSelection["provider"])
+                                    : null,
+                                )
+                              }
                             >
-                              <option value="" disabled>
-                                Choose provider
-                              </option>
-                              {options.map((item) => (
-                                <option key={item.id} value={item.id}>
-                                  {item.name}
-                                  {item.connected
-                                    ? " · connected"
-                                    : " · connect first"}
+                              <option value="">Not assigned</option>
+                              {options.map((provider) => (
+                                <option key={provider.id} value={provider.id}>
+                                  {provider.name}
                                 </option>
                               ))}
                             </select>
                           </label>
-                          {selection && (
-                            <label>
-                              Model
-                              <select
-                                value={selection.model}
-                                onChange={async (event) => {
-                                  await saveTaskSelection(
-                                    task,
-                                    selection.provider,
-                                    event.target.value,
-                                  );
-                                }}
-                              >
-                                {options
-                                  .find(
-                                    (item) => item.id === selection.provider,
-                                  )
-                                  ?.models[task].map((model) => (
-                                    <option key={model}>{model}</option>
-                                  ))}
-                              </select>
-                            </label>
+                          {selection ? (
+                            <p className="task-status ready">
+                              {assignedProvider?.name ?? selection.provider} · {selection.model}
+                              {thinkingLevel
+                                ? ` · ${thinkingLevel}`
+                                : ""}
+                            </p>
+                          ) : options.length ? (
+                            <p className="task-status">Choose a configured provider.</p>
+                          ) : (
+                            <p className="task-status">Configure a compatible provider first.</p>
                           )}
-                          <strong
-                            className={
-                              selection ? "task-status ready" : "task-status"
-                            }
-                          >
-                            {selection
-                              ? `${options.find((item) => item.id === selection.provider)?.name} · ${selection.model}`
-                              : "Not configured"}
-                          </strong>
                         </article>
                       );
                     })}
                   </div>
-                  <h3 className="provider-connections-title">
-                    Provider connections
-                  </h3>
-                  <div className="platform-connections">
-                    {(aiState?.providers ?? []).map((provider) => (
-                      <article
-                        className={
-                          provider.id === selectedAiProvider
-                            ? "selected-provider"
-                            : ""
-                        }
-                        key={provider.id}
-                      >
-                        <div className="platform-connection-heading">
-                          <div>
-                            <strong>{provider.name}</strong>
-                            <span
-                              className={`connection-state ${provider.connected ? "connected" : ""}`}
-                            >
-                              {provider.connected
-                                ? "Verified"
-                                : provider.status === "needs_attention"
-                                  ? "Reconnect needed"
-                                  : "Not connected"}
-                            </span>
-                          </div>
-                        </div>
-                        <p>
-                          {provider.connected
-                            ? `${provider.keyHint} · verified ${new Date(provider.verifiedAt!).toLocaleString()}`
-                            : provider.id === "cerebras"
-                              ? "Fast text generation through Cerebras Inference. Transcript, description, and comments are analyzed; sampled video frames are not sent."
-                              : "Required for transcription; also supports analysis and vision."}
-                        </p>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => setSelectedAiProvider(provider.id)}
-                        >
-                          {provider.connected
-                            ? "Replace key"
-                            : `Connect ${provider.name}`}
-                        </button>
-                        {provider.connected && (
-                          <button
-                            type="button"
-                            className="text-button danger-button"
-                            onClick={async () => {
-                              try {
-                                const result = await api<AiProviderState>(
-                                  `/api/v1/ai-providers/${provider.id}`,
-                                  { method: "DELETE" },
-                                );
-                                applyAiState(result);
-                                setProviderMessage(
-                                  `${provider.name} disconnected. Any task that used it now needs a provider.`,
-                                );
-                              } catch {
-                                setProviderMessage(
-                                  `${provider.name} could not be disconnected. Try again.`,
-                                );
-                              }
-                            }}
-                          >
-                            Disconnect {provider.name}
-                          </button>
-                        )}
-                      </article>
-                    ))}
-                  </div>
-                  <form
-                    className="settings-provider-form"
-                    onSubmit={async (event) => {
-                      event.preventDefault();
-                      setVerifyingProvider(true);
-                      setProviderMessage("Testing the key with the provider…");
-                      try {
-                        const result = await api<AiProviderState>(
-                          `/api/v1/ai-providers/${selectedAiProvider}`,
-                          {
-                            method: "PUT",
-                            body: JSON.stringify({ apiKey: providerApiKey }),
-                          },
-                        );
-                        applyAiState(result);
-                        setProviderApiKey("");
-                        setProviderMessage(
-                          `${selectedAiProvider === "cerebras" ? "Cerebras" : "OpenAI"} connected. Review the task selections above.`,
-                        );
-                      } catch (error) {
-                        setProviderMessage(
-                          (error as { body?: { error?: string } }).body
-                            ?.error === "invalid_api_key"
-                            ? "The provider rejected that API key. Check it and try again."
-                            : "The provider could not be reached. Try again shortly.",
-                        );
-                      } finally {
-                        setVerifyingProvider(false);
-                      }
-                    }}
-                  >
-                    <label>
-                      {selectedAiProvider === "cerebras"
-                        ? "Cerebras"
-                        : "OpenAI"}{" "}
-                      API key
-                      <input
-                        type="password"
-                        value={providerApiKey}
-                        onChange={(event) =>
-                          setProviderApiKey(event.target.value)
-                        }
-                        autoComplete="off"
-                        required
-                        placeholder="Paste API key"
-                      />
-                    </label>
-                    <button disabled={verifyingProvider}>
-                      {verifyingProvider ? "Verifying…" : "Verify and use"}
-                    </button>
-                  </form>
                   {providerMessage && (
                     <p
-                      className="action-feedback"
-                      role="status"
+                      className={`action-feedback ${providerMessageKind === "error" ? "error" : ""}`}
+                      role={providerMessageKind === "error" ? "alert" : "status"}
                       aria-live="polite"
                     >
                       {providerMessage}
                     </p>
+                  )}
+                  {providerDialogOpen && (
+                    <div
+                      className="ai-provider-dialog-layer"
+                      role="presentation"
+                      onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) closeProviderDialog();
+                      }}
+                    >
+                      <section
+                        className="ai-provider-dialog"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="provider-dialog-title"
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            closeProviderDialog();
+                            return;
+                          }
+                          if (event.key !== "Tab") return;
+                          const focusable = Array.from(
+                            event.currentTarget.querySelectorAll<HTMLElement>(
+                              "button:not([disabled]), input:not([disabled]), select:not([disabled])",
+                            ),
+                          );
+                          if (!focusable.length) return;
+                          const first = focusable[0]!;
+                          const last = focusable[focusable.length - 1]!;
+                          if (event.shiftKey && document.activeElement === first) {
+                            event.preventDefault();
+                            last.focus();
+                          } else if (!event.shiftKey && document.activeElement === last) {
+                            event.preventDefault();
+                            first.focus();
+                          }
+                        }}
+                      >
+                        <header>
+                          <div>
+                            <span className="settings-section-kicker">PROVIDER SETTINGS</span>
+                            <h3 id="provider-dialog-title">
+                              {dialogProvider?.connected ? "Edit provider" : "Add provider"}
+                            </h3>
+                          </div>
+                          <button
+                            type="button"
+                            aria-label="Close provider settings"
+                            onClick={closeProviderDialog}
+                          >
+                            <X aria-hidden="true" />
+                          </button>
+                        </header>
+                        <form onSubmit={(event) => void submitProviderConfiguration(event)}>
+                          <label>
+                            Provider
+                            <select
+                              value={selectedAiProvider}
+                              disabled={verifyingProvider}
+                              autoFocus={Boolean(
+                                dialogProvider?.connected && !replaceProviderKey,
+                              )}
+                              onChange={(event) =>
+                                applyProviderDraft(event.target.value as AiSelection["provider"])
+                              }
+                            >
+                              <option value="openai">OpenAI</option>
+                              <option value="cerebras">Cerebras</option>
+                            </select>
+                          </label>
+                          {(!dialogProvider?.connected || replaceProviderKey) ? (
+                            <label>
+                              {dialogProvider?.name ?? "Provider"} API key
+                              <input
+                                type="password"
+                                value={providerApiKey}
+                                onChange={(event) => setProviderApiKey(event.target.value)}
+                                autoComplete="off"
+                                required
+                                autoFocus
+                                placeholder="Paste API key"
+                              />
+                            </label>
+                          ) : (
+                            <div className="ai-provider-key-state">
+                              <span>{dialogProvider?.keyHint} · verified</span>
+                              <button
+                                type="button"
+                                disabled={verifyingProvider}
+                                onClick={() => setReplaceProviderKey(true)}
+                              >
+                                Replace API key
+                              </button>
+                            </div>
+                          )}
+                          {dialogProvider?.capabilities.transcription && (
+                            <label>
+                              Audio model
+                              <select
+                                value={providerTranscriptionModel}
+                                disabled={verifyingProvider}
+                                onChange={(event) => setProviderTranscriptionModel(event.target.value)}
+                              >
+                                <option value="">Not configured</option>
+                                {dialogTranscriptionOptions.map((option) => (
+                                  <option key={option.model} value={option.model}>
+                                    {option.model}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          {dialogProvider?.capabilities.analysis && (
+                            <label>
+                              Analysis model
+                              <select
+                                value={providerAnalysisModel}
+                                disabled={verifyingProvider}
+                                onChange={(event) => {
+                                  const model = event.target.value;
+                                  const option = dialogAnalysisOptions.find(
+                                    (item) => item.model === model,
+                                  );
+                                  setProviderAnalysisModel(model);
+                                  if (!option?.thinkingLevels.includes(providerThinkingLevel as AiThinkingLevel))
+                                    setProviderThinkingLevel("");
+                                }}
+                              >
+                                <option value="">Not configured</option>
+                                {dialogAnalysisOptions.map((option) => (
+                                  <option key={option.model} value={option.model}>
+                                    {option.model}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          {dialogAnalysisOption?.thinkingLevels.length ? (
+                            <label>
+                              Thinking level
+                              <select
+                                value={providerThinkingLevel}
+                                disabled={verifyingProvider}
+                                onChange={(event) =>
+                                  setProviderThinkingLevel(
+                                    event.target.value as AiThinkingLevel | "",
+                                  )
+                                }
+                              >
+                                <option value="">Provider default</option>
+                                {dialogAnalysisOption.thinkingLevels.map((level) => (
+                                  <option key={level} value={level}>
+                                    {level}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : null}
+                          <p className="settings-help">
+                            Thinking is only available for compatible analysis models.
+                          </p>
+                          <div className="ai-provider-dialog-actions">
+                            <button type="button" onClick={closeProviderDialog} disabled={verifyingProvider}>
+                              Cancel
+                            </button>
+                            <button disabled={verifyingProvider}>
+                              {verifyingProvider
+                                ? "Saving…"
+                                : dialogProvider?.connected
+                                  ? "Save provider settings"
+                                  : "Connect and save"}
+                            </button>
+                          </div>
+                        </form>
+                      </section>
+                    </div>
                   )}
                 </section>
               )}

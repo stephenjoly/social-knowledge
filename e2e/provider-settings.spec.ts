@@ -13,11 +13,12 @@ let root = "";
 let store: JobStore;
 let app: ReturnType<typeof buildApp>;
 let originalFetch: typeof fetch;
+let config: ReturnType<typeof testConfig>;
 
 test.beforeAll(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), "social-knowledge-e2e-ai-"));
   await mkdir(path.join(root, "data"));
-  const config = testConfig(root);
+  config = testConfig(root);
   config.appUrl = `http://127.0.0.1:${port}`;
   store = new JobStore(config.databasePath);
   store.createUser("qa-user", await hash("a-strong-qa-password"));
@@ -57,7 +58,7 @@ test.afterAll(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-test("configures transcription and analysis independently and disconnects safely", async ({
+test("configures providers before assigning tasks and disconnects safely", async ({
   page,
 }) => {
   await page.goto(`http://127.0.0.1:${port}`);
@@ -72,41 +73,75 @@ test("configures transcription and analysis independently and disconnects safely
     .fill("https://www.instagram.com/reel/qa-test/");
   await page.getByRole("button", { name: "Capture post", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Settings topics" })
+    .getByRole("button", { name: "AI" })
+    .click();
 
-  await page.getByRole("button", { name: "Connect OpenAI" }).click();
-  await page.getByLabel("OpenAI API key").fill("sk-browser-secret-1234");
-  await page.getByRole("button", { name: "Verify and use" }).click();
+  await expect(page.getByText("No providers connected")).toBeVisible();
+  await page.getByRole("button", { name: "Add provider" }).click();
+  const openAiDialog = page.getByRole("dialog", { name: "Add provider" });
+  await openAiDialog
+    .getByLabel("OpenAI API key")
+    .fill("sk-browser-secret-1234");
+  await openAiDialog.getByLabel("Audio model").selectOption(config.transcriptionModel);
+  await openAiDialog
+    .getByLabel("Analysis model")
+    .selectOption(config.analysisModel);
+  await openAiDialog.getByLabel("Thinking level").selectOption("high");
+  await openAiDialog
+    .getByRole("button", { name: "Connect and save" })
+    .click();
   await expect(
-    page.getByText("OpenAI connected. Review the task selections above."),
+    page.getByText("OpenAI preferences saved. Assign it to a task below when ready."),
   ).toBeVisible();
-  await expect(page.getByText("Capture ready")).toBeVisible();
-  await expect(page.getByText("Ask is ready.")).toBeVisible();
+  await expect(page.getByText("Capture needs setup")).toBeVisible();
   await expect(page.locator("body")).not.toContainText(
     "sk-browser-secret-1234",
   );
 
-  await page.getByRole("button", { name: "Connect Cerebras" }).click();
-  await page.getByLabel("Cerebras API key").fill("csk-browser-secret-1234");
-  await page.getByRole("button", { name: "Verify and use" }).click();
+  const transcriptionTask = page
+    .locator(".ai-task")
+    .filter({ has: page.getByRole("heading", { name: "Transcription" }) });
+  await transcriptionTask.getByLabel("Provider").selectOption("openai");
+  await expect(transcriptionTask).toContainText(config.transcriptionModel);
+  await expect(transcriptionTask.locator("select")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Add provider" }).click();
+  const cerebrasDialog = page.getByRole("dialog", { name: "Add provider" });
+  await cerebrasDialog
+    .getByRole("combobox", { name: "Provider", exact: true })
+    .selectOption("cerebras");
+  await cerebrasDialog
+    .getByLabel("Cerebras API key")
+    .fill("csk-browser-secret-1234");
+  await cerebrasDialog
+    .getByLabel("Analysis model")
+    .selectOption("qwen-3.8-27b");
+  await cerebrasDialog
+    .getByRole("button", { name: "Connect and save" })
+    .click();
   await expect(
-    page.getByText("Cerebras connected. Review the task selections above."),
+    page.getByText("Cerebras preferences saved. Assign it to a task below when ready."),
   ).toBeVisible();
-  await page
+  const analysisTask = page
     .locator(".ai-task")
     .filter({ has: page.getByRole("heading", { name: "Analysis & Ask" }) })
-    .getByLabel("Provider")
-    .selectOption("cerebras");
-  await expect(page.getByText("Analysis selection updated.")).toBeVisible();
-  await expect(page.getByText(/Cerebras · qwen-3.8-27b/)).toBeVisible();
+  await analysisTask.getByLabel("Provider").selectOption("cerebras");
+  await expect(analysisTask).toContainText("Cerebras · qwen-3.8-27b");
+  await expect(page.getByText("Capture ready")).toBeVisible();
+  await expect(page.getByText("Ask ready")).toBeVisible();
 
-  await page.getByRole("button", { name: "Disconnect OpenAI" }).click();
+  await page
+    .locator(".ai-provider")
+    .filter({ hasText: "OpenAI" })
+    .getByRole("button", { name: "Disconnect" })
+    .click();
   await expect(
     page.getByText(
-      "OpenAI disconnected. Any task that used it now needs a provider.",
+      "OpenAI disconnected. Its assignments now need a provider.",
     ),
   ).toBeVisible();
-  await expect(
-    page.getByText("Capture needs transcription and analysis"),
-  ).toBeVisible();
-  await expect(page.getByText("Ask is ready.")).toBeVisible();
+  await expect(page.getByText("Capture needs setup")).toBeVisible();
+  await expect(page.getByText("Ask ready")).toBeVisible();
 });
