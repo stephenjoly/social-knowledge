@@ -448,10 +448,12 @@ describe("JobStore", () => {
       legacy.exec(`
         CREATE TABLE users(id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,role TEXT NOT NULL,created_at TEXT NOT NULL);
         CREATE TABLE jobs(id TEXT PRIMARY KEY,owner_user_id TEXT NOT NULL REFERENCES users(id),source_url TEXT NOT NULL,normalized_url TEXT NOT NULL,source_hash TEXT NOT NULL,user_note TEXT,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,error TEXT,result_note_path TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,next_attempt_at TEXT NOT NULL,error_code TEXT,error_detail TEXT,display_title TEXT,ai_provider TEXT CHECK(ai_provider IN ('openai','cerebras')),UNIQUE(owner_user_id,source_hash));
+        CREATE TABLE job_events(id TEXT PRIMARY KEY,job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,status TEXT NOT NULL,message TEXT,created_at TEXT NOT NULL);
         CREATE TABLE ai_provider_connections(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('openai','cerebras')),encrypted_payload TEXT NOT NULL,status TEXT NOT NULL,key_hint TEXT NOT NULL,verified_at TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
         INSERT INTO users VALUES('user-1','legacy','hash','admin','2026-01-01T00:00:00.000Z');
         INSERT INTO ai_provider_connections VALUES('user-1','openai','encrypted-secret','verified','sk…1234','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z');
         INSERT INTO jobs VALUES('job-1','user-1','https://example.com','https://example.com','hash',NULL,'complete',1,NULL,NULL,'2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z',NULL,NULL,NULL,'openai');
+        INSERT INTO job_events VALUES('event-1','job-1','queued','Legacy event','2026-01-01T00:00:00.000Z');
       `);
       legacy.close();
 
@@ -472,6 +474,9 @@ describe("JobStore", () => {
         analysisProvider: "openai",
         aiProvider: "openai",
       });
+      expect(migrated.events("job-1")).toMatchObject([
+        { id: "event-1", message: "Legacy event", failureCode: null },
+      ]);
       migrated.close();
     } finally {
       rmSync(directory, { recursive: true, force: true });

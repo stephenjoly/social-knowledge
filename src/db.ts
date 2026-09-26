@@ -11,6 +11,7 @@ import type {
   SourceType,
 } from "./types.js";
 import type { JobEventRecord } from "./activity.js";
+import { failureCodes, type FailureCode } from "./failures.js";
 import {
   libraryDomains,
   slugifyLibraryLabel,
@@ -20,6 +21,12 @@ import {
 } from "./library.js";
 
 type Row = Record<string, unknown>;
+
+function persistedFailureCode(code: string): FailureCode {
+  return (failureCodes as readonly string[]).includes(code)
+    ? (code as FailureCode)
+    : "unknown";
+}
 
 export const captureSortKeys = [
   "title",
@@ -441,6 +448,7 @@ export class JobStore {
   ) {
     const job = this.get(id);
     if (!job) return;
+    const failureCode = persistedFailureCode(failure.code);
     const retry = job.attempts < maxAttempts;
     const now = new Date().toISOString();
     const next = new Date(
@@ -456,7 +464,7 @@ export class JobStore {
         .run(
           status,
           failure.message.slice(0, 500),
-          failure.code,
+          failureCode,
           failure.diagnostic.slice(0, 4000),
           now,
           next,
@@ -465,7 +473,7 @@ export class JobStore {
       // A retryable failure still ends this attempt. Persist the terminal
       // boundary before queuing the next one so Activity never turns it into
       // a successful event or charges it the retry wait.
-      this.addEvent(id, "failed", null);
+      this.addEvent(id, "failed", null, failureCode);
       if (retry) this.addEvent(id, "queued", "Retry scheduled");
     })();
   }
@@ -544,17 +552,29 @@ export class JobStore {
       return { requested: rows.length, retriedIds };
     })();
   }
-  addEvent(jobId: string, status: string, message: string | null) {
+  addEvent(
+    jobId: string,
+    status: string,
+    message: string | null,
+    failureCode: FailureCode | null = null,
+  ) {
     this.database
       .prepare(
-        "INSERT INTO job_events(id,job_id,status,message,created_at) VALUES(?,?,?,?,?)",
+        "INSERT INTO job_events(id,job_id,status,message,failure_code,created_at) VALUES(?,?,?,?,?,?)",
       )
-      .run(randomUUID(), jobId, status, message, new Date().toISOString());
+      .run(
+        randomUUID(),
+        jobId,
+        status,
+        message,
+        failureCode,
+        new Date().toISOString(),
+      );
   }
   events(jobId: string) {
     return this.database
       .prepare(
-        "SELECT id,status,message,created_at AS createdAt FROM job_events WHERE job_id=? ORDER BY created_at,rowid",
+        "SELECT id,status,message,failure_code AS failureCode,created_at AS createdAt FROM job_events WHERE job_id=? ORDER BY created_at,rowid",
       )
       .all(jobId) as JobEventRecord[];
   }
@@ -2901,7 +2921,7 @@ export class JobStore {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_captures_platform_source ON captures(owner_user_id,platform,source_id);
     CREATE INDEX IF NOT EXISTS idx_captures_owner_created ON captures(owner_user_id,created_at DESC,id DESC);
     CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY,capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,kind TEXT NOT NULL,path TEXT NOT NULL,mime_type TEXT NOT NULL,size_bytes INTEGER NOT NULL,position INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS job_events(id TEXT PRIMARY KEY,job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,status TEXT NOT NULL,message TEXT,created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS job_events(id TEXT PRIMARY KEY,job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,status TEXT NOT NULL,message TEXT,failure_code TEXT,created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,role TEXT NOT NULL,created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,token_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_sessions_hash ON sessions(token_hash);
@@ -2993,6 +3013,13 @@ export class JobStore {
       );
     if (!columns.includes("analysis_model"))
       this.database.exec("ALTER TABLE jobs ADD COLUMN analysis_model TEXT");
+    const eventColumns = (
+      this.database.prepare("PRAGMA table_info(job_events)").all() as Array<{
+        name: string;
+      }>
+    ).map((column) => column.name);
+    if (!eventColumns.includes("failure_code"))
+      this.database.exec("ALTER TABLE job_events ADD COLUMN failure_code TEXT");
     this.database.exec(`
       UPDATE jobs SET analysis_provider=ai_provider
       WHERE analysis_provider IS NULL AND ai_provider IS NOT NULL;

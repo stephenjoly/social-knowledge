@@ -244,6 +244,7 @@ describe("Activity API", () => {
     expect(afterRetry.json().events.at(-1)).toMatchObject({
       status: "queued",
       message: "Manual retry requested",
+      failureCode: null,
       state: "pending",
       durationMs: null,
     });
@@ -299,6 +300,7 @@ describe("Activity API", () => {
       attempt: 1,
       label: "Capture failed",
       message: null,
+      failureCode: "processing_failed",
       state: "failed",
       durationMs: 0,
     });
@@ -323,8 +325,30 @@ describe("Activity API", () => {
       2,
     );
     expect(store.events(retryable.id).slice(-2)).toMatchObject([
-      { status: "failed", message: null },
-      { status: "queued", message: "Retry scheduled" },
+      {
+        status: "failed",
+        message: null,
+        failureCode: "processing_failed",
+      },
+      { status: "queued", message: "Retry scheduled", failureCode: null },
+    ]);
+    const retryableDetail = await app.inject({
+      method: "GET",
+      url: `/api/v1/jobs/${retryable.id}`,
+      headers: { cookie },
+    });
+    expect(retryableDetail.body).not.toContain(secret);
+    expect(retryableDetail.json().events.slice(-2)).toMatchObject([
+      {
+        status: "failed",
+        attempt: 1,
+        failureCode: "processing_failed",
+      },
+      {
+        status: "queued",
+        attempt: 2,
+        failureCode: null,
+      },
     ]);
   });
 
@@ -359,6 +383,7 @@ describe("Activity API", () => {
       status: "queued",
       attempt: null,
       message: null,
+      failureCode: null,
       durationMs: null,
     });
     expect(detail.json().events[3]).toMatchObject({ attempt: null });

@@ -1,4 +1,8 @@
-import { failureCodes, failureCopy } from "./failures.js";
+import {
+  failureCodes,
+  failureCopy,
+  type FailureCode,
+} from "./failures.js";
 import { jobStatuses, type JobRecord, type JobStatus } from "./types.js";
 
 export const activityStageNames = [
@@ -48,6 +52,8 @@ export type ActivityEvent = {
   createdAt: string;
   label: string;
   message: string | null;
+  /** Controlled code for this event; null means history does not prove one. */
+  failureCode: FailureCode | null;
   durationMs: number | null;
   state: ActivityEventState;
 };
@@ -56,6 +62,7 @@ export type JobEventRecord = {
   id: string;
   status: string;
   message: string | null;
+  failureCode: string | null;
   createdAt: string;
 };
 
@@ -105,9 +112,6 @@ const retryQueueMessages = new Set([
   "Manual retry requested",
   "Retry scheduled",
 ]);
-const legacyFailurePrefixes = new Set(
-  failureCodes.map((code) => `${failureCopy(code).title}: `),
-);
 
 const safeHosts = new Set([
   "facebook.com",
@@ -129,9 +133,13 @@ function safeStatus(value: string): JobStatus {
 
 function safeErrorCode(value: string | null, status: JobStatus) {
   if (status !== "failed") return null;
+  return safeFailureCode(value) ?? "unknown";
+}
+
+function safeFailureCode(value: string | null): FailureCode | null {
   return (failureCodes as readonly string[]).includes(value ?? "")
-    ? (value as (typeof failureCodes)[number])
-    : "unknown";
+    ? (value as FailureCode)
+    : null;
 }
 
 function safeNormalizedUrl(value: string) {
@@ -174,15 +182,16 @@ type TimelineEvent = {
   id: string;
   status: JobStatus;
   message: string | null;
+  failureCode: FailureCode | null;
   createdAt: string;
   attempt: number | null;
 };
 
-function isLegacyFailure(event: JobEventRecord) {
-  if (event.status !== "queued" || !event.message) return false;
-  for (const prefix of legacyFailurePrefixes)
-    if (event.message.startsWith(prefix)) return true;
-  return false;
+function legacyFailureCode(event: JobEventRecord): FailureCode | null {
+  if (event.status !== "queued" || !event.message) return null;
+  for (const code of failureCodes)
+    if (event.message.startsWith(`${failureCopy(code).title}: `)) return code;
+  return null;
 }
 
 function projectTimeline(events: JobEventRecord[]): TimelineEvent[] {
@@ -195,8 +204,8 @@ function projectTimeline(events: JobEventRecord[]): TimelineEvent[] {
       attemptKnown = false;
       continue;
     }
-    const legacyFailure = isLegacyFailure(event);
-    const status = legacyFailure ? "failed" : event.status;
+    const legacyCode = legacyFailureCode(event);
+    const status = legacyCode ? "failed" : event.status;
     const prior = timeline.at(-1);
     const startsAttempt = Boolean(
       prior &&
@@ -210,7 +219,7 @@ function projectTimeline(events: JobEventRecord[]): TimelineEvent[] {
     // failure prefix is safe to interpret. Keep every other event redacted
     // and decline to invent later attempt boundaries or timings.
     if (
-      (!legacyFailure &&
+      (!legacyCode &&
         status === "queued" &&
         event.message !== null &&
         !safeMessages.has(event.message)) ||
@@ -222,6 +231,10 @@ function projectTimeline(events: JobEventRecord[]): TimelineEvent[] {
       id: event.id,
       status,
       message: event.message,
+      failureCode:
+        status === "failed"
+          ? safeFailureCode(event.failureCode) ?? legacyCode
+          : null,
       createdAt: event.createdAt,
       attempt: attemptKnown ? attempt : null,
     });
@@ -275,6 +288,7 @@ function projectEvents(
       createdAt: event.createdAt,
       label: labels[eventStatus],
       message: safeMessages.has(event.message ?? "") ? event.message : null,
+      failureCode: event.failureCode,
       durationMs,
       state,
     };
