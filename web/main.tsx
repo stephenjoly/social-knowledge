@@ -418,6 +418,22 @@ const failureCopy: Record<string, { title: string; message: string }> = {
     message:
       "The media was downloaded, but transcription or analysis did not finish.",
   },
+  ai_credentials_rejected: {
+    title: "AI credentials rejected",
+    message: "Reconnect the AI provider, then retry this capture.",
+  },
+  ai_quota_exceeded: {
+    title: "AI provider quota exceeded",
+    message: "Add provider credits or increase the quota, then retry.",
+  },
+  ai_rate_limited: {
+    title: "AI provider rate limit reached",
+    message: "Wait a little, then retry this capture.",
+  },
+  ai_model_unavailable: {
+    title: "AI model unavailable",
+    message: "Choose or configure an available AI model, then retry.",
+  },
 };
 
 function failureFor(job: ActivityJob) {

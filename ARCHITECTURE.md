@@ -54,7 +54,7 @@ Domain services must not depend on initialized server instances or UI code. The 
 
 - Every account-owned job, capture, connection, export, API key, and OAuth grant is scoped to a user.
 - SQLite is the catalog and queue source of truth. Media and generated notes are referenced durable filesystem artifacts.
-- Activity responses use an explicit public projection. Raw job records, diagnostic errors, cookie data, credentials, and internal note paths stay behind the persistence boundary. The failure list pages independently of the capture table; bulk retry selects all eligible account-owned failures in one transaction.
+- Activity responses use an explicit public projection. Raw job records, diagnostic errors, cookie data, credentials, and internal note paths stay behind the persistence boundary. Failed events persist an optional, allowlisted failure code per attempt; legacy causes are inferred only from known historical message prefixes, otherwise remain unavailable. Raw diagnostic text never supplies UI copy. The failure list pages independently of the capture table; bulk retry selects all eligible account-owned failures in one transaction.
 - Social content and model inputs are untrusted. Model outputs are accepted only through explicit structured schemas.
 - Platform cookies are filtered by domain, encrypted at rest, materialized only in a mode-`0600` temporary file, and excluded from exports.
 - External programs are invoked with bounded inputs and argument arrays; the application does not assemble shell commands.

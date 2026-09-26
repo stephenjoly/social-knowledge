@@ -28,13 +28,21 @@ Root owns layout, UI integration, browser checks, and delivery. Isolated workers
 ## Progress
 
 - [x] Preflight and bounded worker assignments.
-- [ ] Shared Activity sizing and safe failure UI.
+- [x] Shared Activity sizing and safe failure UI.
 - [ ] Knowledge base diagnosis and fix.
 - [ ] Integration, checks, preview delivery, readiness report.
 
 ## Verification
 
 `npm run check`; focused Playwright with synthetic data, including cross-page dimensions, scrolling, safe failure copy and Knowledge base browsing. Verify preview asset identity after push.
+
+## Evidence so far
+
+- Browser assertions confirm shared shell and sidebar geometry across all four main pages.
+- Provider-settings, capture submission, and navigation browser checks pass with synthetic inputs.
+- API-key test verifies issuance/use, masked listing, and rejection after revocation.
+- Failure codes persist in an additive nullable event column; existing-database migration test preserves old history.
+- Default worker limit is three attempts with 15s/30s waits. Manual retries reset the attempt cycle; the UI count explicitly describes manual requests. Policy is unchanged.
 
 ## Risks and recovery
 

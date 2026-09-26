@@ -33,4 +33,9 @@ describe("friendly capture failures", () => {
     expect(failure.code).toBe(code);
     expect(failure.message).not.toContain("private");
   });
+  it("does not label non-AI HTTP failures as provider credential failures", () => {
+    const error = Object.assign(new Error("source access denied"), { status: 401 });
+    expect(normalizeFailure(error, "downloading").code).toBe("unknown");
+  });
+
 });

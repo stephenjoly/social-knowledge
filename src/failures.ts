@@ -99,7 +99,9 @@ export function normalizeFailure(error: unknown, stage?: string) {
     };
   }
   const diagnostic = error instanceof Error ? error.message : String(error);
-  const providerCode = providerFailureCode(error, diagnostic);
+  const providerCode = ["transcribing", "translating", "analyzing"].includes(stage ?? "")
+    ? providerFailureCode(error, diagnostic)
+    : null;
   if (providerCode)
     return { code: providerCode, ...copy[providerCode], diagnostic };
   const code: FailureCode =
