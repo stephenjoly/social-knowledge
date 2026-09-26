@@ -40,6 +40,12 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
     .getByRole("button", { name: "Knowledge base", exact: true })
     .click();
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  await expect(
+    page.locator(".markdown").getByRole("heading", { name: "Categories" }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".markdown").getByRole("button", { name: "Travel" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Export archive" }).click();
   await expect(
     page.getByRole("dialog", { name: "Download your archive" }),

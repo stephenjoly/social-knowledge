@@ -262,6 +262,44 @@ function markdownForDisplay(value: string) {
   return value.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "");
 }
 
+function markdownLinkText(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/[\[\]]/g, "\\$&");
+}
+
+function libraryHomeMarkdown(
+  nodes: LibraryNode[],
+  unclassifiedCount: number,
+) {
+  const domains = nodes.filter((node) => node.parentId === null);
+  const captureCount =
+    domains.reduce((total, node) => total + node.captureCount, 0) +
+    unclassifiedCount;
+  return [
+    "# Social Knowledge",
+    "",
+    captureCount
+      ? `Browse ${captureCount} saved ${captureCount === 1 ? "capture" : "captures"} across your categories.`
+      : "Your saved captures will appear here once they are ready to browse.",
+    "",
+    "## Categories",
+    "",
+    ...(domains.length
+      ? domains.map(
+          (node) =>
+            `- [${markdownLinkText(node.label)}](library:${node.id}) — ${node.captureCount} ${node.captureCount === 1 ? "capture" : "captures"}`,
+        )
+      : ["_No categories yet. New captures are organized after analysis._"]),
+    "",
+    "## How to explore",
+    "",
+    "Open a category to browse its topics and generated capture notes.",
+    "",
+  ].join("\n");
+}
+
 function externalLinkLabel(href: string | undefined, children: ReactNode) {
   if (
     href &&
@@ -2873,9 +2911,7 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
   const [unclassifiedCount, setUnclassifiedCount] = useState(0);
   const [selected, setSelected] = useState<string>("home");
   const [node, setNode] = useState<LibraryNodeDetail | null>(null);
-  const [markdown, setMarkdown] = useState(
-    "# Social Knowledge\n\nChoose a category or capture to explore your library.",
-  );
+  const [markdown, setMarkdown] = useState("");
   const [selectedCapture, setSelectedCapture] = useState<string | null>(null);
   const [treeQuery, setTreeQuery] = useState("");
   const [mobilePane, setMobilePane] = useState<"browse" | "reading">("browse");
@@ -3142,9 +3178,6 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
                 setSelected("home");
                 setNode(null);
                 setSelectedCapture(null);
-                setMarkdown(
-                  "# Social Knowledge\n\nChoose a domain to begin exploring.",
-                );
                 setMobilePane("reading");
               }}
             >
@@ -3293,7 +3326,11 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
                 },
               }}
             >
-              {markdownForDisplay(markdown)}
+              {markdownForDisplay(
+                selected === "home"
+                  ? libraryHomeMarkdown(nodes, unclassifiedCount)
+                  : markdown,
+              )}
             </ReactMarkdown>
           </article>
         </section>
