@@ -1,6 +1,6 @@
 # AI settings frame 35 fidelity
 
-Status: active
+Status: completed
 Owner: Codex
 Started: 2026-09-26
 
@@ -23,7 +23,7 @@ One isolated GPT-6 Sol Worker with medium reasoning performs the visual pass, as
 - [x] Refresh canonical reference through Pencil and export frame 35.
 - [x] Assign bounded visual work using the requested model and reasoning level.
 - [x] Review and integrate the visual checkpoint.
-- [ ] Verify behavior, mobile layout, and preview assets.
+- [x] Verify behavior, mobile layout, and preview assets.
 
 ## Decisions
 - Real OpenAI/Cerebras support and curated models remain authoritative over placeholder mock content.
@@ -33,7 +33,9 @@ One isolated GPT-6 Sol Worker with medium reasoning performs the visual pass, as
 ## Verification
 Run `npm run check`, focused provider-settings and Settings alignment browser journeys, and inspect desktop/mobile screenshots against the exported frame. Diagnostics use synthetic provider traffic during tests.
 
-Integrated Worker checkpoint `fa77b43` as `3afad1c`. Settings now bundles licensed Inter locally, uses the reference card geometry at 1440×1020, lighter typography, compact controls, and a stacked footer. The same shell geometry applies to every Settings topic. Parent inspected desktop/mobile screenshots; `npm run check` passed all 135 tests and the three focused browser journeys (provider settings, topic alignment, onboarding) passed against the fresh build. `git diff --check` passed. Preview publication remains.
+Integrated Worker checkpoint `fa77b43` as `3afad1c`. Settings now bundles licensed Inter locally, uses the reference card geometry at 1440×1020, lighter typography, compact controls, and a stacked footer. The same shell geometry applies to every Settings topic. Parent inspected desktop/mobile screenshots; `npm run check` passed all 135 tests and the three focused browser journeys (provider settings, topic alignment, onboarding) passed against the fresh build. `git diff --check` passed.
+
+Published to existing PR #28. Preview serves verified assets `index-DWeufyf-.js` and `index-B0-RmFb7.css`; the bundled `inter-latin-wght-normal-Dx4kXJAl.woff2` returns 200 and health reports ok. No production promotion or automatic real-provider tests. Archived the completed Worker and its clean workspace, then removed its branch after confirming patch equivalence with the integrated commit.
 
 ## Risks and recovery
 Shared layout changes can move other Settings topics; compare their geometry. Font changes can affect unrelated pages; keep the adjustment scoped. Revert the scoped UI checkpoint if regressions occur.
