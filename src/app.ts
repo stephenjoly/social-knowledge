@@ -997,6 +997,7 @@ export function buildApp(
       };
     });
     protectedApi.get("/api/v1/jobs", async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
       const user = auth.user(request)!;
       const parsed = z
         .object({
@@ -1054,6 +1055,7 @@ export function buildApp(
       };
     });
     protectedApi.get("/api/v1/jobs/failed", async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
       const user = auth.user(request)!;
       const parsed = z
         .object({
@@ -1086,6 +1088,7 @@ export function buildApp(
       };
     });
     protectedApi.get("/api/v1/jobs/:id", async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
       const user = auth.user(request)!;
       const job = store.getOwned(user.id, id);

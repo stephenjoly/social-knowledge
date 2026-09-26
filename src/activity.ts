@@ -106,6 +106,7 @@ const safeHosts = new Set([
   "instagram.com",
   "www.instagram.com",
 ]);
+const displayQueryFields = new Set(["id", "story_fbid", "v"]);
 
 function isJobStatus(value: string): value is JobStatus {
   return (jobStatuses as readonly string[]).includes(value);
@@ -131,7 +132,7 @@ function safeNormalizedUrl(value: string) {
     url.password = "";
     url.hash = "";
     for (const key of [...url.searchParams.keys()]) {
-      if (/(auth|cookie|key|password|secret|session|token)/i.test(key))
+      if (!displayQueryFields.has(key))
         url.searchParams.delete(key);
     }
     return url.toString();
@@ -189,7 +190,10 @@ function projectEvents(
             : "running";
     const durationMs = state === "pending"
       ? null
-      : elapsed(event.createdAt, nextAt ?? (isFinal ? terminalAt : now));
+      : elapsed(
+          event.createdAt,
+          nextAt ?? (isFinal && state === "running" ? now : terminalAt),
+        );
     return {
       id: event.id,
       status: eventStatus,

@@ -126,13 +126,14 @@ describe("Activity API", () => {
     const secret = "synthetic-secret /private/runtime/cookies.txt";
     store.database
       .prepare(
-        "UPDATE jobs SET status='failed',error_code='processing_failed',error=?,error_detail=?,result_note_path=?,display_title=?,updated_at=? WHERE id=?",
+        "UPDATE jobs SET status='failed',error_code='processing_failed',error=?,error_detail=?,result_note_path=?,display_title=?,normalized_url=?,updated_at=? WHERE id=?",
       )
       .run(
         secret,
         secret,
         "/private/vault/result.md",
         "A safe title",
+        "https://www.instagram.com/reel/activity-timeline?access_code=synthetic-secret&id=42",
         "2026-01-02T12:00:02.625Z",
         job.id,
       );
@@ -158,6 +159,10 @@ describe("Activity API", () => {
     });
     expect(detail.statusCode).toBe(200);
     expect(detail.body).not.toContain(secret);
+    expect(detail.body).not.toContain("access_code");
+    expect(detail.body).not.toContain("synthetic-secret");
+    expect(detail.headers["cache-control"]).toBe("no-store");
+    expect(detail.json().job.normalizedUrl).toContain("id=42");
     expect(detail.body).not.toContain("result_note_path");
     expect(Object.keys(detail.json().job).sort()).toEqual([
       "attempts",
@@ -231,6 +236,34 @@ describe("Activity API", () => {
       message: "Manual retry requested",
       state: "pending",
       durationMs: null,
+    });
+  });
+
+  it("measures a running event through response time", async () => {
+    const { app, store, owner, cookie } = await signedInApp();
+    const job = createJob(store, owner.id, "running");
+    store.database
+      .prepare("UPDATE jobs SET status='downloading',updated_at=? WHERE id=?")
+      .run("2026-01-02T12:00:00.100Z", job.id);
+    store.database.prepare("DELETE FROM job_events WHERE job_id=?").run(job.id);
+    store.database
+      .prepare("INSERT INTO job_events(id,job_id,status,message,created_at) VALUES(?,?,?,?,?)")
+      .run(randomUUID(), job.id, "downloading", "Download started", "2026-01-02T12:00:00.000Z");
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-02T12:00:02.000Z"));
+    const detail = await app.inject({
+      method: "GET",
+      url: `/api/v1/jobs/${job.id}`,
+      headers: { cookie },
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().events[0]).toMatchObject({
+      state: "running",
+      durationMs: 2000,
+    });
+    expect(detail.json().job.stages[1]).toMatchObject({
+      name: "found",
+      state: "active",
+      durationMs: 2000,
     });
   });
 
