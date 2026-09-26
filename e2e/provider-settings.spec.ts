@@ -112,7 +112,7 @@ test.afterAll(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-test("assigns saved models and tests connections without archive data", async ({
+test("saves an explicit AI draft and runs diagnostics without archive data", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -129,9 +129,9 @@ test("assigns saved models and tests connections without archive data", async ({
     .getByRole("button", { name: "AI" })
     .click();
 
-  await expect(page.getByText("No providers connected")).toBeVisible();
-  await page.getByRole("button", { name: "Add provider" }).click();
-  const openAiDialog = page.getByRole("dialog", { name: "Add provider" });
+  const openAiRow = page.locator(".ai-provider").filter({ hasText: "OpenAI" });
+  await openAiRow.getByRole("button", { name: "Connect" }).click();
+  const openAiDialog = page.getByRole("dialog", { name: "Connect provider" });
   await openAiDialog.getByLabel("OpenAI API key").fill("sk-browser-secret-1234");
   await page.route(
     "**/api/v1/ai-providers/openai",
@@ -149,8 +149,14 @@ test("assigns saved models and tests connections without archive data", async ({
   );
   await openAiDialog.getByRole("button", { name: "Connect provider" }).click();
   await expect(page.getByText("OpenAI connected. Assign it to a task below.")).toBeVisible();
-  await expect(page.getByText("Needs setup")).toBeVisible();
   await expect(page.locator("body")).not.toContainText("sk-browser-secret-1234");
+
+  const savedRequests: unknown[] = [];
+  await page.route("**/api/v1/ai-settings", async (route) => {
+    if (route.request().method() === "PUT")
+      savedRequests.push(route.request().postDataJSON());
+    await route.continue();
+  });
 
   const transcriptionTask = page
     .locator(".ai-task")
@@ -162,17 +168,57 @@ test("assigns saved models and tests connections without archive data", async ({
 
   const analysisTask = page
     .locator(".ai-task")
-    .filter({ has: page.getByRole("heading", { name: "Analysis & Ask" }) });
+    .filter({ has: page.getByRole("heading", { name: "Analysis" }) });
   await analysisTask.getByLabel("Provider").selectOption("openai");
   await analysisTask.getByLabel("Model").selectOption("gpt-5");
-  await expect(analysisTask.getByLabel("Thinking level")).toHaveValue("");
-  await analysisTask.getByLabel("Thinking level").selectOption("high");
-  await expect(analysisTask).toContainText("Thinking: high");
-  await expect(page.getByText("Tasks configured")).toBeVisible();
+  const thinking = analysisTask.getByRole("group", { name: "Thinking level" });
+  await thinking.getByRole("button", { name: "high" }).click();
+  expect(savedRequests).toHaveLength(0);
+  await expect(page.getByRole("button", { name: "Save changes" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Test connection" }).click();
+  const dirtyDialog = page.getByRole("dialog", { name: "Test connection" });
+  await expect(dirtyDialog).toContainText("Save changes before testing a connection.");
+  await expect(dirtyDialog.getByRole("button", { name: "Test analysis" })).toBeDisabled();
+  await dirtyDialog.getByRole("button", { name: "Close connection tests" }).click();
+
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("AI settings saved.")).toBeVisible();
+  expect(savedRequests).toEqual([
+    {
+      transcription: { provider: "openai", model: config.transcriptionModel },
+      analysis: { provider: "openai", model: "gpt-5", thinkingLevel: "high" },
+    },
+  ]);
   await page.screenshot({
     path: "output/playwright/provider-settings-desktop.png",
     fullPage: true,
   });
+
+  await page.reload();
+  await page
+    .getByRole("navigation", { name: "Settings topics" })
+    .getByRole("button", { name: "AI" })
+    .click();
+  const persistedAnalysis = page
+    .locator(".ai-task")
+    .filter({ has: page.getByRole("heading", { name: "Analysis" }) });
+  await expect(persistedAnalysis.getByLabel("Model")).toHaveValue("gpt-5");
+  await expect(
+    persistedAnalysis
+      .getByRole("group", { name: "Thinking level" })
+      .getByRole("button", { name: "high" }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Test connection" }).click();
+  const testDialog = page.getByRole("dialog", { name: "Test connection" });
+  await expect(testDialog).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(testDialog.getByRole("button", { name: "Test ask" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
+    testDialog.getByRole("button", { name: "Close connection tests" }),
+  ).toBeFocused();
 
   const transcriptionTest = page
     .locator(".ai-test-row")
@@ -180,16 +226,12 @@ test("assigns saved models and tests connections without archive data", async ({
   await transcriptionTest.locator('input[type="file"]').setInputFiles(audioOne);
   await transcriptionTest.getByRole("button", { name: "Test transcription" }).click();
   await expect(transcriptionTest).toContainText("Passed in");
-  await transcriptionTest.locator('input[type="file"]').setInputFiles(audioTwo);
-  await expect(transcriptionTest).toContainText("Test result discarded");
 
   const analysisTest = page
     .locator(".ai-test-row")
     .filter({ has: page.getByRole("heading", { name: "Analysis" }) });
   await analysisTest.getByRole("button", { name: "Test analysis" }).click();
   await expect(analysisTest).toContainText("Passed in");
-  await analysisTask.getByLabel("Thinking level").selectOption("low");
-  await expect(analysisTest).toContainText("Test result discarded");
 
   const askTest = page
     .locator(".ai-test-row")
@@ -197,22 +239,60 @@ test("assigns saved models and tests connections without archive data", async ({
   await expect(askTest.getByRole("button", { name: "Test ask" })).toBeEnabled();
   await askTest.getByRole("button", { name: "Test ask" }).click();
   await expect(askTest).toContainText("Passed in");
+  await testDialog.getByRole("button", { name: "Close connection tests" }).click();
+  await expect(page.getByRole("button", { name: "Test connection" })).toBeFocused();
 
-  const openAiRow = page.locator(".ai-provider").filter({ hasText: "OpenAI" });
-  await openAiRow.getByRole("button", { name: "Manage key" }).click();
+  await persistedAnalysis
+    .getByRole("group", { name: "Thinking level" })
+    .getByRole("button", { name: "low" })
+    .click();
+  await expect(page.getByRole("button", { name: "Save changes" })).toBeEnabled();
+
+  await openAiRow.getByRole("button", { name: "Change key" }).click();
   const manageDialog = page.getByRole("dialog", { name: "Manage provider" });
   await manageDialog.getByRole("button", { name: "Replace API key" }).click();
   await manageDialog.getByLabel("OpenAI API key").fill("sk-browser-secret-5678");
   await manageDialog.getByRole("button", { name: "Connect provider" }).click();
-  await expect(askTest).toContainText("Test result discarded");
+  await expect(
+    persistedAnalysis
+      .getByRole("group", { name: "Thinking level" })
+      .getByRole("button", { name: "low" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(store.aiTaskSelections(store.getUserByUsername("qa-user")!.id)).toMatchObject({
+    analysisThinkingLevel: "high",
+  });
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("AI settings saved.")).toBeVisible();
 
   nextDiagnosticFailure = "quota";
+  await page.getByRole("button", { name: "Test connection" }).click();
+  await expect(testDialog.getByRole("button", { name: "Test analysis" })).toBeEnabled();
+  await testDialog.getByRole("button", { name: "Test analysis" }).click();
+  await expect(testDialog).toContainText("Failed in");
+  await expect(testDialog).toContainText("Add provider credits or increase its quota");
+  await testDialog.getByRole("button", { name: "Close connection tests" }).click();
+
+  await persistedAnalysis
+    .getByRole("group", { name: "Thinking level" })
+    .getByRole("button", { name: "high" })
+    .click();
+  await page.route(
+    "**/api/v1/ai-settings",
+    (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "invalid_thinking_level" }),
+      }),
+    { times: 1 },
+  );
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("button", { name: "Save changes" })).toBeEnabled();
   await expect(
-    analysisTest.getByRole("button", { name: "Test analysis" }),
-  ).toBeEnabled();
-  await analysisTest.getByRole("button", { name: "Test analysis" }).click();
-  await expect(analysisTest).toContainText("Failed in");
-  await expect(analysisTest).toContainText("Add provider credits or increase its quota");
+    persistedAnalysis
+      .getByRole("group", { name: "Thinking level" })
+      .getByRole("button", { name: "high" }),
+  ).toHaveAttribute("aria-pressed", "true");
 
   await page.setViewportSize({ width: 390, height: 844 });
   expect(

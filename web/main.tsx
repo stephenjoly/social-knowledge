@@ -671,6 +671,7 @@ type AiProviderState = {
   };
   readiness: { capture: boolean; ask: boolean };
 };
+type AiDraftSelections = AiProviderState["selections"];
 type AiTestTask = "transcription" | "analysis" | "ask";
 type AiTestCode =
   | "ok"
@@ -715,6 +716,31 @@ function analysisOptions(provider: AiProvider) {
 
 function taskOptionFor(provider: AiProvider, model: string) {
   return analysisOptions(provider).find((option) => option.model === model) ?? null;
+}
+
+function sameAiSelections(left: AiDraftSelections, right: AiDraftSelections) {
+  return (
+    left.transcription?.provider === right.transcription?.provider &&
+    left.transcription?.model === right.transcription?.model &&
+    left.analysis?.provider === right.analysis?.provider &&
+    left.analysis?.model === right.analysis?.model &&
+    left.analysis?.thinkingLevel === right.analysis?.thinkingLevel
+  );
+}
+
+function selectionsForConnectedProviders(
+  selections: AiDraftSelections,
+  providers: AiProvider[],
+): AiDraftSelections {
+  const selectionFor = (task: "transcription" | "analysis") => {
+    const selection = selections[task];
+    const provider = providers.find((item) => item.id === selection?.provider);
+    return provider?.connected && provider.capabilities[task] ? selection : null;
+  };
+  return {
+    transcription: selectionFor("transcription"),
+    analysis: selectionFor("analysis") as AiAnalysisSelection | null,
+  };
 }
 
 function savedOrFirstTaskModel(
@@ -1933,6 +1959,9 @@ function Settings({ user }: { user: AccountUser | null }) {
   const [backupMessage, setBackupMessage] = useState("");
   const [aiState, setAiState] = useState<AiProviderState | null>(null);
   const aiStateRef = useRef<AiProviderState | null>(null);
+  const [draftSelections, setDraftSelections] =
+    useState<AiDraftSelections | null>(null);
+  const [savingAiSelections, setSavingAiSelections] = useState(false);
   const [selectedAiProvider, setSelectedAiProvider] = useState<
     "openai" | "cerebras"
   >("openai");
@@ -1950,10 +1979,21 @@ function Settings({ user }: { user: AccountUser | null }) {
   );
   const [testingTask, setTestingTask] = useState<AiTestTask | null>(null);
   const [testAudioFile, setTestAudioFile] = useState<File | null>(null);
+  const [testDialogOpen, setTestDialogOpen] = useState(false);
+  const testDialogTrigger = useRef<HTMLElement | null>(null);
+  const testDialogPanel = useRef<HTMLElement | null>(null);
   const testGeneration = useRef(0);
-  const applyAiState = (nextState: AiProviderState) => {
+  const applyAiState = (nextState: AiProviderState, resetDraft = false) => {
+    const previousState = aiStateRef.current;
     aiStateRef.current = nextState;
     setAiState(nextState);
+    setDraftSelections((current) =>
+      resetDraft ||
+      !current ||
+      (previousState && sameAiSelections(current, previousState.selections))
+        ? nextState.selections
+        : selectionsForConnectedProviders(current, nextState.providers),
+    );
   };
   const applyProviderDraft = (providerId: AiSelection["provider"]) => {
     const definition = aiStateRef.current?.providers.find(
@@ -1974,6 +2014,14 @@ function Settings({ user }: { user: AccountUser | null }) {
     setReplaceProviderKey(false);
     setProviderDialogOpen(false);
     window.requestAnimationFrame(() => providerDialogTrigger.current?.focus());
+  };
+  const openTestDialog = () => {
+    testDialogTrigger.current = document.activeElement as HTMLElement | null;
+    setTestDialogOpen(true);
+  };
+  const closeTestDialog = () => {
+    setTestDialogOpen(false);
+    window.requestAnimationFrame(() => testDialogTrigger.current?.focus());
   };
   async function load(showLoading = false) {
     if (showLoading) setLoading(true);
@@ -2019,6 +2067,11 @@ function Settings({ user }: { user: AccountUser | null }) {
   useEffect(() => {
     void load(true);
   }, []);
+  useEffect(() => {
+    if (!testDialogOpen) return;
+    const frame = window.requestAnimationFrame(() => testDialogPanel.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [testDialogOpen]);
   useEffect(() => {
     if (!libraryExports.some((item) => item.status === "pending")) {
       if (backupMessage === "Preparing your backup…") {
@@ -2135,6 +2188,7 @@ function Settings({ user }: { user: AccountUser | null }) {
   }
   async function runAiTest(task: AiTestTask) {
     if (testingTask) return;
+    if (aiSettingsDirty || savingAiSelections) return;
     const selection =
       task === "transcription"
         ? aiStateRef.current?.selections.transcription
@@ -2205,29 +2259,24 @@ function Settings({ user }: { user: AccountUser | null }) {
       setTestingTask(null);
     }
   }
-  async function saveTaskAssignment(
-    task: "transcription" | "analysis",
-    selection: AiSelection | AiAnalysisSelection | null,
-  ) {
-    invalidateTests(
-      task === "transcription" ? ["transcription"] : ["analysis", "ask"],
-    );
+  async function saveAiSelections() {
+    const nextSelections = draftSelections ?? aiStateRef.current?.selections;
+    if (!nextSelections || savingAiSelections) return;
+    setSavingAiSelections(true);
     setProviderMessageKind("pending");
-    setProviderMessage(
-      `Saving ${task === "transcription" ? "transcription" : "analysis"} assignment…`,
-    );
+    setProviderMessage("Saving AI settings…");
     try {
       const result = await api<AiProviderState>("/api/v1/ai-settings", {
         method: "PUT",
         body: JSON.stringify({
-          [task]: selection,
+          transcription: nextSelections.transcription,
+          analysis: nextSelections.analysis,
         }),
       });
-      applyAiState(result);
+      invalidateTests(["transcription", "analysis", "ask"]);
+      applyAiState(result, true);
       setProviderMessageKind("success");
-      setProviderMessage(
-        `${task === "transcription" ? "Transcription" : "Analysis & Ask"} assignment updated.`,
-      );
+      setProviderMessage("AI settings saved.");
     } catch (error) {
       setProviderMessageKind("error");
       const code = (error as { body?: { error?: string } }).body?.error;
@@ -2235,9 +2284,47 @@ function Settings({ user }: { user: AccountUser | null }) {
         ["model_unavailable", "invalid_model_selection", "invalid_thinking_level"].includes(
           code ?? "",
         )
-          ? "That model is no longer available from this provider. Choose another model."
-          : `The ${task === "transcription" ? "transcription" : "analysis"} assignment could not be updated. Try again.`,
+          ? "That model is no longer available from this provider. Choose another model. Your changes are still here."
+          : "AI settings could not be saved. Your changes are still here.",
       );
+    } finally {
+      setSavingAiSelections(false);
+    }
+  }
+  function updateTaskDraft(
+    task: "transcription" | "analysis",
+    selection: AiSelection | AiAnalysisSelection | null,
+  ) {
+    setDraftSelections((current) => {
+      const existing = current ?? aiStateRef.current?.selections;
+      return existing ? { ...existing, [task]: selection } : current;
+    });
+  }
+  async function disconnectAiProvider(provider: AiSelection["provider"]) {
+    const definition = aiStateRef.current?.providers.find(
+      (item) => item.id === provider,
+    );
+    if (!definition || verifyingProvider) return;
+    setVerifyingProvider(true);
+    setProviderMessageKind("pending");
+    setProviderMessage(`Disconnecting ${definition.name}…`);
+    try {
+      const result = await api<AiProviderState>(
+        `/api/v1/ai-providers/${provider}`,
+        { method: "DELETE" },
+      );
+      invalidateTests(["transcription", "analysis", "ask"]);
+      applyAiState(result);
+      setProviderMessageKind("success");
+      setProviderMessage(
+        `${definition.name} disconnected. Its draft assignment was cleared.`,
+      );
+      closeProviderDialog();
+    } catch {
+      setProviderMessageKind("error");
+      setProviderMessage(`${definition.name} could not be disconnected. Try again.`);
+    } finally {
+      setVerifyingProvider(false);
     }
   }
   async function submitProviderConfiguration(event: FormEvent) {
@@ -2334,12 +2421,18 @@ function Settings({ user }: { user: AccountUser | null }) {
   const openAi = aiState?.providers.find(
     (provider) => provider.id === "openai",
   );
-  const configuredAiProviders = (aiState?.providers ?? []).filter(
-    (provider) => provider.status !== "not_connected",
-  );
+  const configuredAiProviders = aiState?.providers ?? [];
   const dialogProvider = aiState?.providers.find(
     (provider) => provider.id === selectedAiProvider,
   );
+  const currentAiSelections = draftSelections ?? aiState?.selections ?? {
+    transcription: null,
+    analysis: null,
+  };
+  const aiSettingsDirty = Boolean(
+    aiState && !sameAiSelections(currentAiSelections, aiState.selections),
+  );
+  const aiTestBlocked = aiSettingsDirty || savingAiSelections;
   const activeTopic = topics.find((item) => item.id === topic);
   const showTopic = (value: SettingsTopic) =>
     topic === value || topic === "all";
@@ -2370,7 +2463,7 @@ function Settings({ user }: { user: AccountUser | null }) {
                 "Review every part of your workspace setup.")}
           </p>
         </div>
-        {topic !== "overview" && (
+        {topic !== "overview" && topic !== "ai" && (
           <button
             className="settings-back"
             type="button"
@@ -2571,119 +2664,61 @@ function Settings({ user }: { user: AccountUser | null }) {
                 <section className="settings-card ai-provider-settings">
                   <div className="ai-provider-heading">
                     <div className="settings-card-heading">
-                      <span className="settings-section-kicker">1 · PROVIDERS</span>
-                      <h2>Providers</h2>
+                      <h2>Provider connections</h2>
+                      <p className="settings-help">
+                        Credentials available to transcription and analysis.
+                      </p>
                     </div>
-                    <button
-                      type="button"
-                      className="settings-quick-action"
-                      onClick={() =>
-                        openProviderDialog(
-                          (aiState?.providers.find(
-                            (provider) => provider.status === "not_connected",
-                          )?.id ?? "openai") as AiSelection["provider"],
-                        )
-                      }
-                    >
-                      <Plus aria-hidden="true" /> Add provider
-                    </button>
                   </div>
-                  <p className="settings-help">
-                    Connect an API key here. Choose provider, model, and thinking level per task below. Keys are encrypted and never shown again.
-                  </p>
-                  {configuredAiProviders.length ? (
-                    <div className="ai-provider-list">
+                  <div className="ai-provider-list">
                       {configuredAiProviders.map((provider) => {
                         return (
                           <article className="ai-provider" key={provider.id}>
                             <div className="ai-provider-summary">
                               <div>
                                 <strong>{provider.name}</strong>
-                                <span
-                                  className={`connection-state ${provider.connected ? "connected" : ""}`}
-                                >
-                                  {provider.connected
-                                    ? "Connected"
-                                    : "Reconnect needed"}
-                                </span>
                               </div>
-                              {provider.connected && provider.keyHint && (
-                                <small>{provider.keyHint}</small>
-                              )}
+                              <small>
+                                {provider.connected && provider.keyHint
+                                  ? `API key ${provider.keyHint}`
+                                  : "Optional · No credential added"}
+                              </small>
                             </div>
+                            <span
+                              className={`connection-state ${provider.connected ? "connected" : ""}`}
+                            >
+                              {provider.connected ? "Connected" : "Not connected"}
+                            </span>
                             <div className="ai-provider-actions">
                               <button
                                 type="button"
                                 className="secondary-button"
                                 onClick={() => openProviderDialog(provider.id)}
                               >
-                                Manage key
+                                {provider.connected ? "Change key" : "Connect"}
                               </button>
-                              {provider.connected && (
-                                <button
-                                  type="button"
-                                  className="text-button danger-button"
-                                  onClick={async () => {
-                                    invalidateTests([
-                                      "transcription",
-                                      "analysis",
-                                      "ask",
-                                    ]);
-                                    setProviderMessageKind("pending");
-                                    setProviderMessage(`Disconnecting ${provider.name}…`);
-                                    try {
-                                      const result = await api<AiProviderState>(
-                                        `/api/v1/ai-providers/${provider.id}`,
-                                        { method: "DELETE" },
-                                      );
-                                      applyAiState(result);
-                                      setProviderMessageKind("success");
-                                      setProviderMessage(
-                                        `${provider.name} disconnected. Its assignments now need a provider.`,
-                                      );
-                                    } catch {
-                                      setProviderMessageKind("error");
-                                      setProviderMessage(
-                                        `${provider.name} could not be disconnected. Try again.`,
-                                      );
-                                    }
-                                  }}
-                                >
-                                  Disconnect
-                                </button>
-                              )}
                             </div>
                           </article>
                         );
                       })}
-                    </div>
-                  ) : (
-                    <div className="ai-provider-empty">
-                      <strong>No providers connected</strong>
-                      <span>Add OpenAI or Cerebras, then assign each task below.</span>
-                    </div>
-                  )}
+                  </div>
                   <div className="ai-assignment-heading">
                     <div>
-                      <span className="settings-section-kicker">2 · ASSIGN TASKS</span>
-                      <h3>Assign tasks</h3>
-                    </div>
-                    <div className="ai-readiness" role="status">
-                      <strong>
-                        {aiState?.readiness.capture
-                          ? "Tasks configured"
-                          : "Needs setup"}
-                      </strong>
-                      <span>
-                        {aiState?.readiness.ask
-                          ? "Capture and Ask assignments saved"
-                          : "Analysis & Ask still need an assignment"}
-                      </span>
+                      <h3>Task models</h3>
+                      <p className="settings-help">
+                        Choose which connected provider handles each step.
+                      </p>
                     </div>
                   </div>
                   <div className="ai-task-list">
+                    <div className="ai-task-table-heading" aria-hidden="true">
+                      <span>Task</span>
+                      <span>Provider</span>
+                      <span>Model</span>
+                      <span>Thinking</span>
+                    </div>
                     {(["transcription", "analysis"] as const).map((task) => {
-                      const selection = aiState?.selections[task];
+                      const selection = currentAiSelections[task];
                       const providers = (aiState?.providers ?? []).filter(
                         (provider) =>
                           provider.connected &&
@@ -2707,23 +2742,23 @@ function Settings({ user }: { user: AccountUser | null }) {
                           ? (selection as AiAnalysisSelection | null)
                               ?.thinkingLevel ?? null
                           : null;
-                      const save = (
+                      const updateSelection = (
                         providerId: AiSelection["provider"] | null,
                         model: string | null,
                         thinkingLevel: AiThinkingLevel | null = null,
                       ) => {
                         if (!providerId || !model) {
-                          void saveTaskAssignment(task, null);
+                          updateTaskDraft(task, null);
                           return;
                         }
                         if (task === "transcription") {
-                          void saveTaskAssignment(task, {
+                          updateTaskDraft(task, {
                             provider: providerId,
                             model,
                           });
                           return;
                         }
-                        void saveTaskAssignment(task, {
+                        updateTaskDraft(task, {
                           provider: providerId,
                           model,
                           thinkingLevel,
@@ -2735,12 +2770,12 @@ function Settings({ user }: { user: AccountUser | null }) {
                             <h3>
                               {task === "transcription"
                                 ? "Transcription"
-                                : "Analysis & Ask"}
+                                : "Analysis"}
                             </h3>
                             <p>
                               {task === "transcription"
-                                ? "Turns captured audio into searchable text."
-                                : "One shared assignment powers capture analysis and Ask."}
+                                ? "Audio and video → searchable text"
+                                : "Shared with Ask."}
                             </p>
                           </div>
                           <div className="ai-task-controls">
@@ -2748,7 +2783,7 @@ function Settings({ user }: { user: AccountUser | null }) {
                               Provider
                               <select
                                 value={selection?.provider ?? ""}
-                                disabled={providerMessageKind === "pending"}
+                                disabled={savingAiSelections || verifyingProvider}
                                 onChange={(event) => {
                                   const providerId = event.target
                                     .value as AiSelection["provider"];
@@ -2760,7 +2795,7 @@ function Settings({ user }: { user: AccountUser | null }) {
                                       ? transcriptionOptions(provider)[0]?.model
                                       : analysisOptions(provider)[0]?.model
                                     : null;
-                                  save(provider?.id ?? null, model ?? null);
+                                  updateSelection(provider?.id ?? null, model ?? null);
                                 }}
                               >
                                 <option value="">Not assigned</option>
@@ -2776,11 +2811,12 @@ function Settings({ user }: { user: AccountUser | null }) {
                               <select
                                 value={selectedModel}
                                 disabled={
-                                  providerMessageKind === "pending" ||
+                                  savingAiSelections ||
+                                  verifyingProvider ||
                                   !selectedProvider
                                 }
                                 onChange={(event) =>
-                                  save(
+                                  updateSelection(
                                     selectedProvider?.id ?? null,
                                     event.target.value || null,
                                   )
@@ -2794,48 +2830,164 @@ function Settings({ user }: { user: AccountUser | null }) {
                                 ))}
                               </select>
                             </label>
-                            {analysisOption?.thinkingLevels.length ? (
-                              <label>
-                                Thinking level
-                                <select
-                                  value={currentThinkingLevel ?? ""}
-                                  disabled={providerMessageKind === "pending"}
-                                  onChange={(event) =>
-                                    save(
+                            {task === "transcription" ? (
+                              <span className="ai-thinking-unavailable">
+                                Not applicable
+                              </span>
+                            ) : analysisOption?.thinkingLevels.length ? (
+                              <div
+                                className="ai-thinking-options"
+                                role="group"
+                                aria-label="Thinking level"
+                              >
+                                <button
+                                  type="button"
+                                  className={
+                                    currentThinkingLevel === null ? "active" : ""
+                                  }
+                                  aria-pressed={currentThinkingLevel === null}
+                                  disabled={savingAiSelections || verifyingProvider}
+                                  onClick={() =>
+                                    updateSelection(
                                       selectedProvider?.id ?? null,
                                       selectedModel || null,
-                                      (event.target.value ||
-                                        null) as AiThinkingLevel | null,
+                                      null,
                                     )
                                   }
                                 >
-                                  <option value="">Provider default</option>
-                                  {analysisOption.thinkingLevels.map((level) => (
-                                    <option key={level} value={level}>
-                                      {level}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                            ) : null}
+                                  Default
+                                </button>
+                                {analysisOption.thinkingLevels.map((level) => (
+                                  <button
+                                    type="button"
+                                    key={level}
+                                    className={
+                                      currentThinkingLevel === level ? "active" : ""
+                                    }
+                                    aria-pressed={currentThinkingLevel === level}
+                                    disabled={savingAiSelections || verifyingProvider}
+                                    onClick={() =>
+                                      updateSelection(
+                                        selectedProvider?.id ?? null,
+                                        selectedModel || null,
+                                        level,
+                                      )
+                                    }
+                                  >
+                                    {level}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="ai-thinking-unavailable">
+                                Not applicable
+                              </span>
+                            )}
                           </div>
-                          <p className="task-status">
-                            {selection
-                              ? analysisOption?.thinkingLevels.length
-                                ? `Saved. Thinking: ${currentThinkingLevel ?? "Provider default"}.`
-                                : "Saved selection."
-                              : providers.length
-                                ? "Choose a connected provider and model."
-                                : "Connect a compatible provider first."}
-                          </p>
                         </article>
                       );
                     })}
                   </div>
+                  <div className="ai-settings-footer">
+                    <p>Changes apply to new captures. Existing results stay as saved.</p>
+                    <div>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={openTestDialog}
+                        disabled={savingAiSelections}
+                      >
+                        Test connection
+                      </button>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() => void saveAiSelections()}
+                        disabled={
+                          !aiSettingsDirty ||
+                          savingAiSelections ||
+                          verifyingProvider ||
+                          Boolean(testingTask)
+                        }
+                      >
+                        {savingAiSelections ? "Saving…" : "Save changes"}
+                      </button>
+                    </div>
+                  </div>
+                  {testDialogOpen && (
+                    <div
+                      className="ai-provider-dialog-layer ai-test-dialog-layer"
+                      role="presentation"
+                      onMouseDown={(event) => {
+                        if (!testingTask && event.target === event.currentTarget)
+                          closeTestDialog();
+                      }}
+                    >
+                      <section
+                        className="ai-provider-dialog ai-test-dialog"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="test-dialog-title"
+                        aria-describedby="test-dialog-description"
+                        ref={testDialogPanel}
+                        tabIndex={-1}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape" && !testingTask) {
+                            closeTestDialog();
+                            return;
+                          }
+                          if (event.key !== "Tab") return;
+                          const focusable = Array.from(
+                            event.currentTarget.querySelectorAll<HTMLElement>(
+                              "button:not([disabled]), input:not([disabled]), select:not([disabled])",
+                            ),
+                          );
+                          if (!focusable.length) return;
+                          const first = focusable[0]!;
+                          const last = focusable[focusable.length - 1]!;
+                          if (
+                            event.shiftKey &&
+                            (document.activeElement === first ||
+                              document.activeElement === event.currentTarget)
+                          ) {
+                            event.preventDefault();
+                            last.focus();
+                          } else if (
+                            !event.shiftKey &&
+                            (document.activeElement === last ||
+                              document.activeElement === event.currentTarget)
+                          ) {
+                            event.preventDefault();
+                            first.focus();
+                          }
+                        }}
+                      >
+                        <header>
+                          <div>
+                            <h3 id="test-dialog-title">Test connection</h3>
+                            <p id="test-dialog-description" className="settings-help">
+                              Run a small request for each saved task. Usage charges may apply.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            aria-label="Close connection tests"
+                            disabled={Boolean(testingTask)}
+                            onClick={closeTestDialog}
+                          >
+                            <X aria-hidden="true" />
+                          </button>
+                        </header>
+                        {aiTestBlocked && (
+                          <p className="ai-test-save-first" role="status">
+                            {savingAiSelections
+                              ? "Saving settings before tests can run…"
+                              : "Save changes before testing a connection."}
+                          </p>
+                        )}
                   <div className="ai-test-heading">
                     <div>
-                      <span className="settings-section-kicker">3 · TEST CONNECTIONS</span>
-                      <h3>Test connections</h3>
+                      <h4>Diagnostic checks</h4>
                     </div>
                   </div>
                   <p className="settings-help ai-test-intro">
@@ -2887,7 +3039,7 @@ function Settings({ user }: { user: AccountUser | null }) {
                               className="secondary-button"
                               disabled={
                                 Boolean(testingTask) ||
-                                providerMessageKind === "pending" ||
+                                aiTestBlocked ||
                                 !selection ||
                                 (isTranscription && !testAudioFile)
                               }
@@ -2928,6 +3080,9 @@ function Settings({ user }: { user: AccountUser | null }) {
                       );
                     })}
                   </div>
+                      </section>
+                    </div>
+                  )}
                   {providerMessage && !providerDialogOpen && (
                     <p
                       className={`action-feedback ${providerMessageKind === "error" ? "error" : ""}`}
@@ -2985,7 +3140,7 @@ function Settings({ user }: { user: AccountUser | null }) {
                             <h3 id="provider-dialog-title">
                               {dialogProvider?.connected
                                 ? "Manage provider"
-                                : "Add provider"}
+                                : "Connect provider"}
                             </h3>
                           </div>
                           <button
@@ -3043,7 +3198,7 @@ function Settings({ user }: { user: AccountUser | null }) {
                           )}
                           <p className="settings-help">
                             This only verifies and saves the API key. Choose models
-                            and thinking level in Assign tasks.
+                            and thinking level in Task models.
                           </p>
                           {providerMessage && (
                             <p
@@ -3062,6 +3217,18 @@ function Settings({ user }: { user: AccountUser | null }) {
                             >
                               Cancel
                             </button>
+                            {dialogProvider?.connected && (
+                              <button
+                                type="button"
+                                className="danger-button"
+                                disabled={verifyingProvider}
+                                onClick={() =>
+                                  void disconnectAiProvider(dialogProvider.id)
+                                }
+                              >
+                                Disconnect
+                              </button>
+                            )}
                             <button disabled={verifyingProvider}>
                               {verifyingProvider
                                 ? "Connecting…"
