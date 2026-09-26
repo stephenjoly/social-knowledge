@@ -1,6 +1,6 @@
 # Provider-first AI setup and stable page alignment
 
-Status: active
+Status: completed
 Owner: Codex
 Started: 2026-09-26
 
@@ -26,7 +26,7 @@ Two isolated workers own backend configuration/routing and AI settings UI. Forem
 - [x] Stabilize layout and verify topic transitions (desktop topics, forced scrollbar, mobile overflow).
 - [x] Implement provider configuration and runtime thinking support.
 - [x] Implement provider-first UI and task assignment flow.
-- [ ] Integrate, verify, and update preview.
+- [x] Integrate, verify, and update preview.
 
 ## Decisions
 - 2026-09-26: Continue approved preview branch; isolated workers branch from it to preserve prior redesign.
@@ -44,3 +44,4 @@ Provider capabilities vary by model. Validate the catalog and transmitted option
 - `npm run check`: documentation, TypeScript, build, 125 tests across 24 files passed.
 - Browser: provider setup, settings geometry, complete AI onboarding, and Knowledge base navigation passed. Provider test includes rejected-key feedback inside the dialog, persisted model/thinking edits, and mobile overflow checks.
 - Screenshot review corrected inherited action-button/helper-text styles and dialog heading flow.
+- Preview serves matching JS `index-D4iocQao.js` and CSS `index-BrS3yzGM.css`; `/health` returned 200/ok after deployment. Live authenticated provider calls remain outside this verification.
