@@ -3094,45 +3094,23 @@ export class JobStore {
     provider: AiProviderId,
     input: AiProviderConfiguration,
   ) {
-    return this.database.transaction(() => {
-      const now = new Date().toISOString();
-      this.database
-        .prepare(
-          `INSERT INTO ai_provider_configurations(user_id,provider,transcription_model,analysis_model,thinking_level,updated_at)
-           VALUES(?,?,?,?,?,?)
-           ON CONFLICT(user_id,provider) DO UPDATE SET transcription_model=excluded.transcription_model,
-             analysis_model=excluded.analysis_model,thinking_level=excluded.thinking_level,updated_at=excluded.updated_at`,
-        )
-        .run(
-          userId,
-          provider,
-          input.transcriptionModel,
-          input.analysisModel,
-          input.thinkingLevel,
-          now,
-        );
-      const current = this.aiTaskSelections(userId);
-      const next: AiTaskSelectionInput = {
-        transcriptionProvider: current.transcriptionProvider,
-        transcriptionModel: current.transcriptionModel,
-        analysisProvider: current.analysisProvider,
-        analysisModel: current.analysisModel,
-        analysisThinkingLevel: current.analysisThinkingLevel,
-      };
-      if (provider === "openai" && current.transcriptionProvider === provider) {
-        next.transcriptionProvider = input.transcriptionModel ? provider : null;
-        next.transcriptionModel = input.transcriptionModel;
-      }
-      if (current.analysisProvider === provider) {
-        next.analysisProvider = input.analysisModel ? provider : null;
-        next.analysisModel = input.analysisModel;
-        next.analysisThinkingLevel = input.analysisModel
-          ? input.thinkingLevel
-          : null;
-      }
-      this.saveAiTaskSelections(userId, next);
-      return this.aiProviderConfiguration(userId, provider)!;
-    })();
+    const now = new Date().toISOString();
+    this.database
+      .prepare(
+        `INSERT INTO ai_provider_configurations(user_id,provider,transcription_model,analysis_model,thinking_level,updated_at)
+         VALUES(?,?,?,?,?,?)
+         ON CONFLICT(user_id,provider) DO UPDATE SET transcription_model=excluded.transcription_model,
+           analysis_model=excluded.analysis_model,thinking_level=excluded.thinking_level,updated_at=excluded.updated_at`,
+      )
+      .run(
+        userId,
+        provider,
+        input.transcriptionModel,
+        input.analysisModel,
+        input.thinkingLevel,
+        now,
+      );
+    return this.aiProviderConfiguration(userId, provider)!;
   }
 
   private migrate() {

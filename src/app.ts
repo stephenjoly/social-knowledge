@@ -32,6 +32,7 @@ import {
 import { openApiDocument } from "./openapi.js";
 import {
   AiProviderService,
+  aiDiagnosticTasks,
   aiProviderIds,
   thinkingLevels,
 } from "./ai-providers.js";
@@ -64,6 +65,17 @@ const failedActivityCursorSchema = z.object({
   updatedAt: z.string().datetime(),
   id: z.string().uuid(),
 });
+const aiTestRequestSchema = z
+  .object({
+    audio: z
+      .object({
+        contentType: z.string().min(1).max(100),
+        base64: z.string().min(1).max(1_400_000),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 function controlledError(
   error: unknown,
@@ -1299,6 +1311,8 @@ export function buildApp(
               "invalid_provider_selection",
               "provider_configuration_required",
               "provider_configuration_mismatch",
+              "invalid_model_selection",
+              "invalid_thinking_level",
             ],
             "invalid_selection",
           ),
@@ -1341,6 +1355,24 @@ export function buildApp(
             ),
           });
         }
+      },
+    );
+    protectedApi.post(
+      "/api/v1/ai-tests/:task",
+      { bodyLimit: 1536 * 1024 },
+      async (request, reply) => {
+        const params = z
+          .object({ task: z.enum(aiDiagnosticTasks) })
+          .safeParse(request.params);
+        const body = aiTestRequestSchema.safeParse(request.body);
+        if (!params.success || !body.success)
+          return reply.code(400).send({ error: "invalid_request" });
+        reply.header("cache-control", "no-store");
+        return aiProviderService.testConnection(
+          auth.user(request)!.id,
+          params.data.task,
+          body.data.audio,
+        );
       },
     );
     protectedApi.delete(

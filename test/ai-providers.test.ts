@@ -70,7 +70,7 @@ describe("AI provider settings", () => {
     store.close();
   });
 
-  it("keeps provider preferences separate from assignment and validates them", async () => {
+  it("keeps legacy provider preferences separate from direct task assignment", async () => {
     const store = new JobStore(":memory:");
     const user = store.createUser("two-step", "hash");
     const config = testConfig("/tmp/ai-two-step");
@@ -94,7 +94,7 @@ describe("AI provider settings", () => {
     });
     expect(() =>
       service.saveSelections(user.id, { analysis: { provider: "openai" } }),
-    ).toThrow("provider_configuration_required");
+    ).toThrow("invalid_model_selection");
     expect(() =>
       service.saveConfiguration(user.id, "openai", {
         transcriptionModel: "not-a-model",
@@ -124,11 +124,14 @@ describe("AI provider settings", () => {
       model: config.analysisModel,
       thinkingLevel: "high",
     });
-    expect(() =>
-      service.saveSelections(user.id, {
-        analysis: { provider: "openai", model: "gpt-5" },
-      }),
-    ).toThrow("provider_configuration_mismatch");
+    const direct = service.saveSelections(user.id, {
+      analysis: { provider: "openai", model: "gpt-5", thinkingLevel: "low" },
+    });
+    expect(direct.selections.analysis).toEqual({
+      provider: "openai",
+      model: "gpt-5",
+      thinkingLevel: "low",
+    });
 
     await service.verifyAndSave(user.id, "openai", "sk-replacement-test-key");
     expect(
@@ -143,7 +146,7 @@ describe("AI provider settings", () => {
     store.close();
   });
 
-  it("migrates legacy selected defaults once without reseeding cleared preferences", () => {
+  it("migrates legacy selected defaults without letting later preference edits mutate assignments", () => {
     const store = new JobStore(":memory:");
     const user = store.createUser("legacy-configuration", "hash");
     const config = testConfig("/tmp/ai-legacy-configuration");
@@ -175,8 +178,12 @@ describe("AI provider settings", () => {
       thinkingLevel: null,
     });
     expect(service.settings(user.id).selections).toEqual({
-      transcription: null,
-      analysis: null,
+      transcription: { provider: "openai", model: config.transcriptionModel },
+      analysis: {
+        provider: "openai",
+        model: config.analysisModel,
+        thinkingLevel: null,
+      },
     });
     expect(store.aiProviderConfiguration(user.id, "openai")).toEqual({
       transcriptionModel: null,

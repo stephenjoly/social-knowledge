@@ -13,12 +13,65 @@ export const aiProviderIds = ["openai", "cerebras"] as const;
 export type AiProviderId = (typeof aiProviderIds)[number];
 export const thinkingLevels = ["minimal", "low", "medium", "high"] as const;
 export type ThinkingLevel = (typeof thinkingLevels)[number];
+export const aiDiagnosticTasks = ["transcription", "analysis", "ask"] as const;
+export type AiDiagnosticTask = (typeof aiDiagnosticTasks)[number];
+
+export type AiDiagnosticAudio = {
+  contentType: string;
+  base64: string;
+};
+
+type AiDiagnosticSelection = {
+  provider: AiProviderId;
+  model: string;
+  thinkingLevel: ThinkingLevel | null;
+};
+
+export type AiDiagnosticResult = {
+  ok: boolean;
+  code:
+    | "ok"
+    | "missing_selection"
+    | "invalid_audio"
+    | "unsupported_audio"
+    | "invalid_audio_data"
+    | "credential_error"
+    | "model_error"
+    | "quota_exceeded"
+    | "rate_limited"
+    | "timeout"
+    | "provider_error"
+    | "invalid_response"
+    | "busy";
+  checkedAt: string;
+  durationMs: number;
+  selection: AiDiagnosticSelection | null;
+};
 
 type ProviderConfigurationInput = {
   transcriptionModel: string | null;
   analysisModel: string | null;
   thinkingLevel: ThinkingLevel | null;
 };
+
+const diagnosticTimeoutMs = 45_000;
+const diagnosticAttemptsPerMinute = 5;
+const diagnosticAudioLimitBytes = 1024 * 1024;
+const diagnosticAudioTypes = {
+  "audio/mpeg": "mp3",
+  "audio/mp4": "mp4",
+  "audio/ogg": "ogg",
+  "audio/wav": "wav",
+  "audio/webm": "webm",
+} as const;
+
+class DiagnosticFailure extends Error {
+  constructor(
+    readonly code: Exclude<AiDiagnosticResult["code"], "ok" | "busy">,
+  ) {
+    super(code);
+  }
+}
 
 const definitions = {
   openai: {
@@ -46,7 +99,12 @@ export class AiProviderService {
     provider?: AiProviderId;
     model?: string;
     thinkingLevel?: ThinkingLevel;
+    diagnostic?: boolean;
   }>();
+  private readonly diagnosticRuns = new Map<
+    string,
+    { active: boolean; attempts: number[] }
+  >();
   constructor(
     private readonly store: JobStore,
     private readonly config: AppConfig,
@@ -101,7 +159,7 @@ export class AiProviderService {
   }
 
   settings(userId: string) {
-    this.upgradeLegacyConfiguration(userId);
+    this.upgradeLegacySelections(userId);
     const selected = this.store.aiTaskSelections(userId);
     const connections = this.store.aiProviderConnections(userId);
     const verified = (provider: string | null) =>
@@ -347,8 +405,9 @@ export class AiProviderService {
             };
           } catch (error) {
             if (
-              (error as { status?: number }).status === 401 ||
-              (error as { status?: number }).status === 403
+              !context.diagnostic &&
+              ((error as { status?: number }).status === 401 ||
+                (error as { status?: number }).status === 403)
             )
               service.store.markAiProviderAttention(
                 context.userId,
@@ -448,19 +507,18 @@ export class AiProviderService {
         next.transcriptionProvider = null;
         next.transcriptionModel = null;
       } else {
-        const configuration = this.assignmentConfiguration(
-          userId,
-          selections.transcription.provider,
-        );
-        if (!configuration.transcriptionModel)
-          throw new Error("provider_configuration_required");
+        this.assertVerifiedProvider(userId, selections.transcription.provider);
+        const model =
+          selections.transcription.model ??
+          this.legacyConfiguration(userId, selections.transcription.provider)
+            ?.transcriptionModel;
         if (
-          selections.transcription.model !== undefined &&
-          selections.transcription.model !== configuration.transcriptionModel
+          !model ||
+          !this.isTranscriptionModel(selections.transcription.provider, model)
         )
-          throw new Error("provider_configuration_mismatch");
+          throw new Error("invalid_model_selection");
         next.transcriptionProvider = "openai";
-        next.transcriptionModel = configuration.transcriptionModel;
+        next.transcriptionModel = model;
       }
     }
     if (selections.analysis !== undefined) {
@@ -469,29 +527,206 @@ export class AiProviderService {
         next.analysisModel = null;
         next.analysisThinkingLevel = null;
       } else {
-        const configuration = this.assignmentConfiguration(
+        this.assertVerifiedProvider(userId, selections.analysis.provider);
+        const configuration = this.legacyConfiguration(
           userId,
           selections.analysis.provider,
         );
-        if (!configuration.analysisModel)
-          throw new Error("provider_configuration_required");
+        const model = selections.analysis.model ?? configuration?.analysisModel;
+        const thinkingLevel =
+          selections.analysis.thinkingLevel === undefined
+            ? (configuration?.thinkingLevel ?? null)
+            : selections.analysis.thinkingLevel;
         if (
-          selections.analysis.model !== undefined &&
-          selections.analysis.model !== configuration.analysisModel
+          !model ||
+          !this.isAnalysisModel(selections.analysis.provider, model)
         )
-          throw new Error("provider_configuration_mismatch");
+          throw new Error("invalid_model_selection");
         if (
-          selections.analysis.thinkingLevel !== undefined &&
-          selections.analysis.thinkingLevel !== configuration.thinkingLevel
+          !this.supportsThinkingLevel(
+            selections.analysis.provider,
+            model,
+            thinkingLevel,
+          )
         )
-          throw new Error("provider_configuration_mismatch");
+          throw new Error("invalid_thinking_level");
         next.analysisProvider = selections.analysis.provider;
-        next.analysisModel = configuration.analysisModel;
-        next.analysisThinkingLevel = configuration.thinkingLevel;
+        next.analysisModel = model;
+        next.analysisThinkingLevel = thinkingLevel;
       }
     }
     this.store.saveAiTaskSelections(userId, next);
     return this.settings(userId);
+  }
+
+  async testConnection(
+    userId: string,
+    task: AiDiagnosticTask,
+    audio?: AiDiagnosticAudio,
+  ): Promise<AiDiagnosticResult> {
+    const startedAt = Date.now();
+    const selection = this.diagnosticSelection(userId, task);
+    const result = (code: AiDiagnosticResult["code"]): AiDiagnosticResult => ({
+      ok: code === "ok",
+      code,
+      checkedAt: new Date().toISOString(),
+      durationMs: Date.now() - startedAt,
+      selection,
+    });
+    if (!selection) return result("missing_selection");
+
+    const admission = this.startDiagnostic(userId);
+    if (admission !== "ok") return result(admission);
+    try {
+      await this.withDiagnosticTimeout(async (signal) => {
+        if (task === "transcription") {
+          const decoded = this.decodeDiagnosticAudio(audio);
+          const route = this.client(userId, selection.provider, selection.model);
+          const response = await route.client.audio.transcriptions.create(
+            {
+              file: await OpenAI.toFile(
+                decoded.bytes,
+                `connection-test.${decoded.extension}`,
+                { type: decoded.contentType },
+              ),
+              model: selection.model,
+              response_format: "json",
+            },
+            { signal, maxRetries: 0 },
+          );
+          if (!response.text.trim())
+            throw new DiagnosticFailure("invalid_response");
+          return;
+        }
+
+        if (task === "analysis") {
+          const response = await this.runStructuredDiagnostic(
+            userId,
+            selection,
+            signal,
+          );
+          if (
+            (response.status !== undefined && response.status !== "completed") ||
+            !response.output_text.trim()
+          )
+            throw new DiagnosticFailure("invalid_response");
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(response.output_text);
+          } catch {
+            throw new DiagnosticFailure("invalid_response");
+          }
+          if (
+            !parsed ||
+            typeof parsed !== "object" ||
+            (parsed as { ok?: unknown }).ok !== true
+          )
+            throw new DiagnosticFailure("invalid_response");
+          return;
+        }
+
+        const stream = await this.runStreamingDiagnostic(
+          userId,
+          selection,
+          signal,
+        );
+        let receivedText = false;
+        for await (const event of stream) {
+          if (
+            event.type === "response.output_text.delta" &&
+            typeof event.delta === "string" &&
+            event.delta.length > 0
+          )
+            receivedText = true;
+          if (
+            event.type === "error" ||
+            event.type === "response.failed" ||
+            event.type === "response.incomplete"
+          )
+            throw new DiagnosticFailure("invalid_response");
+        }
+        if (!receivedText) throw new DiagnosticFailure("invalid_response");
+      });
+      return result("ok");
+    } catch (error) {
+      return result(this.diagnosticFailureCode(error));
+    } finally {
+      this.finishDiagnostic(userId);
+    }
+  }
+
+  private runStructuredDiagnostic(
+    userId: string,
+    selection: AiDiagnosticSelection,
+    signal: AbortSignal,
+  ) {
+    return this.users.run(
+      {
+        userId,
+        provider: selection.provider,
+        model: selection.model,
+        ...(selection.thinkingLevel
+          ? { thinkingLevel: selection.thinkingLevel }
+          : {}),
+        diagnostic: true,
+      },
+      () =>
+        this.routedClient().responses.create(
+          {
+            model: selection.model,
+            store: false,
+            max_output_tokens: 2048,
+            instructions:
+              "This is a connection diagnostic. Return only the requested structured result. Do not use tools or external data.",
+            input: "Return the diagnostic result now.",
+            text: {
+              format: {
+                type: "json_schema",
+                name: "connection_diagnostic",
+                strict: true,
+                schema: {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["ok"],
+                  properties: { ok: { type: "boolean", enum: [true] } },
+                },
+              },
+            },
+          },
+          { signal, maxRetries: 0 },
+        ),
+    );
+  }
+
+  private runStreamingDiagnostic(
+    userId: string,
+    selection: AiDiagnosticSelection,
+    signal: AbortSignal,
+  ) {
+    return this.users.run(
+      {
+        userId,
+        provider: selection.provider,
+        model: selection.model,
+        ...(selection.thinkingLevel
+          ? { thinkingLevel: selection.thinkingLevel }
+          : {}),
+        diagnostic: true,
+      },
+      () =>
+        this.routedClient().responses.create(
+          {
+            model: selection.model,
+            store: false,
+            max_output_tokens: 2048,
+            instructions:
+              "This is a connection diagnostic. Reply with exactly diagnostic-ok and nothing else.",
+            input: "Run the harmless streaming connection diagnostic now.",
+            stream: true,
+          },
+          { signal, maxRetries: 0 },
+        ),
+    );
   }
 
   client(
@@ -614,51 +849,194 @@ export class AiProviderService {
     );
   }
 
-  private assignmentConfiguration(userId: string, provider: AiProviderId) {
+  private assertVerifiedProvider(userId: string, provider: AiProviderId) {
     if (
       this.store.aiProviderConnection(userId, provider)?.status !== "verified"
     )
       throw new Error("invalid_provider_selection");
-    const configuration = this.store.aiProviderConfiguration(userId, provider);
-    if (!configuration) throw new Error("provider_configuration_required");
-    return configuration;
   }
 
-  private upgradeLegacyConfiguration(userId: string) {
+  private legacyConfiguration(userId: string, provider: AiProviderId) {
+    return this.store.aiProviderConfiguration(userId, provider);
+  }
+
+  private upgradeLegacySelections(userId: string) {
     const selected = this.store.aiTaskSelections(userId);
-    for (const provider of aiProviderIds) {
-      if (
-        this.store.aiProviderConnection(userId, provider)?.status !== "verified"
-      )
-        continue;
-      const hasTranscription =
-        provider === "openai" && selected.transcriptionProvider === provider;
-      const hasAnalysis = selected.analysisProvider === provider;
-      if (!hasTranscription && !hasAnalysis) continue;
-      const configuration = this.store.aiProviderConfiguration(
-        userId,
-        provider,
-      );
-      const transcriptionModel = hasTranscription
-        ? (selected.transcriptionModel ?? this.config.transcriptionModel)
-        : (configuration?.transcriptionModel ?? null);
-      const analysisModel = hasAnalysis
-        ? (selected.analysisModel ?? this.analysisOptions(provider)[0]!.model)
-        : (configuration?.analysisModel ?? null);
-      const thinkingLevel = hasAnalysis
-        ? (selected.analysisThinkingLevel ?? null)
-        : (configuration?.thinkingLevel ?? null);
-      if (
-        !configuration ||
-        (hasTranscription && configuration.transcriptionModel === null) ||
-        (hasAnalysis && configuration.analysisModel === null)
-      )
-        this.store.saveAiProviderConfiguration(userId, provider, {
-          transcriptionModel,
-          analysisModel,
-          thinkingLevel,
-        });
+    const next = { ...selected };
+    let changed = false;
+    if (
+      selected.transcriptionProvider === "openai" &&
+      selected.transcriptionModel === null &&
+      this.store.aiProviderConnection(userId, "openai")?.status === "verified"
+    ) {
+      const model =
+        this.legacyConfiguration(userId, "openai")?.transcriptionModel ??
+        this.config.transcriptionModel;
+      if (this.isTranscriptionModel("openai", model)) {
+        next.transcriptionModel = model;
+        changed = true;
+      }
     }
+    if (
+      selected.analysisProvider &&
+      selected.analysisModel === null &&
+      this.store.aiProviderConnection(userId, selected.analysisProvider)
+        ?.status === "verified"
+    ) {
+      const provider = selected.analysisProvider;
+      const configuration = this.legacyConfiguration(userId, provider);
+      const model =
+        configuration?.analysisModel ?? this.analysisOptions(provider)[0]!.model;
+      if (this.isAnalysisModel(provider, model)) {
+        next.analysisModel = model;
+        next.analysisThinkingLevel = this.supportsThinkingLevel(
+          provider,
+          model,
+          configuration?.thinkingLevel ?? null,
+        )
+          ? (configuration?.thinkingLevel ?? null)
+          : null;
+        changed = true;
+      }
+    }
+    if (changed) this.store.saveAiTaskSelections(userId, next);
+  }
+
+  private diagnosticSelection(
+    userId: string,
+    task: AiDiagnosticTask,
+  ): AiDiagnosticSelection | null {
+    const settings = this.settings(userId).selections;
+    if (task === "transcription")
+      return settings.transcription
+        ? { ...settings.transcription, thinkingLevel: null }
+        : null;
+    return settings.analysis ? { ...settings.analysis } : null;
+  }
+
+  private startDiagnostic(userId: string): "ok" | "rate_limited" | "busy" {
+    const now = Date.now();
+    const state = this.diagnosticRuns.get(userId) ?? {
+      active: false,
+      attempts: [],
+    };
+    state.attempts = state.attempts.filter(
+      (attempt) => attempt > now - 60_000,
+    );
+    if (state.active) return "busy";
+    if (state.attempts.length >= diagnosticAttemptsPerMinute)
+      return "rate_limited";
+    state.active = true;
+    state.attempts.push(now);
+    this.diagnosticRuns.set(userId, state);
+    return "ok";
+  }
+
+  private finishDiagnostic(userId: string) {
+    const state = this.diagnosticRuns.get(userId);
+    if (state) state.active = false;
+  }
+
+  private async withDiagnosticTimeout<T>(
+    action: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, diagnosticTimeoutMs);
+    try {
+      return await action(controller.signal);
+    } catch (error) {
+      if (timedOut) throw new DiagnosticFailure("timeout");
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private decodeDiagnosticAudio(audio: AiDiagnosticAudio | undefined) {
+    if (!audio) throw new DiagnosticFailure("invalid_audio");
+    const extension = diagnosticAudioTypes[
+      audio.contentType as keyof typeof diagnosticAudioTypes
+    ];
+    if (!extension) throw new DiagnosticFailure("unsupported_audio");
+    if (
+      !audio.base64 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
+        audio.base64,
+      )
+    )
+      throw new DiagnosticFailure("invalid_audio_data");
+    const bytes = Buffer.from(audio.base64, "base64");
+    if (
+      !bytes.length ||
+      bytes.length > diagnosticAudioLimitBytes ||
+      bytes.toString("base64") !== audio.base64 ||
+      !this.matchesDiagnosticAudioType(audio.contentType, bytes)
+    )
+      throw new DiagnosticFailure("invalid_audio_data");
+    return { bytes, extension, contentType: audio.contentType };
+  }
+
+  private matchesDiagnosticAudioType(contentType: string, bytes: Buffer) {
+    if (contentType === "audio/wav")
+      return (
+        bytes.length >= 12 &&
+        bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
+        bytes.subarray(8, 12).toString("ascii") === "WAVE"
+      );
+    if (contentType === "audio/ogg")
+      return bytes.subarray(0, 4).toString("ascii") === "OggS";
+    if (contentType === "audio/webm")
+      return bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+    if (contentType === "audio/mp4")
+      return bytes.length >= 12 && bytes.subarray(4, 8).toString("ascii") === "ftyp";
+    return (
+      bytes.subarray(0, 3).toString("ascii") === "ID3" ||
+      (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1]! & 0xe0) === 0xe0)
+    );
+  }
+
+  private diagnosticFailureCode(
+    error: unknown,
+  ): Exclude<AiDiagnosticResult["code"], "ok" | "busy"> {
+    if (error instanceof DiagnosticFailure) return error.code;
+    const details = error as {
+      status?: unknown;
+      statusCode?: unknown;
+      code?: unknown;
+      message?: unknown;
+    };
+    const status =
+      typeof details.status === "number"
+        ? details.status
+        : typeof details.statusCode === "number"
+          ? details.statusCode
+          : null;
+    const code = typeof details.code === "string" ? details.code.toLowerCase() : "";
+    const message =
+      typeof details.message === "string" ? details.message.toLowerCase() : "";
+    if (status === 401 || status === 403 || code === "invalid_api_key")
+      return "credential_error";
+    if (code === "insufficient_quota" || /\b(quota|billing)\b/.test(message))
+      return "quota_exceeded";
+    if (status === 429) return "rate_limited";
+    if (
+      status === 404 ||
+      /\b(model_not_found|unsupported_model|model_unavailable)\b/.test(code) ||
+      /\bmodel\b.*\b(not found|unavailable|unsupported|does not exist)\b/.test(
+        message,
+      )
+    )
+      return "model_error";
+    if (
+      (error instanceof Error && error.name === "AbortError") ||
+      /\b(timeout|timed out)\b/.test(message)
+    )
+      return "timeout";
+    return "provider_error";
   }
 }
 

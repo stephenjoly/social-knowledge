@@ -95,7 +95,7 @@ describe("API", () => {
       payload: { analysis: { provider: "openai" } },
     });
     expect(beforeConfiguration.json()).toEqual({
-      error: "provider_configuration_required",
+      error: "invalid_model_selection",
     });
     const configured = await app.inject({
       method: "PUT",
@@ -151,6 +151,74 @@ describe("API", () => {
       error: "invalid_configuration",
     });
     expect(redactedConfiguration.body).not.toContain("configuration-secret");
+  });
+
+  it("exposes one no-store, audio-sized diagnostic route to an authenticated account", async () => {
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), "social-knowledge-ai-diagnostic-route-"),
+    );
+    await mkdir(path.join(root, "data"));
+    const config = testConfig(root);
+    const store = new JobStore(config.databasePath);
+    const providers = new AiProviderService(store, config);
+    const diagnostic = vi.spyOn(providers, "testConnection").mockResolvedValue({
+      ok: true,
+      code: "ok",
+      checkedAt: "2026-09-26T16:00:00.000Z",
+      durationMs: 12,
+      selection: {
+        provider: "openai",
+        model: config.transcriptionModel,
+        thinkingLevel: null,
+      },
+    });
+    const app = buildApp(config, store, new EventHub(), undefined, providers);
+    cleanups.push(async () => {
+      await app.close();
+      store.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    const setup = await app.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: {
+        username: "diagnostic-route",
+        password: "a-strong-test-password",
+        administratorAcknowledged: true,
+      },
+    });
+    const cookie = (
+      Array.isArray(setup.headers["set-cookie"])
+        ? setup.headers["set-cookie"][0]
+        : setup.headers["set-cookie"]
+    )?.split(";")[0];
+    const audio = Buffer.concat([
+      Buffer.from("RIFF"),
+      Buffer.alloc(4),
+      Buffer.from("WAVE"),
+      Buffer.alloc(1024 * 1024 - 12),
+    ]).toString("base64");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/ai-tests/transcription",
+      headers: { cookie: cookie! },
+      payload: { audio: { contentType: "audio/wav", base64: audio } },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.json()).toMatchObject({ ok: true, code: "ok" });
+    expect(diagnostic).toHaveBeenCalledWith(
+      setup.json().user.id,
+      "transcription",
+      expect.objectContaining({ contentType: "audio/wav", base64: audio }),
+    );
+    const malformed = await app.inject({
+      method: "POST",
+      url: "/api/v1/ai-tests/analysis",
+      headers: { cookie: cookie! },
+      payload: { unexpected: true },
+    });
+    expect(malformed.statusCode).toBe(400);
   });
 
   it("requires a bearer token and accepts a supported URL", async () => {
