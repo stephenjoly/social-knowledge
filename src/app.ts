@@ -209,37 +209,28 @@ export function buildApp(
       "",
       node.breadcrumb.map((item) => markdownText(item.label)).join(" → "),
       "",
-      "## Browse",
+      `Explore ${node.captureCount} saved ${node.captureCount === 1 ? "capture" : "captures"} in this category${node.children.length ? " and its subcategories" : ""}.`,
       "",
-      ...(node.children.length
-        ? node.children.map(
-            (child) =>
-              `- [${markdownText(child.label)}](library:${child.id}) — ${child.captureCount} captures`,
-          )
-        : ["_No child categories._"]),
-      "",
+      ...(node.children.length ? [
+        "## Browse",
+        "",
+        ...node.children.map((child) => `- [${markdownText(child.label)}](library:${child.id}) — ${child.captureCount} ${child.captureCount === 1 ? "capture" : "captures"}`),
+        "",
+      ] : []),
+      ...(node.captures.some((capture) => capture.takeaways.length) ? [
+        "## Browse by insight",
+        "",
+        ...node.captures.flatMap((capture) => capture.takeaways.map((takeaway) =>
+          `- [${markdownText(takeaway)}](capture:${capture.id}) — ${markdownText(capture.title)}`)),
+        "",
+      ] : []),
       `## Captures (${node.captureCount})`,
       "",
-      ...(node.captures.length
-        ? node.captures.flatMap((capture) => [
-            `### [${markdownText(capture.title)}](capture:${capture.id})`,
-            "",
-            markdownText(capture.synopsis),
-            "",
-            ...(capture.takeaways.length
-              ? [
-                  "Key takeaways:",
-                  ...capture.takeaways.map(
-                    (takeaway) => `- ${markdownText(takeaway)}`,
-                  ),
-                ]
-              : []),
-            `Source: ${markdownText(capture.creator ?? capture.platform)} — ${markdownText(capture.sourceUrl)}`,
-            `Filed under: ${capture.breadcrumb.map((item) => markdownText(item.label)).join(" → ")}`,
-            "",
-          ])
-        : ["_No captures in this category._"]),
-      "",
+      ...node.captures.flatMap((capture) => [
+        `- [${markdownText(capture.title)}](capture:${capture.id}) — ${markdownText(capture.creator ?? capture.platform)}`,
+        ...(capture.synopsis ? [`  ${markdownText(capture.synopsis)}`] : []),
+        "",
+      ]),
     ].join("\n");
   const ask =
     askService ?? new AskService(aiProviderService.routedClient(), config, store);

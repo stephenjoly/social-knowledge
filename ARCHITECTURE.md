@@ -48,6 +48,8 @@ index/app/worker -> domain services -> db/config/types
 web UI          -> HTTP contracts
 ```
 
+Library browsing uses owner-scoped populated trees and a compact recursive content projection for node maps. Captures in descendant categories are included, with stored summaries and takeaways linked to their source notes. Markdown text is escaped; the browser projection omits archive paths and raw capture records.
+
 Domain services must not depend on initialized server instances or UI code. The UI must not rely on database layout or private archive paths. Cross-cutting services such as events and notifications are injected into the worker.
 
 ## Data and trust boundaries

@@ -120,12 +120,26 @@ test("shows a useful library home and opens category, topic, and capture", async
     readingPane.getByRole("heading", { name: "Map of content" }),
   ).toBeVisible();
   await page.screenshot({ path: "test-results/library-content-map-desktop.png", fullPage: true });
+  // A failed load must not replace the current page or enter its history.
+  await page.route("**/api/v1/library/nodes/*", (route) => route.fulfill({ status: 503, body: "{}" }), { times: 1 });
+  await readingPane.getByRole("button", { name: "Strength Training", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("This page could not be loaded");
+  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
+  await expect(back).toBeDisabled();
+
   await readingPane
     .getByRole("button", { name: "Health & Wellness" })
     .click();
   await expect(
     readingPane.getByRole("heading", { name: "Health & Wellness" }),
   ).toBeVisible();
+
+  await expect(readingPane.getByRole("heading", { name: "Browse by insight", exact: true })).toBeVisible();
+  await expect(readingPane.getByRole("button", { name: "Strength training fixture", exact: true })).toBeVisible();
+  await readingPane.getByRole("button", { name: "A fixture can be opened from a topic.", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Capture note", exact: true })).toBeVisible();
+  await back.click();
+  await expect(readingPane.getByRole("heading", { name: "Health & Wellness", exact: true })).toBeVisible();
 
   await page
     .getByRole("button", { name: "Expand Health & Wellness" })

@@ -1,6 +1,6 @@
 # Linked Knowledge base browsing
 
-Status: active
+Status: complete
 Owner: Codex
 Started: 2026-09-26
 
@@ -24,10 +24,16 @@ Root: frontend navigation, controls, Home map, browser verification and delivery
 ## Progress
 
 - [x] Preflight and bounded assignment.
-- [ ] UI navigation and content maps integrated.
-- [ ] Full checks and browser acceptance.
-- [ ] PR preview updated and verified.
+- [x] UI navigation and content maps integrated.
+- [x] Full checks and browser acceptance.
+- [x] Ready for delivery through existing PR #28 preview; deployed asset verification accompanies delivery.
 
 ## Verification and recovery
 
 Run `npm run check` and focused real-backend Knowledge base browser test; retain ownership/security regressions. Publish to existing PR #28 preview only. Revert scoped commits if necessary; no destructive migration, production change or credential work.
+
+## Result and evidence
+
+`npm run check` passed (119 tests). Four affected browser journeys passed: linked library Home/category/insight/note navigation, app history, Activity, and capture submission. Verified Expand/Collapse, hidden empty categories, disabled history boundaries, forward-history truncation, failed-load recovery, Inbox-only capture action, and mobile overflow. Desktop and mobile screenshots inspected.
+
+The browser API uses an owner-scoped recursive content projection with escaped Markdown and no archive paths, transcripts, credentials or account IDs. The existing archive publisher retains its existing export-map behavior; this refinement applies to the in-app content maps. Stored taxonomy is preserved.

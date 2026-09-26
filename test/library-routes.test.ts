@@ -190,8 +190,9 @@ describe("library routes", () => {
       expect(topic.json().markdown).toContain(
         `[Knife \\[skills\\]](capture:${capture.id})`,
       );
+      expect(topic.json().markdown).toContain("## Browse by insight");
       expect(topic.json().markdown).toContain(
-        "Keep \\[fingertips\\] clear\\.",
+        `[Keep \\[fingertips\\] clear\\.](capture:${capture.id})`,
       );
 
       const note = await app.inject({

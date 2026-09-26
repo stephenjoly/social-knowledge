@@ -177,7 +177,19 @@ type LibraryNode = {
 type LibraryNodeDetail = LibraryNode & {
   breadcrumb: LibraryNode[];
   children: LibraryNode[];
-  captures: Capture[];
+  captures: Array<{
+    id: string;
+    title: string;
+    platform: string;
+    creator: string | null;
+    creatorUrl: string | null;
+    sourceUrl: string;
+    synopsis: string;
+    takeaways: string[];
+    createdAt: string;
+    assignedNode: { id: string; label: string };
+    breadcrumb: Array<{ id: string; label: string }>;
+  }>;
 };
 type CaptureFacets = {
   categories: Array<{
@@ -3152,7 +3164,7 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
               type="button"
               variant="ghost"
               className="library-collapse-all"
-              disabled={expandedNodes.size === 0}
+              disabled={!nodes.some((item) => children(item.id).length > 0 && expandedNodes.has(item.id))}
               onClick={() => setExpandedNodes(new Set())}
             >
               Collapse all
