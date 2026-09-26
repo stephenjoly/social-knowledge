@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -116,6 +116,36 @@ describe("API", () => {
     const spec = await app.inject({ method: "GET", url: "/openapi.json" });
     expect(spec.statusCode).toBe(200);
     expect(spec.json().servers[0].url).toBe(config.appUrl);
+  });
+
+  it("serves the public roadmap and its packaged source without authentication", async () => {
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), "social-knowledge-roadmap-"),
+    );
+    await mkdir(path.join(root, "data"));
+    const config = testConfig(root);
+    const store = new JobStore(config.databasePath);
+    const app = buildApp(config, store, new EventHub());
+    cleanups.push(async () => {
+      await app.close();
+      store.close();
+      await rm(root, { recursive: true, force: true });
+    });
+
+    const canonicalDashboard = await readFile(
+      "docs/roadmap/2026-09-24/roadmap-dashboard.html",
+      "utf8",
+    );
+    const roadmap = await app.inject({ method: "GET", url: "/roadmap" });
+    expect(roadmap.statusCode).toBe(200);
+    expect(roadmap.headers["content-type"]).toContain("text/html");
+    expect(roadmap.body).toBe(canonicalDashboard);
+    expect(roadmap.body).toContain('href="roadmap.md"');
+    expect(roadmap.body).toContain('id="fbar"');
+
+    const source = await app.inject({ method: "GET", url: "/roadmap.md" });
+    expect(source.statusCode).toBe(200);
+    expect(source.body).toContain("# Product roadmap");
   });
 
   it("creates the first administrator without a setup token and validates mutation origins", async () => {
