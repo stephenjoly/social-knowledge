@@ -2835,6 +2835,8 @@ function Settings({ user }: { user: AccountUser | null }) {
                                 Not applicable
                               </span>
                             ) : analysisOption?.thinkingLevels.length ? (
+                              <>
+                              <span className="ai-thinking-mobile-label" aria-hidden="true">Thinking</span>
                               <div
                                 className="ai-thinking-options"
                                 role="group"
@@ -2878,6 +2880,7 @@ function Settings({ user }: { user: AccountUser | null }) {
                                   </button>
                                 ))}
                               </div>
+                              </>
                             ) : (
                               <span className="ai-thinking-unavailable">
                                 Not applicable

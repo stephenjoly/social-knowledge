@@ -25,7 +25,7 @@ One isolated UI Worker owns markup, styles, and focused browser coverage. A read
 ## Progress
 - [x] Read canonical frame and export visual reference.
 - [x] Delegate UI implementation and behavior review.
-- [ ] Integrate compact UI and explicit draft/save behavior.
+- [x] Integrate compact UI and explicit draft/save behavior.
 - [ ] Verify desktop/mobile, update documentation, and publish preview.
 
 ## Decisions
@@ -36,6 +36,14 @@ One isolated UI Worker owns markup, styles, and focused browser coverage. A read
 
 ## Verification
 `npm run check`; focused provider-settings browser tests with mocked provider traffic; settings alignment and onboarding journeys; desktop/mobile screenshot review; preview assets and health verification. No automatic live-credential tests.
+
+## Review notes
+- Independent backend review confirmed no API change is required: one settings request validates both complete selections before a single persistence write.
+- Save includes explicit models and nullable thinking level; omitted values would invoke legacy provider-preference fallback.
+- Current advertised efforts are minimal, low, medium, high. Default means no task-level override, not disabled reasoning. Unsupported models show Not applicable.
+- UI checkpoint `b65ca28` integrated as `b4a5810`. Review corrections reset pristine drafts on refresh, preserve edited drafts, remove obsolete saved-state copy, and trap initial dialog keyboard focus.
+- Worker full check passed 135 tests and focused browser acceptance. Parent screenshot review expanded the mobile thinking control to keep all labels readable.
+- Parent final `npm run check` passed 135 tests. Provider settings, settings alignment, onboarding, and library browser journeys passed 4/4. Desktop/mobile screenshots reviewed; preview publication remains the final step.
 
 ## Risks and recovery
 Draft settings and server refresh can diverge; verify failed saves and provider changes explicitly. Model-specific effort support remains catalog-driven. Revert scoped commits on regression; existing API and persistent data remain compatible.

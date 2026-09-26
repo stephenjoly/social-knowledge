@@ -1469,6 +1469,10 @@
   background: #f4f4f5;
 }
 
+.settings-workspace .ai-thinking-mobile-label {
+  display: none;
+}
+
 .settings-workspace .ai-thinking-options button {
   min-width: 0;
   height: 34px;
@@ -1668,9 +1672,20 @@
     font-weight: 650;
   }
 
-  .settings-workspace .ai-thinking-options,
   .settings-workspace .ai-thinking-unavailable {
     margin-left: 92px;
+  }
+
+  .settings-workspace .ai-thinking-mobile-label {
+    display: block;
+    margin-top: 4px;
+    color: var(--sk-muted);
+    font-size: 10px;
+    font-weight: 650;
+  }
+
+  .settings-workspace .ai-thinking-options {
+    margin-left: 0;
   }
 
   .settings-workspace .ai-settings-footer {
