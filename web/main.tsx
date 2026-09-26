@@ -13,7 +13,9 @@ import remarkGfm from "remark-gfm";
 import {
   Activity,
   Bot,
+  ChevronDown,
   ChevronRight,
+  Copy,
   DatabaseBackup,
   FileQuestion,
   Folder,
@@ -26,6 +28,7 @@ import {
   LogOut,
   MessageSquare,
   Plus,
+  RotateCw,
   Search,
   ShieldCheck,
   SlidersHorizontal,
@@ -102,20 +105,24 @@ type Capture = {
   assets: Asset[];
   notePath: string;
 };
-type Job = {
+type ActivityStageName = "added" | "found" | "media" | "text" | "saved";
+type ActivityStageState = "queued" | "active" | "completed" | "failed";
+type ActivityStage = {
+  name: ActivityStageName;
+  state: ActivityStageState;
+  durationMs: number | null;
+};
+type ActivityJob = {
   id: string;
   status: string;
   normalizedUrl: string;
   displayTitle: string | null;
   attempts: number;
-  error: string | null;
   errorCode: string | null;
-  errorDetail: string | null;
-  resultNotePath: string | null;
   createdAt: string;
   updatedAt: string;
-  reachedStages?: string[];
-  stageDurations?: Record<string, number>;
+  reachedStages: ActivityStageName[];
+  stages: ActivityStage[];
 };
 type LibraryExport = {
   id: string;
@@ -126,13 +133,34 @@ type LibraryExport = {
   createdAt: string;
   expiresAt: string;
 };
-type JobEvent = {
+type ActivityEvent = {
   id: string;
   status: string;
-  message: string | null;
   createdAt: string;
+  label: string;
+  message: string | null;
+  durationMs: number | null;
+  state: "pending" | "running" | "completed" | "failed";
 };
-type JobDetails = { job: Job; events: JobEvent[] };
+type ActivityDetails = { job: ActivityJob; events: ActivityEvent[] };
+type ActivityCounts = {
+  active: number;
+  queued: number;
+  failed: number;
+  savedToday: number;
+  recentEvents: number;
+};
+type ActivityPage = {
+  jobs: ActivityJob[];
+  nextCursor: string | null;
+  generatedAt: string;
+  counts: ActivityCounts;
+};
+type FailedActivityPage = {
+  failures: ActivityJob[];
+  nextCursor: string | null;
+  total: number;
+};
 type LibraryNode = {
   id: string;
   parentId: string | null;
@@ -333,25 +361,29 @@ function PlatformMark({ platform }: { platform: string }) {
   return <span aria-hidden="true">↗</span>;
 }
 
-const stages = [
-  "queued",
-  "downloading",
-  "processing",
-  "transcribing",
-  "translating",
-  "analyzing",
-  "writing",
-  "complete",
+const activityStages: ActivityStageName[] = [
+  "added",
+  "found",
+  "media",
+  "text",
+  "saved",
 ];
-const stageCopy: Record<string, string> = {
-  queued: "Waiting",
+const activityStageCopy: Record<ActivityStageName, string> = {
+  added: "Added",
+  found: "Found",
+  media: "Media",
+  text: "Text",
+  saved: "Saved",
+};
+const activityStatusCopy: Record<string, string> = {
+  queued: "Queued",
   downloading: "Downloading",
   processing: "Preparing media",
   transcribing: "Transcribing",
   translating: "Translating",
   analyzing: "Extracting knowledge",
-  writing: "Archiving",
-  complete: "Complete",
+  writing: "Saving capture",
+  complete: "Saved",
   failed: "Needs attention",
 };
 const failureCopy: Record<string, { title: string; message: string }> = {
@@ -393,20 +425,12 @@ const failureCopy: Record<string, { title: string; message: string }> = {
   },
 };
 
-function failureFor(job: Job) {
+function failureFor(job: ActivityJob) {
   if (job.errorCode && failureCopy[job.errorCode])
     return failureCopy[job.errorCode]!;
-  const text = (job.error || "").toLowerCase();
-  if (/cookie|logged-in|authentication/.test(text))
-    return failureCopy.authentication_required!;
-  if (/private/.test(text)) return failureCopy.private_post!;
-  if (/unavailable|removed|404/.test(text)) return failureCopy.unavailable!;
-  if (/unsupported|without metadata|no downloadable/.test(text))
-    return failureCopy.unsupported_format!;
-  if (/size|duration|limit/.test(text)) return failureCopy.archive_limit!;
   return {
     title: "Capture failed",
-    message: "Retry this capture. Open the diagnostic only if it fails again.",
+    message: "Retry this capture. If it fails again, check your capture setup.",
   };
 }
 
@@ -451,42 +475,79 @@ function PlatformIcon({ url }: { url: string }) {
   );
 }
 
-function stageDuration(events: JobEvent[], index: number, now: number) {
-  const started = Date.parse(events[index]!.createdAt);
-  const ended = events[index + 1]
-    ? Date.parse(events[index + 1]!.createdAt)
-    : now;
-  if (!Number.isFinite(started) || !Number.isFinite(ended)) return "—";
-  const seconds = Math.max(0, Math.round((ended - started) / 1000));
-  return seconds < 60
-    ? `${seconds}s`
-    : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+function formatPreciseDuration(durationMs: number | null) {
+  if (durationMs === null) return "pending";
+  if (durationMs < 1000) return `${durationMs} ms`;
+  if (durationMs < 60000) {
+    const seconds = durationMs / 1000;
+    return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)} s`;
+  }
+  const minutes = Math.floor(durationMs / 60000);
+  const seconds = Math.floor((durationMs % 60000) / 1000);
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 }
 
-function formatDuration(seconds: number) {
-  return seconds < 60
-    ? `${seconds}s`
-    : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+function formatActivityTime(value: string) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "—";
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 10) return "now";
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
 }
 
-const failurePriority: Record<string, number> = {
-  authentication_required: 0,
-  private_post: 1,
-  ai_failed: 2,
-  processing_failed: 3,
-  platform_temporary: 4,
-};
+function formatEventTime(value: string) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "—";
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(timestamp));
+}
 
-function safeLogMessage(message: string | null) {
-  return [
-    "Capture accepted",
-    "Download started",
-    "Capture archived",
-    "Manual retry requested",
-    "AI title ready; extracting detailed knowledge",
-  ].includes(message ?? "")
-    ? message
-    : null;
+const safeActivityLabels = new Set([
+  "Capture created",
+  "Capture accepted",
+  "Source found",
+  "Source resolved",
+  "Media download",
+  "Media prepared",
+  "Transcript preparation",
+  "Transcript ready",
+  "Knowledge extracted",
+  "Capture saved",
+  "Capture archived",
+  "Manual retry requested",
+  "Capture failed",
+]);
+const safeActivityMessages = new Set([
+  "URL accepted and queued",
+  "Capture accepted",
+  "Source found",
+  "Instagram reel found",
+  "Facebook post found",
+  "Download started",
+  "Media prepared",
+  "Waiting for media download",
+  "Transcript ready",
+  "Knowledge extracted",
+  "Capture archived",
+  "Manual retry requested",
+]);
+
+function safeActivityEvent(event: ActivityEvent) {
+  if (!safeActivityLabels.has(event.label)) return null;
+  return {
+    ...event,
+    message: safeActivityMessages.has(event.message ?? "")
+      ? event.message
+      : null,
+  };
 }
 type ApiKey = {
   id: string;
@@ -565,6 +626,7 @@ function AppNavigation({
         <button
           type="button"
           className={tab === nextTab ? "active" : ""}
+          data-tab={nextTab}
           aria-label={label}
           aria-current={tab === nextTab ? "page" : undefined}
           onClick={() => onNavigate(nextTab)}
@@ -3946,7 +4008,26 @@ function App() {
   const [tab, setTab] = useState<AppTab>(tabFromLocation);
   const highlightedJob = new URLSearchParams(window.location.search).get("job");
   const [captures, setCaptures] = useState<Capture[]>([]);
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [activityJobs, setActivityJobs] = useState<ActivityJob[]>([]);
+  const [activityNextCursor, setActivityNextCursor] = useState<string | null>(
+    null,
+  );
+  const [activityCounts, setActivityCounts] = useState<ActivityCounts>({
+    active: 0,
+    queued: 0,
+    failed: 0,
+    savedToday: 0,
+    recentEvents: 0,
+  });
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityLoadingMore, setActivityLoadingMore] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const activityRequest = useRef(0);
+  const [failedJobs, setFailedJobs] = useState<ActivityJob[]>([]);
+  const [failedNextCursor, setFailedNextCursor] = useState<string | null>(null);
+  const [failedTotal, setFailedTotal] = useState(0);
+  const [failedLoadingMore, setFailedLoadingMore] = useState(false);
+  const failedRequest = useRef(0);
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const [platform, setPlatform] = useState("");
@@ -4006,13 +4087,14 @@ function App() {
   const [captureSubmitted, setCaptureSubmitted] = useState(false);
   const [activityFilter, setActivityFilter] = useState<"active" | "all">("active");
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
-  const [jobDetails, setJobDetails] = useState<JobDetails | null>(null);
+  const [jobDetails, setJobDetails] = useState<ActivityDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState(false);
   const detailsRequest = useRef(0);
   const lastNewestActive = useRef<string | null>(null);
   const [retryPending, setRetryPending] = useState(false);
   const [retryingIds, setRetryingIds] = useState<string[]>([]);
+  const [copyFeedback, setCopyFeedback] = useState("");
   async function check() {
     try {
       const result = await api<{ user: AccountUser }>("/api/auth/me");
@@ -4102,16 +4184,91 @@ function App() {
       void loadInboxAnalytics();
     }, 250);
   }
+  async function loadActivityPage(
+    filter: "active" | "all" = activityFilter,
+    append = false,
+  ) {
+    const requestId = ++activityRequest.current;
+    const cursor = append ? activityNextCursor : null;
+    if (append && !cursor) return;
+    if (append) setActivityLoadingMore(true);
+    else {
+      setActivityLoading(true);
+      setActivityError(null);
+      setActivityNextCursor(null);
+    }
+    const query = new URLSearchParams({
+      limit: "100",
+      filter,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
+    if (cursor) query.set("cursor", cursor);
+    try {
+      const page = await api<ActivityPage>(`/api/v1/jobs?${query}`);
+      if (requestId !== activityRequest.current) return;
+      const jobs = page.jobs.filter((job) =>
+        filter === "active"
+          ? job.status !== "failed" && job.status !== "complete"
+          : true,
+      );
+      setActivityJobs((current) => {
+        if (!append) return jobs;
+        const seen = new Set(current.map((job) => job.id));
+        return [...current, ...jobs.filter((job) => !seen.has(job.id))];
+      });
+      setActivityNextCursor(page.nextCursor);
+      setActivityCounts(page.counts);
+    } catch {
+      if (requestId === activityRequest.current)
+        setActivityError("Unable to load capture activity. Try again.");
+    } finally {
+      if (requestId === activityRequest.current) {
+        if (append) setActivityLoadingMore(false);
+        else setActivityLoading(false);
+      }
+    }
+  }
+  async function loadFailedJobs(append = false) {
+    const requestId = ++failedRequest.current;
+    const cursor = append ? failedNextCursor : null;
+    if (append && !cursor) return;
+    if (append) setFailedLoadingMore(true);
+    else setFailedNextCursor(null);
+    const query = new URLSearchParams({ limit: "50" });
+    if (cursor) query.set("cursor", cursor);
+    try {
+      const page = await api<FailedActivityPage>(
+        `/api/v1/jobs/failed?${query}`,
+      );
+      if (requestId !== failedRequest.current) return;
+      setFailedJobs((current) => {
+        if (!append) return page.failures;
+        const seen = new Set(current.map((job) => job.id));
+        return [...current, ...page.failures.filter((job) => !seen.has(job.id))];
+      });
+      setFailedNextCursor(page.nextCursor);
+      setFailedTotal(page.total);
+    } catch {
+      if (requestId === failedRequest.current && !append) {
+        setFailedJobs([]);
+        setFailedTotal(0);
+      }
+    } finally {
+      if (requestId === failedRequest.current && append)
+        setFailedLoadingMore(false);
+    }
+  }
   async function loadSupportingData() {
-    const [j, f] = await Promise.all([
-      api<{ jobs: Job[] }>("/api/v1/jobs?limit=100"),
-      api<CaptureFacets>("/api/v1/capture-facets"),
-    ]);
-    setJobs(j.jobs);
-    setFacets(f);
+    const facets = await api<CaptureFacets>("/api/v1/capture-facets");
+    setFacets(facets);
   }
   async function load() {
-    await Promise.all([loadInboxPage(), loadSupportingData()]);
+    await Promise.all([
+      loadInboxPage(),
+      loadSupportingData(),
+      loadActivityPage(),
+      loadFailedJobs(),
+    ]);
   }
   function scheduleLiveRefresh() {
     if (liveRefreshTimer.current) return;
@@ -4180,6 +4337,14 @@ function App() {
     };
   }, [authState]);
   useEffect(() => {
+    if (authState !== "ready") return;
+    void loadActivityPage(activityFilter);
+  }, [authState, activityFilter]);
+  useEffect(() => {
+    if (authState !== "ready") return;
+    void loadFailedJobs();
+  }, [authState]);
+  useEffect(() => {
     if (authState === "ready") return;
     analyticsRequest.current += 1;
     analyticsLoaded.current = false;
@@ -4201,34 +4366,24 @@ function App() {
     setSort(nextSort);
     setDirection(nextSort === "savedAt" ? "desc" : "asc");
   };
-  const counts = useMemo(
-    () => ({
-      active: jobs.filter((j) => !["complete", "failed"].includes(j.status))
-        .length,
-      failed: jobs.filter((j) => j.status === "failed").length,
-    }),
-    [jobs],
+  const activeJobCount = activityCounts.active;
+  const visibleActivityJobs = useMemo(
+    () =>
+      [...activityJobs].sort(
+        (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+      ),
+    [activityJobs],
   );
-  const activeJobCount = counts.active + counts.failed;
-  const failedJobs = jobs
-    .filter((job) => job.status === "failed")
-    .sort(
-      (a, b) =>
-        (failurePriority[a.errorCode ?? ""] ?? 5) -
-          (failurePriority[b.errorCode ?? ""] ?? 5) ||
-        Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
-    );
-  const processingJobs = jobs
-    .filter((job) => job.status !== "failed" && job.status !== "complete")
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-  const completedJobs = jobs.filter((job) => job.status === "complete");
-  const activityJobs =
-    activityFilter === "active"
-      ? processingJobs
-      : [...jobs].sort(
-          (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
-        );
-  const newestActiveId = processingJobs[0]?.id ?? null;
+  const inProgressJobs = visibleActivityJobs.filter(
+    (job) =>
+      job.status !== "queued" &&
+      job.status !== "failed" &&
+      job.status !== "complete",
+  );
+  const queuedJobs = visibleActivityJobs.filter(
+    (job) => job.status === "queued",
+  );
+  const newestActiveId = inProgressJobs[0]?.id ?? queuedJobs[0]?.id ?? null;
   useEffect(() => {
     if (activityFilter !== "active") return;
     if (newestActiveId && newestActiveId !== lastNewestActive.current) {
@@ -4241,7 +4396,7 @@ function App() {
     const requestId = ++detailsRequest.current;
     setDetailsLoading(true);
     setDetailsError(false);
-    void api<JobDetails>(`/api/v1/jobs/${expandedJobId}`)
+    void api<ActivityDetails>(`/api/v1/jobs/${expandedJobId}`)
       .then((details) => {
         if (requestId === detailsRequest.current) setJobDetails(details);
       })
@@ -4254,8 +4409,8 @@ function App() {
     return () => {
       detailsRequest.current += 1;
     };
-  }, [expandedJobId, tab, jobs.find((job) => job.id === expandedJobId)?.updatedAt]);
-  async function retryJob(job: Job) {
+  }, [expandedJobId, tab, activityJobs.find((job) => job.id === expandedJobId)?.updatedAt]);
+  async function retryJob(job: ActivityJob) {
     if (retryPending || retryingIds.includes(job.id)) return;
     setRetryingIds((current) => [...current, job.id]);
     try {
@@ -4270,11 +4425,11 @@ function App() {
     }
   }
   async function retryAll() {
-    if (retryPending || failedJobs.length === 0) return;
+    if (retryPending || failedTotal === 0) return;
     setRetryPending(true);
     setMessage("Retrying failed captures…");
     try {
-      const result = await api<{ retried: number }>(
+      const result = await api<{ requested: number; retried: number }>(
         "/api/v1/jobs/retry-failed",
         { method: "POST" },
       );
@@ -4284,6 +4439,37 @@ function App() {
       setMessage("Retry all failed. Check the capture setup and try again.");
     } finally {
       setRetryPending(false);
+    }
+  }
+  async function copyActivityLogs(events: ActivityEvent[]) {
+    const safeEvents = events
+      .map(safeActivityEvent)
+      .filter((event): event is NonNullable<typeof event> => event !== null);
+    const text = safeEvents
+      .map((event) =>
+        [
+          formatEventTime(event.createdAt),
+          event.label,
+          event.message,
+          event.state === "running"
+            ? "running"
+            : event.state === "pending"
+              ? "pending"
+              : formatPreciseDuration(event.durationMs),
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      )
+      .join("\n");
+    if (!text) {
+      setCopyFeedback("No safe logs available to copy.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyFeedback("Safe logs copied.");
+    } catch {
+      setCopyFeedback("Couldn’t copy logs. Select and copy them manually.");
     }
   }
   const profileInitial = user?.username.slice(0, 1).toUpperCase() || "S";
@@ -4374,7 +4560,7 @@ function App() {
       const result = await api<{
         created: boolean;
         retried?: boolean;
-        job: Job;
+        job: ActivityJob;
       }>("/api/v1/jobs", {
         method: "POST",
         body: JSON.stringify({ url: captureUrl, note: note || undefined }),
@@ -4441,7 +4627,7 @@ function App() {
               <strong>{user?.username || "Personal archive"}</strong>
               <small>Personal workspace</small>
             </span>
-            <ChevronRight aria-hidden="true" />
+            <ChevronDown aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -4473,7 +4659,7 @@ function App() {
             onClick={() => navigateTo("capture")}
           >
             <Plus aria-hidden="true" />
-            <span>Capture</span>
+            <span>Capture link</span>
           </button>
         </header>
         <main className="shell">
@@ -4946,80 +5132,87 @@ function App() {
           {tab === "activity" && (
             <div className="activity-view">
               <header className="activity-heading">
-                <span className="activity-eyebrow">Import status</span>
-                <h1>Activity</h1>
-                <p>Track captures and resolve anything that needs attention.</p>
+                <span className="activity-eyebrow">Activity</span>
+                <h1>Capture activity</h1>
+                <p>Live progress across every source.</p>
               </header>
-              {message && (
-                <p className="action-feedback" role="status">
-                  {message}
-                </p>
-              )}
-              <section className="activity-attention" aria-labelledby="attention-title">
-                <div className="activity-attention-heading">
-                  <div><h2 id="attention-title">Needs attention</h2><span>{failedJobs.length}</span></div>
-                  <button type="button" onClick={() => void retryAll()} disabled={retryPending || failedJobs.length === 0}>
-                    {retryPending ? "Retrying…" : "Retry all"}
-                  </button>
-                </div>
-                <div className="activity-attention-list" role="list">
-                  {failedJobs.length === 0 ? (
-                    <p>Nothing needs attention.</p>
-                  ) : failedJobs.map((job) => (
-                    <div className="activity-attention-item" role="listitem" key={job.id}>
-                      <span className="activity-attention-dot" aria-hidden="true" />
-                      <div><strong>{job.displayTitle || sourceReference(job.normalizedUrl)}</strong><small>{failureFor(job).title}</small></div>
-                      <button type="button" disabled={retryPending || retryingIds.includes(job.id)} onClick={() => void retryJob(job)}>
-                        {retryingIds.includes(job.id) ? "Retrying…" : "Retry"}
-                      </button>
-                    </div>
-                  ))}
-                </div>
+              <section className="activity-summary" aria-label="Activity summary">
+                {[
+                  ["active", activityCounts.active, "Active"],
+                  ["queued", activityCounts.queued, "Queued"],
+                  ["attention", activityCounts.failed, "Attention"],
+                  ["saved", activityCounts.savedToday, "Saved today"],
+                ].map(([kind, value, label]) => (
+                  <div className={`activity-kpi ${kind}`} key={kind}>
+                    <span aria-hidden="true" />
+                    <strong>{value}</strong>
+                    <small>{label}</small>
+                  </div>
+                ))}
+                <p>{activityCounts.recentEvents} events in the last 10 minutes</p>
               </section>
-              <section className="activity-history" aria-label="Capture activity">
-                <div className="activity-history-heading">
-                  <h2>Captures</h2>
+              {message && <p className="activity-feedback" role="status">{message}</p>}
+              <section className="activity-table" aria-label="Capture activity">
+                <div className="activity-table-heading">
+                  <div>
+                    <h2>Captures</h2>
+                    <span>Click a row to inspect logs</span>
+                  </div>
                   <div className="activity-filters" role="group" aria-label="Activity filter">
-                    <button type="button" aria-pressed={activityFilter === "active"} onClick={() => { setActivityFilter("active"); setExpandedJobId(newestActiveId); }}>Active <span>{processingJobs.length}</span></button>
+                    <button type="button" aria-pressed={activityFilter === "active"} onClick={() => setActivityFilter("active")}>Active</button>
                     <button type="button" aria-pressed={activityFilter === "all"} onClick={() => setActivityFilter("all")}>All</button>
                   </div>
                 </div>
-                {activityJobs.length === 0 ? (
+                <div className="activity-table-columns" aria-hidden="true">
+                  <span>Capture</span><span>Progress</span><span>Status</span><span>Updated</span><span />
+                </div>
+                {activityLoading && visibleActivityJobs.length === 0 ? (
+                  <p className="activity-empty">Loading capture activity…</p>
+                ) : activityError ? (
+                  <p className="activity-empty" role="alert">{activityError}</p>
+                ) : visibleActivityJobs.length === 0 ? (
                   <p className="activity-empty">{activityFilter === "active" ? "No captures processing now." : "No captures yet."}</p>
                 ) : (
                   <div className="activity-list">
-                    {activityJobs.map((job) => {
+                    {visibleActivityJobs.map((job) => {
                       const expanded = expandedJobId === job.id;
                       const events = expanded && jobDetails?.job.id === job.id ? jobDetails.events : [];
-                      const failedStage = job.status === "failed" ? [...(job.reachedStages ?? [])].reverse().find((stage) => stages.includes(stage) && stage !== "queued") ?? "queued" : null;
+                      const safeEvents = events
+                        .map(safeActivityEvent)
+                        .filter((event): event is ActivityEvent => event !== null);
                       return (
                         <article className={`activity-card ${expanded ? "expanded" : ""} ${highlightedJob === job.id ? "highlighted" : ""}`} key={job.id}>
-                          <div className="activity-card-head">
-                            <button type="button" className="activity-row-trigger" aria-expanded={expanded} aria-controls={`activity-log-${job.id}`} onClick={() => setExpandedJobId(expanded ? null : job.id)}>
-                              <PlatformIcon url={job.normalizedUrl} />
-                              <span className="activity-row-copy"><strong>{job.displayTitle || sourceReference(job.normalizedUrl)}</strong><small>{job.status === "failed" ? failureFor(job).title : stageCopy[job.status] || "Processing"}</small></span>
-                              <ChevronRight className="activity-row-chevron" aria-hidden="true" />
-                            </button>
-                            {job.status === "failed" && <button type="button" className="activity-retry" disabled={retryPending || retryingIds.includes(job.id)} onClick={() => void retryJob(job)}>{retryingIds.includes(job.id) ? "Retrying…" : "Retry"}</button>}
-                          </div>
-                          <div className="activity-stages" aria-label="Processing stages">
-                            {stages.map((stage) => {
-                              const state = stage === failedStage ? "failed" : job.status === "complete" || (job.reachedStages ?? []).includes(stage) && stage !== job.status ? "completed" : stage === job.status ? "active" : "queued";
-                              const eventIndex = events.findIndex((event) => event.status === stage);
-                              const duration = job.stageDurations?.[stage] !== undefined ? formatDuration(job.stageDurations[stage]) : eventIndex >= 0 ? stageDuration(events, eventIndex, job.status === "complete" || job.status === "failed" ? Date.parse(job.updatedAt) : Date.now()) : "—";
-                              return <span className={`activity-stage ${state}`} title={`${stageCopy[stage]} · ${duration}`} aria-label={`${stageCopy[stage]}: ${state}${duration !== "—" ? `, ${duration}` : ""}`} key={stage} />;
-                            })}
-                          </div>
+                          <button type="button" className="activity-row-trigger" aria-expanded={expanded} aria-controls={`activity-log-${job.id}`} onClick={() => setExpandedJobId(expanded ? null : job.id)}>
+                            <span className="activity-row-copy"><span className={`activity-source-dot ${platformFor(job.normalizedUrl)}`} aria-hidden="true" /><span><strong>{job.displayTitle || sourceReference(job.normalizedUrl)}</strong><small>{sourceLabel(job.normalizedUrl)}</small></span></span>
+                            <span className="activity-stages" aria-label="Processing stages">
+                              {activityStages.map((stage) => {
+                                const stageState = job.stages.find((item) => item.name === stage);
+                                const state = stageState?.state ?? "queued";
+                                const duration = state === "active" ? "running" : formatPreciseDuration(stageState?.durationMs ?? null);
+                                return <span className={`activity-stage ${state}`} title={`${activityStageCopy[stage]} · ${duration}`} aria-label={`${activityStageCopy[stage]}: ${state}, ${duration}`} key={stage}><span className="activity-stage-marker" /><span className="activity-stage-label">{activityStageCopy[stage]}</span></span>;
+                              })}
+                            </span>
+                            <span className={`activity-status ${job.status === "failed" ? "failed" : ""}`}>{job.status === "failed" ? failureFor(job).title : activityStatusCopy[job.status] || "Processing"}</span>
+                            <time className="activity-updated" dateTime={job.updatedAt}>{formatActivityTime(job.updatedAt)}</time>
+                            <ChevronDown className="activity-row-chevron" aria-hidden="true" />
+                          </button>
                           {expanded && (
                             <div className="activity-inline-log" id={`activity-log-${job.id}`}>
-                              <div className="activity-inline-log-heading"><strong>Processing log</strong><span>Attempt {job.attempts}</span></div>
-                              {detailsLoading && events.length === 0 ? <p>Loading log…</p> : detailsError ? <p role="alert">Log unavailable. Close and reopen this capture to retry.</p> : (
+                              <div className="activity-inline-log-heading"><div><strong>Processing logs</strong><span>Attempt {job.attempts}</span></div><button type="button" onClick={() => void copyActivityLogs(events)}><Copy aria-hidden="true" /> Copy logs</button></div>
+                              {copyFeedback && <p className="activity-copy-feedback" role="status">{copyFeedback}</p>}
+                              {detailsLoading && events.length === 0 ? <p>Loading logs…</p> : detailsError ? <p role="alert">Logs are unavailable. Close and reopen this capture to retry.</p> : safeEvents.length > 0 ? (
                                 <ol>
-                                  {events.map((event, index) => <li key={event.id}><span className="activity-log-time">{new Date(event.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><div><strong>{stageCopy[event.status] || "Processing update"}</strong>{safeLogMessage(event.message) && <p>{safeLogMessage(event.message)}</p>}</div><span className="activity-log-duration">{stageDuration(events, index, job.status === "complete" || job.status === "failed" ? Date.parse(job.updatedAt) : Date.now())}</span></li>)}
+                                  {safeEvents.map((event) => <li key={event.id}><span className={`activity-log-dot ${event.state}`} aria-hidden="true" /><time className="activity-log-time" dateTime={event.createdAt}>{formatEventTime(event.createdAt)}</time><strong>{event.label}</strong><span className="activity-log-message">{event.message || "—"}</span><span className="activity-log-duration">{event.state === "running" ? "running" : event.state === "pending" ? "pending" : formatPreciseDuration(event.durationMs)}</span></li>)}
                                 </ol>
-                              )}
-                              {job.status === "failed" && <p className="activity-failure-copy">{failureFor(job).message}</p>}
-                              {job.status === "complete" && <a href={job.normalizedUrl} target="_blank" rel="noreferrer">Open original post ↗</a>}
+                              ) : <p>Safe processing events will appear here.</p>}
+                              <div className="activity-stage-durations" aria-label="Stage durations">
+                                {activityStages.map((stage) => {
+                                  const stageState = job.stages.find((item) => item.name === stage);
+                                  const duration = stageState?.state === "active" ? "running" : formatPreciseDuration(stageState?.durationMs ?? null);
+                                  return <span key={stage}><strong>{activityStageCopy[stage]}</strong> {duration}</span>;
+                                })}
+                              </div>
+                              <p className="activity-log-touch-hint">Stage durations are shown here for touch access.</p>
                             </div>
                           )}
                         </article>
@@ -5027,6 +5220,24 @@ function App() {
                     })}
                   </div>
                 )}
+                {activityNextCursor && <button type="button" className="activity-load-more" disabled={activityLoadingMore} onClick={() => void loadActivityPage(activityFilter, true)}>{activityLoadingMore ? "Loading…" : "Load more captures"}</button>}
+              </section>
+              <section className="activity-attention" aria-labelledby="attention-title">
+                <div className="activity-attention-heading">
+                  <div><h2 id="attention-title">Needs attention</h2><span>{failedTotal} {failedTotal === 1 ? "item" : "items"}</span><small>Highest priority first</small></div>
+                  <button type="button" onClick={() => void retryAll()} disabled={retryPending || failedTotal === 0}><RotateCw aria-hidden="true" />{retryPending ? "Retrying…" : "Retry all"}</button>
+                </div>
+                <div className="activity-attention-list" role="list">
+                  {failedJobs.length === 0 ? <p>Nothing needs attention.</p> : failedJobs.map((job) => (
+                    <div className="activity-attention-item" role="listitem" key={job.id}>
+                      <span className="activity-attention-dot" aria-hidden="true" />
+                      <div><strong>{job.displayTitle || sourceReference(job.normalizedUrl)}</strong><small>{sourceLabel(job.normalizedUrl)} · {failureFor(job).message}</small></div>
+                      <span className="activity-retry-count">{job.attempts} {job.attempts === 1 ? "try" : "tries"}</span>
+                      <button type="button" disabled={retryPending || retryingIds.includes(job.id)} onClick={() => void retryJob(job)}>{retryingIds.includes(job.id) ? "Retrying…" : "Retry"}</button>
+                    </div>
+                  ))}
+                  {failedNextCursor && <button type="button" className="activity-failed-more" disabled={failedLoadingMore} onClick={() => void loadFailedJobs(true)}>{failedLoadingMore ? "Loading…" : "Load more"}</button>}
+                </div>
               </section>
             </div>
           )}
@@ -5134,18 +5345,18 @@ function App() {
       </section>
       {mobileMenuOpen && (
         <div
-          className="app-mobile-menu-scrim"
+          className="app-account-menu-layer"
           role="presentation"
           onClick={() => setMobileMenuOpen(false)}
         >
           <section
-            className="app-mobile-menu"
+            className="app-account-menu"
             role="dialog"
             aria-modal="true"
             aria-labelledby="account-menu-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="app-mobile-menu-heading">
+            <div className="app-account-menu-heading">
               <div>
                 <span className="app-avatar" aria-hidden="true">
                   {profileInitial}
@@ -5157,22 +5368,30 @@ function App() {
                   <small>Personal workspace</small>
                 </span>
               </div>
-              <button
-                type="button"
-                className="app-mobile-menu-close"
-                aria-label="Close account menu"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                <X aria-hidden="true" />
-              </button>
             </div>
             <button
               type="button"
-              className="app-mobile-signout"
+              className="app-account-menu-item"
+              onClick={() => navigateTo("settings")}
+            >
+              <UserRound aria-hidden="true" />
+              Profile
+            </button>
+            <button
+              type="button"
+              className="app-account-menu-item"
+              onClick={() => navigateTo("settings")}
+            >
+              <SettingsIcon aria-hidden="true" />
+              Settings
+            </button>
+            <button
+              type="button"
+              className="app-account-menu-item account-menu-signout"
               onClick={() => void signOut()}
             >
               <LogOut aria-hidden="true" />
-              Sign out
+              Log out
             </button>
           </section>
         </div>

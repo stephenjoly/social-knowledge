@@ -192,27 +192,14 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
 
   await page.getByRole("button", { name: /activity/i }).click();
   await expect(page.locator(".activity-card").first()).toBeVisible();
-  const completedJob = page
-    .locator(".activity-group", { has: page.getByRole("heading", { name: "Completed history" }) })
-    .locator(".activity-card")
-    .first();
-  await expect(completedJob).toBeVisible();
-  await expect(completedJob.locator(".platform-icon")).toBeVisible();
-  await page
-    .locator(".activity-card")
-    .first()
-    .getByRole("button", { name: /details/i })
-    .click();
-  await expect(
-    page.getByRole("dialog", { name: /processing details/i }),
-  ).toBeVisible();
-  await expect(page.locator(".event-log li").first()).toBeVisible();
-  await page.getByRole("button", { name: "Close details" }).click();
+  await expect(page.locator(".activity-stage").first()).toBeVisible();
+  await page.locator(".activity-card").first().click();
+  await expect(page.locator(".activity-inline-log")).toBeVisible();
   await expect(page.locator(".activity-card").first()).not.toContainText(
     "Command failed with exit code",
   );
 
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator(".app-profile-settings").click();
   await page
     .getByRole("button", { name: "Data & export", exact: true })
     .click();

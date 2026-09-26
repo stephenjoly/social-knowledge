@@ -88,7 +88,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   ).toBeVisible();
   await invitedPage.getByRole("button", { name: "Set up later" }).click();
   await expect(
-    invitedPage.getByRole("button", { name: "Settings" }),
+    invitedPage.getByLabel("Open Settings"),
   ).toBeVisible();
   await invitedPage.setViewportSize({ width: 390, height: 844 });
   for (const label of [
@@ -150,9 +150,9 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   await invitedPage.getByRole("button", { name: "Open account menu" }).click();
   const accountMenu = invitedPage.getByRole("dialog");
   await expect(
-    accountMenu.getByRole("button", { name: "Sign out" }),
+    accountMenu.getByRole("button", { name: "Log out" }),
   ).toBeVisible();
-  await accountMenu.getByRole("button", { name: "Sign out" }).click();
+  await accountMenu.getByRole("button", { name: "Log out" }).click();
   await expect(
     invitedPage.getByRole("heading", { name: "Invitation unavailable" }),
   ).toBeVisible();
