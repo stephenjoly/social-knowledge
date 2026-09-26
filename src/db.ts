@@ -442,29 +442,32 @@ export class JobStore {
     const job = this.get(id);
     if (!job) return;
     const retry = job.attempts < maxAttempts;
+    const now = new Date().toISOString();
     const next = new Date(
       Date.now() +
         Math.min(300, 15 * 2 ** Math.max(0, job.attempts - 1)) * 1000,
     ).toISOString();
     const status = retry ? "queued" : "failed";
-    this.database
-      .prepare(
-        "UPDATE jobs SET status=?,error=?,error_code=?,error_detail=?,updated_at=?,next_attempt_at=? WHERE id=?",
-      )
-      .run(
-        status,
-        failure.message.slice(0, 500),
-        failure.code,
-        failure.diagnostic.slice(0, 4000),
-        new Date().toISOString(),
-        next,
-        id,
-      );
-    this.addEvent(
-      id,
-      status,
-      `${failure.title}: ${failure.message}`.slice(0, 500),
-    );
+    this.database.transaction(() => {
+      this.database
+        .prepare(
+          "UPDATE jobs SET status=?,error=?,error_code=?,error_detail=?,updated_at=?,next_attempt_at=? WHERE id=?",
+        )
+        .run(
+          status,
+          failure.message.slice(0, 500),
+          failure.code,
+          failure.diagnostic.slice(0, 4000),
+          now,
+          next,
+          id,
+        );
+      // A retryable failure still ends this attempt. Persist the terminal
+      // boundary before queuing the next one so Activity never turns it into
+      // a successful event or charges it the retry wait.
+      this.addEvent(id, "failed", null);
+      if (retry) this.addEvent(id, "queued", "Retry scheduled");
+    })();
   }
   retry(
     id: string,

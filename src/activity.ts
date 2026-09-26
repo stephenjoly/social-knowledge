@@ -1,4 +1,4 @@
-import { failureCodes } from "./failures.js";
+import { failureCodes, failureCopy } from "./failures.js";
 import { jobStatuses, type JobRecord, type JobStatus } from "./types.js";
 
 export const activityStageNames = [
@@ -43,6 +43,8 @@ export type ActivityJob = {
 export type ActivityEvent = {
   id: string;
   status: JobStatus;
+  /** One-indexed when the persisted history proves an attempt boundary. */
+  attempt: number | null;
   createdAt: string;
   label: string;
   message: string | null;
@@ -95,8 +97,17 @@ const safeMessages = new Set([
   "Download started",
   "Capture archived",
   "Manual retry requested",
+  "Retry scheduled",
   "AI title ready; extracting detailed knowledge",
 ]);
+
+const retryQueueMessages = new Set([
+  "Manual retry requested",
+  "Retry scheduled",
+]);
+const legacyFailurePrefixes = new Set(
+  failureCodes.map((code) => `${failureCopy(code).title}: `),
+);
 
 const safeHosts = new Set([
   "facebook.com",
@@ -154,16 +165,68 @@ function timestamp(value: string) {
 
 function elapsed(start: string, end: number) {
   const startAt = timestamp(start);
-  return startAt === null ? 0 : Math.max(0, end - startAt);
+  return startAt === null || !Number.isFinite(end)
+    ? null
+    : Math.max(0, end - startAt);
 }
 
-function currentAttemptStart(events: JobEventRecord[]) {
-  let start = 0;
-  for (let index = 1; index < events.length; index++) {
-    if (events[index]!.status === "queued" && events[index - 1]!.status !== "queued")
-      start = index;
+type TimelineEvent = {
+  id: string;
+  status: JobStatus;
+  message: string | null;
+  createdAt: string;
+  attempt: number | null;
+};
+
+function isLegacyFailure(event: JobEventRecord) {
+  if (event.status !== "queued" || !event.message) return false;
+  for (const prefix of legacyFailurePrefixes)
+    if (event.message.startsWith(prefix)) return true;
+  return false;
+}
+
+function projectTimeline(events: JobEventRecord[]): TimelineEvent[] {
+  const timeline: TimelineEvent[] = [];
+  let attempt = 1;
+  let attemptKnown = true;
+
+  for (const event of events) {
+    if (!isJobStatus(event.status)) {
+      attemptKnown = false;
+      continue;
+    }
+    const legacyFailure = isLegacyFailure(event);
+    const status = legacyFailure ? "failed" : event.status;
+    const prior = timeline.at(-1);
+    const startsAttempt = Boolean(
+      prior &&
+        (prior.status === "failed" && status !== "failed" ||
+          (status === "queued" && retryQueueMessages.has(event.message ?? ""))),
+    );
+    if (startsAttempt && attemptKnown) attempt += 1;
+
+    // Pre-Activity retryable failures were stored as queued events whose
+    // message contained a raw diagnostic. Only a known server-generated
+    // failure prefix is safe to interpret. Keep every other event redacted
+    // and decline to invent later attempt boundaries or timings.
+    if (
+      (!legacyFailure &&
+        status === "queued" &&
+        event.message !== null &&
+        !safeMessages.has(event.message)) ||
+      timestamp(event.createdAt) === null
+    )
+      attemptKnown = false;
+
+    timeline.push({
+      id: event.id,
+      status,
+      message: event.message,
+      createdAt: event.createdAt,
+      attempt: attemptKnown ? attempt : null,
+    });
   }
-  return start;
+  return timeline;
 }
 
 function projectEvents(
@@ -173,22 +236,33 @@ function projectEvents(
 ): ActivityEvent[] {
   const status = safeStatus(job.status);
   const terminalAt = timestamp(job.updatedAt) ?? now;
-  const known = events.filter((event) => isJobStatus(event.status));
-  return known.map((event, index) => {
-    const eventStatus = event.status as JobStatus;
-    const next = known[index + 1];
-    const nextAt = next ? timestamp(next.createdAt) : null;
-    const isFinal = !next;
-    const state: ActivityEventState = !isFinal
+  const timeline = projectTimeline(events);
+  return timeline.map((event, index) => {
+    const eventStatus = event.status;
+    const next = timeline[index + 1];
+    const nextInAttempt = event.attempt === null
+      ? undefined
+      : next?.attempt === event.attempt
+        ? next
+        : undefined;
+    const nextAt = nextInAttempt ? timestamp(nextInAttempt.createdAt) : null;
+    const isFinal = !nextInAttempt;
+    const state: ActivityEventState = eventStatus === "failed"
+      ? "failed"
+      : !isFinal
       ? "completed"
       : status === "failed"
-        ? "failed"
+        ? "completed"
         : status === "complete"
           ? "completed"
           : eventStatus === "queued"
             ? "pending"
             : "running";
-    const durationMs = state === "pending"
+    const durationMs = event.attempt === null
+      ? null
+      : eventStatus === "failed"
+      ? timestamp(event.createdAt) === null ? null : 0
+      : state === "pending"
       ? null
       : elapsed(
           event.createdAt,
@@ -197,6 +271,7 @@ function projectEvents(
     return {
       id: event.id,
       status: eventStatus,
+      attempt: event.attempt,
       createdAt: event.createdAt,
       label: labels[eventStatus],
       message: safeMessages.has(event.message ?? "") ? event.message : null,
@@ -212,17 +287,25 @@ function projectStages(
   updatedAt: string,
   now: number,
 ): { reachedStages: ActivityStageName[]; stages: ActivityStage[] } {
-  const knownEvents = events.filter((event) => isJobStatus(event.status));
-  const currentEvents = knownEvents.slice(currentAttemptStart(knownEvents));
+  const timeline = projectTimeline(events);
+  const currentAttempt = timeline.at(-1)?.attempt;
+  const currentEvents = currentAttempt === null
+    ? timeline.filter((event) => event.attempt === null)
+    : timeline.filter((event) => event.attempt === currentAttempt);
   const terminalAt = timestamp(updatedAt) ?? now;
   const durations = new Map<ActivityStageName, number>();
+  const incompleteDurations = new Set<ActivityStageName>();
   const reached: ActivityStageName[] = [];
   let lastStage: ActivityStageName | null = null;
 
   currentEvents.forEach((event, index) => {
-    const eventStatus = event.status as JobStatus;
+    const eventStatus = event.status;
     const stage = statusStages[eventStatus];
     if (!stage) return;
+    if (stage !== "added" && !reached.includes("added")) {
+      reached.push("added");
+      incompleteDurations.add("added");
+    }
     if (stage === "media" && !reached.includes("found")) {
       reached.push("found");
       durations.set("found", 0);
@@ -233,7 +316,9 @@ function projectStages(
       ? timestamp(currentEvents[index + 1]!.createdAt)
       : null;
     const end = nextAt ?? (status === "complete" || status === "failed" ? terminalAt : now);
-    durations.set(stage, (durations.get(stage) ?? 0) + elapsed(event.createdAt, end));
+    const duration = currentAttempt === null ? null : elapsed(event.createdAt, end);
+    if (duration === null) incompleteDurations.add(stage);
+    else durations.set(stage, (durations.get(stage) ?? 0) + duration);
   });
 
   const activeStage = activeStatuses.has(status) || status === "queued"
@@ -252,7 +337,7 @@ function projectStages(
     return {
       name,
       state,
-      durationMs: durations.get(name) ?? null,
+      durationMs: incompleteDurations.has(name) ? null : durations.get(name) ?? null,
     };
   });
   return { reachedStages: reached, stages };

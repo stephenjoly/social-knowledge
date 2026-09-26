@@ -249,6 +249,121 @@ describe("Activity API", () => {
     });
   });
 
+  it("keeps a saved retry's prior failure failed and bounds it to its attempt", async () => {
+    const { app, store, owner, cookie } = await signedInApp();
+    const job = createJob(store, owner.id, "saved-after-retry");
+    const secret = "legacy diagnostic /private/runtime/cookies.txt";
+    store.database
+      .prepare("UPDATE jobs SET status='complete',updated_at=? WHERE id=?")
+      .run("2026-01-02T13:00:05.000Z", job.id);
+    store.database.prepare("DELETE FROM job_events WHERE job_id=?").run(job.id);
+    const events = [
+      ["queued", "Capture accepted", "2026-01-02T12:00:00.000Z"],
+      ["downloading", "Download started", "2026-01-02T12:00:01.000Z"],
+      ["processing", null, "2026-01-02T12:00:02.000Z"],
+      // Older retryable failures were persisted as a queued status plus a
+      // diagnostic. The server may identify only this controlled prefix.
+      ["queued", `Media processing failed: ${secret}`, "2026-01-02T12:00:03.000Z"],
+      ["downloading", "Download started", "2026-01-02T13:00:02.000Z"],
+      ["processing", null, "2026-01-02T13:00:03.000Z"],
+      ["transcribing", null, "2026-01-02T13:00:03.500Z"],
+      ["writing", null, "2026-01-02T13:00:04.000Z"],
+      ["complete", "Capture archived", "2026-01-02T13:00:05.000Z"],
+    ] as const;
+    for (const [status, message, createdAt] of events)
+      store.database
+        .prepare(
+          "INSERT INTO job_events(id,job_id,status,message,created_at) VALUES(?,?,?,?,?)",
+        )
+        .run(randomUUID(), job.id, status, message, createdAt);
+
+    const detail = await app.inject({
+      method: "GET",
+      url: `/api/v1/jobs/${job.id}`,
+      headers: { cookie },
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.body).not.toContain(secret);
+    expect(detail.json().job).toMatchObject({
+      status: "complete",
+      stages: [
+        { name: "added", state: "completed" },
+        { name: "found", state: "completed" },
+        { name: "media", state: "completed" },
+        { name: "text", state: "completed" },
+        { name: "saved", state: "completed" },
+      ],
+    });
+    expect(detail.json().events[3]).toMatchObject({
+      status: "failed",
+      attempt: 1,
+      label: "Capture failed",
+      message: null,
+      state: "failed",
+      durationMs: 0,
+    });
+    expect(detail.json().events.slice(4).map((event: { attempt: number | null }) => event.attempt)).toEqual([
+      2,
+      2,
+      2,
+      2,
+      2,
+    ]);
+
+    const retryable = createJob(store, owner.id, "persisted-retry");
+    store.claimNext();
+    store.fail(
+      retryable.id,
+      {
+        code: "processing_failed",
+        title: "Media processing failed",
+        message: "Media could not be processed.",
+        diagnostic: secret,
+      },
+      2,
+    );
+    expect(store.events(retryable.id).slice(-2)).toMatchObject([
+      { status: "failed", message: null },
+      { status: "queued", message: "Retry scheduled" },
+    ]);
+  });
+
+  it("does not invent an attempt or duration from an unknown legacy diagnostic", async () => {
+    const { app, store, owner, cookie } = await signedInApp();
+    const job = createJob(store, owner.id, "incomplete-legacy-history");
+    const secret = "unrecognized legacy diagnostic /private/runtime/cookies.txt";
+    store.database
+      .prepare("UPDATE jobs SET status='complete',updated_at=? WHERE id=?")
+      .run("2026-01-02T13:00:00.000Z", job.id);
+    store.database.prepare("DELETE FROM job_events WHERE job_id=?").run(job.id);
+    for (const [status, message, createdAt] of [
+      ["queued", "Capture accepted", "2026-01-02T12:00:00.000Z"],
+      ["downloading", "Download started", "2026-01-02T12:00:01.000Z"],
+      ["queued", secret, "2026-01-02T12:01:00.000Z"],
+      ["complete", "Capture archived", "2026-01-02T13:00:00.000Z"],
+    ] as const)
+      store.database
+        .prepare(
+          "INSERT INTO job_events(id,job_id,status,message,created_at) VALUES(?,?,?,?,?)",
+        )
+        .run(randomUUID(), job.id, status, message, createdAt);
+
+    const detail = await app.inject({
+      method: "GET",
+      url: `/api/v1/jobs/${job.id}`,
+      headers: { cookie },
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.body).not.toContain(secret);
+    expect(detail.json().events[2]).toMatchObject({
+      status: "queued",
+      attempt: null,
+      message: null,
+      durationMs: null,
+    });
+    expect(detail.json().events[3]).toMatchObject({ attempt: null });
+  });
+
   it("measures a running event through response time", async () => {
     const { app, store, owner, cookie } = await signedInApp();
     const job = createJob(store, owner.id, "running");
