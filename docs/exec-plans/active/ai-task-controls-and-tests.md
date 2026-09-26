@@ -24,8 +24,8 @@ Two isolated Workers implement backend and UI. Parent reviews contracts, integra
 
 ## Progress
 - [x] Inspect current settings and user feedback; delegate bounded work.
-- [ ] Implement task-owned model/thinking settings and safe test endpoints.
-- [ ] Polish task controls and test-result UI.
+- [x] Implement task-owned model/thinking settings and safe test endpoints.
+- [x] Polish task controls and test-result UI.
 - [ ] Verify, document, and update preview.
 
 ## Decisions
@@ -37,3 +37,10 @@ Two isolated Workers implement backend and UI. Parent reviews contracts, integra
 
 ## Risks and recovery
 Provider requests incur usage; use small fixed samples, strict upload bounds, cancellation/timeouts, and rate limits. Keep diagnostics separate from persisted capture/Ask records. Existing assignment snapshots and ownership isolation must remain intact. Revert scoped commits if needed; no production promotion.
+
+## Integration notes
+- Backend checkpoints `1dc736d` and `ec4d449` integrated. Worker full check passed 135 tests.
+- Diagnostics cap audio at 1 MiB, use a 45-second abort timeout, allow one active test and five attempts per minute per account. No SDK retries for diagnostics; normal generation behavior remains unchanged.
+- Streaming tests require non-whitespace content and clean terminal completion; structured tests reject incomplete responses. Cerebras diagnostic output caps and finish reasons are handled explicitly.
+- UI checkpoint `81ecfcf` integrated as `e2b6fc0`. Parent full checks passed 135 tests; provider settings, settings alignment, onboarding, and library browser journeys passed (4/4) against the combined backend/UI.
+- Parent screenshot review widened the two-field transcription row, refined upload/test controls, and simplified test help text. Final checks and preview identity verification follow this polish.

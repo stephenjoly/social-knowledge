@@ -44,7 +44,9 @@ Knowledge base browsing uses linked content maps: Home shows populated branches;
 
 ## AI setup
 
-AI settings separates provider setup from task assignment. Add provider connects OpenAI or Cerebras and saves compatible model preferences, with a thinking-level choice only where supported. The provider list contains existing connections rather than unconnected placeholders. Transcription and Analysis & Ask then select configured providers; Analysis and Ask share their selection. New connections do not assign tasks automatically. Editing an assigned provider updates future task selections, while queued captures retain their saved models and thinking level. Disconnecting clears the affected assignments.
+AI settings separates credentials from task configuration. Providers connects OpenAI or Cerebras keys. Task assignments choose a connected provider, a compatible model, and a thinking level where supported. Transcription and Analysis & Ask have separate settings; Analysis and Ask share their selection. Existing choices carry forward. New connections do not assign tasks automatically. Queued captures retain their saved models and thinking level, and disconnecting clears affected assignments.
+
+Test connections offers explicit transcription, structured-analysis, and streaming-Ask checks using the saved task settings. Transcription uses a short audio file selected by the user; analysis and Ask use small synthetic text samples. Tests can incur provider usage and do not create captures or conversations. Results distinguish configuration from successful provider calls and become stale when relevant settings change. These checks do not certify social downloads, archive retrieval, or the full capture pipeline.
 
 Settings topics share their layout and reserve scrollbar space to avoid horizontal shifts when switching between short and long pages. Provider verification confirms credentials; it does not replace live model and capture acceptance before production.
 

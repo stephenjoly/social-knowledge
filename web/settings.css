@@ -843,6 +843,10 @@
   font-weight: 650;
 }
 
+.settings-workspace .ai-task-controls label:nth-child(2):last-child {
+  grid-column: span 2;
+}
+
 .settings-workspace .ai-task-controls select {
   width: 100%;
   min-width: 0;
@@ -850,7 +854,7 @@
   overflow: visible;
   font-size: 12px;
   text-overflow: clip;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .settings-workspace .ai-test-heading {
@@ -912,6 +916,18 @@
   font-size: 12px;
 }
 
+.settings-workspace .ai-test-file input::file-selector-button {
+  margin-right: 10px;
+  padding: 4px 8px;
+  border: 0;
+  border-right: 1px solid var(--sk-border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .settings-workspace .ai-test-action {
   display: grid;
   justify-items: start;
@@ -924,6 +940,7 @@
   margin: 0;
   padding: 0 10px;
   font-size: 12px;
+  font-weight: 600;
 }
 
 .settings-workspace .ai-test-status,
@@ -1453,6 +1470,10 @@
 
   .settings-workspace .ai-task-controls {
     grid-template-columns: 1fr;
+  }
+
+  .settings-workspace .ai-task-controls label:nth-child(2):last-child {
+    grid-column: auto;
   }
 
   .settings-workspace .ai-test-row {

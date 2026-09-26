@@ -2839,9 +2839,9 @@ function Settings({ user }: { user: AccountUser | null }) {
                     </div>
                   </div>
                   <p className="settings-help ai-test-intro">
-                    Uses saved selections and may incur small provider usage. Tests
-                    run only when requested; Analysis and Ask use synthetic samples
-                    and do not certify full capture or archive flows.
+                    Check each saved task with a small provider request. Usage
+                    charges may apply. These checks test your AI connection;
+                    they do not run a full capture.
                   </p>
                   <div className="ai-test-list">
                     {(["transcription", "analysis", "ask"] as const).map((task) => {
@@ -2864,8 +2864,8 @@ function Settings({ user }: { user: AccountUser | null }) {
                               {isTranscription
                                 ? "Uses only the audio file you select here."
                                 : task === "analysis"
-                                  ? "Uses a small synthetic summary request."
-                                  : "Uses a small synthetic question; never your archive."}
+                                  ? "Tests analysis with sample text."
+                                  : "Tests a sample question without accessing your archive."}
                             </p>
                             {isTranscription && (
                               <label className="ai-test-file">
