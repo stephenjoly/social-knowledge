@@ -50,6 +50,14 @@ The footer's Test connection action opens explicit transcription, structured-ana
 
 Settings topics share their layout and reserve scrollbar space to avoid horizontal shifts when switching between short and long pages. Provider verification confirms credentials; it does not replace live model and capture acceptance before production.
 
+## Account settings and access administration
+
+My account manages the signed-in person's display name, username, initials-avatar color, password, and session. Password changes require the current password and sign out existing browser sessions. The archive shortcut opens Data & export; account-owned captures, credentials, and API keys remain private.
+
+People & access is a separate administrator-only settings topic. Administrators can search accounts, change another person's role, and suspend or restore sign-in and credential access. Suspension preserves the person's archive and credentials. The server prevents self-demotion, self-suspension, and removing the last active administrator. Administration never grants access to another person's archive or credentials.
+
+Invitation links remain single-use and expire after 24 hours. Raw links are available only when created or regenerated, because persisted invitations contain token hashes. The interface can copy links held in the current page session; regenerating a link invalidates its predecessor.
+
 ## Current scope
 
 The supported source platforms are Facebook and Instagram. The application provides a private dashboard, Apple Shortcut ingestion, account API keys, OAuth-backed read-only MCP access, Obsidian Markdown output, and complete library exports.

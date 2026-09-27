@@ -61,6 +61,7 @@ import "./auth-redesign.css";
 import "./knowledge-ask.css";
 import "./settings.css";
 import "./inbox.css";
+import { MyAccount, PeopleAccess, type AccountUser } from "./account-settings";
 
 type Asset = {
   id: string;
@@ -820,13 +821,7 @@ function matchesCurrentTestSelection(
     (result.selection as AiAnalysisSelection).thinkingLevel;
 }
 type SettingsTopic =
-  "overview" | "ai" | "connections" | "api" | "data" | "account" | "all";
-type AccountUser = {
-  id: string;
-  username: string;
-  role: string;
-  createdAt?: string;
-};
+  "overview" | "ai" | "connections" | "api" | "data" | "account" | "people" | "all";
 
 type AppTab = "inbox" | "library" | "ask" | "activity" | "capture" | "settings";
 
@@ -889,14 +884,6 @@ function AppNavigation({
     </nav>
   );
 }
-type Invitation = {
-  id: string;
-  role: "admin" | "member";
-  createdAt: string;
-  expiresAt: string;
-  consumedAt: string | null;
-  revokedAt: string | null;
-};
 type InvitationDetails = {
   role: "admin" | "member";
   expiresAt: string;
@@ -1695,249 +1682,7 @@ function Detail({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
-function AccessManagement() {
-  const [users, setUsers] = useState<AccountUser[]>([]);
-  const [invitations, setInvitations] = useState<Invitation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
-  const [role, setRole] = useState<"member" | "admin">("member");
-  const [administratorAcknowledged, setAdministratorAcknowledged] =
-    useState(false);
-  const [message, setMessage] = useState("");
-  const [createdInvitationUrl, setCreatedInvitationUrl] = useState("");
-  async function load() {
-    setLoadError("");
-    try {
-      const [userResult, invitationResult] = await Promise.all([
-        api<{ users: AccountUser[] }>("/api/v1/admin/users"),
-        api<{ invitations: Invitation[] }>("/api/v1/admin/invitations"),
-      ]);
-      setUsers(userResult.users);
-      setInvitations(invitationResult.invitations);
-    } catch {
-      setLoadError("People and invitations could not be loaded. Try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
-  useEffect(() => {
-    void load();
-  }, []);
-  const copyInvitation = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setMessage(
-        "Invitation link copied. It is shown only when created or regenerated.",
-      );
-    } catch {
-      setMessage("Copy the invitation link from the field below.");
-    }
-  };
-  const create = async (event: FormEvent) => {
-    event.preventDefault();
-    setMessage("");
-    if (role === "admin" && !administratorAcknowledged) {
-      setMessage(
-        "Confirm administrator access before creating this invitation.",
-      );
-      return;
-    }
-    try {
-      const result = await api<{
-        invitation: Invitation;
-        invitationUrl: string;
-      }>("/api/v1/admin/invitations", {
-        method: "POST",
-        body: JSON.stringify({ role, administratorAcknowledged }),
-      });
-      setCreatedInvitationUrl(result.invitationUrl);
-      setMessage(
-        `${role === "admin" ? "Administrator" : "Member"} invitation created. It expires in 24 hours.`,
-      );
-      await load();
-    } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "Invitation could not be created.",
-      );
-    }
-  };
-  return (
-    <section className="settings-card access-management">
-      <h2>People and access</h2>
-      <p className="settings-help">
-        Administrators can invite people and manage invitations. Each person’s
-        archive, connections, API keys, and exports remain private to their
-        account.
-      </p>
-      <form onSubmit={create}>
-        <label>
-          Invitation role
-          <select
-            value={role}
-            onChange={(event) => {
-              setRole(event.target.value as "member" | "admin");
-              setAdministratorAcknowledged(false);
-            }}
-          >
-            <option value="member">Member — private archive access</option>
-            <option value="admin">Administrator — can manage access</option>
-          </select>
-        </label>
-        {role === "admin" && (
-          <label className="toggle-label">
-            <input
-              type="checkbox"
-              checked={administratorAcknowledged}
-              onChange={(event) =>
-                setAdministratorAcknowledged(event.target.checked)
-              }
-            />
-            I understand this invitation grants administrator access.
-          </label>
-        )}
-        <button>Create invitation</button>
-      </form>
-      {message && (
-        <p className="action-feedback" role="status">
-          {message}
-        </p>
-      )}
-      {loadError && (
-        <div className="settings-inline-error" role="alert">
-          <span>{loadError}</span>
-          <button type="button" onClick={() => void load()}>
-            Retry
-          </button>
-        </div>
-      )}
-      {createdInvitationUrl && (
-        <div className="token-box invitation-link">
-          <strong>Share this link securely</strong>
-          <input
-            value={createdInvitationUrl}
-            readOnly
-            aria-label="New invitation link"
-          />
-          <button
-            type="button"
-            onClick={() => void copyInvitation(createdInvitationUrl)}
-          >
-            Copy invitation
-          </button>
-        </div>
-      )}
-      <div className="access-list">
-        <h3>Accounts</h3>
-        {users.map((user) => (
-          <article key={user.id}>
-            <div>
-              <strong>{user.username}</strong>
-              <small>
-                {user.role === "admin" ? "Administrator" : "Member"}
-                {user.createdAt
-                  ? ` · joined ${new Date(user.createdAt).toLocaleDateString()}`
-                  : ""}
-              </small>
-            </div>
-          </article>
-        ))}
-        {!users.length && !loadError && (
-          <p className="settings-help">
-            {loading ? "Loading accounts…" : "No accounts yet."}
-          </p>
-        )}
-      </div>
-      <div className="access-list">
-        <h3>Invitations</h3>
-        {invitations.map((invitation) => {
-          const inactive =
-            invitation.consumedAt ||
-            invitation.revokedAt ||
-            new Date(invitation.expiresAt).getTime() < Date.now();
-          const state = invitation.consumedAt
-            ? "Used"
-            : invitation.revokedAt
-              ? "Revoked"
-              : new Date(invitation.expiresAt).getTime() < Date.now()
-                ? "Expired"
-                : "Active";
-          return (
-            <article key={invitation.id}>
-              <div>
-                <strong>
-                  {invitation.role === "admin" ? "Administrator" : "Member"}{" "}
-                  invitation
-                </strong>
-                <small>
-                  {state} · expires{" "}
-                  {new Date(invitation.expiresAt).toLocaleString()}
-                </small>
-              </div>
-              <div className="access-actions">
-                {!inactive && (
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={async () => {
-                      try {
-                        await api(
-                          `/api/v1/admin/invitations/${invitation.id}/revoke`,
-                          { method: "POST" },
-                        );
-                        setMessage("Invitation revoked.");
-                        await load();
-                      } catch {
-                        setMessage(
-                          "Invitation could not be revoked. Try again.",
-                        );
-                      }
-                    }}
-                  >
-                    Revoke
-                  </button>
-                )}
-                {!invitation.consumedAt && (
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={async () => {
-                      try {
-                        const result = await api<{ invitationUrl: string }>(
-                          `/api/v1/admin/invitations/${invitation.id}/regenerate`,
-                          { method: "POST" },
-                        );
-                        setCreatedInvitationUrl(result.invitationUrl);
-                        setMessage(
-                          "New invitation link created. The previous link no longer works.",
-                        );
-                        await load();
-                      } catch {
-                        setMessage(
-                          "Invitation link could not be regenerated. Try again.",
-                        );
-                      }
-                    }}
-                  >
-                    Regenerate
-                  </button>
-                )}
-              </div>
-            </article>
-          );
-        })}
-        {!invitations.length && !loadError && (
-          <p className="settings-help">
-            {loading ? "Loading invitations…" : "No invitations yet."}
-          </p>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function Settings({ user }: { user: AccountUser | null }) {
+function Settings({ user, onUserChange, onSignOut }: { user: AccountUser | null; onUserChange: (user: AccountUser) => void; onSignOut: () => Promise<void> }) {
   const [topic, setTopic] = useState<SettingsTopic>("overview");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -2410,10 +2155,16 @@ function Settings({ user }: { user: AccountUser | null }) {
     },
     {
       id: "account",
-      label: "Account",
-      description: "Profile and access management.",
+      label: "My account",
+      description: "Your profile, sign-in details, and account preferences.",
       icon: UserRound,
     },
+    ...(user?.role === "admin" ? [{
+      id: "people" as const,
+      label: "People & access",
+      description: "Manage who can sign in and what they can administer.",
+      icon: ShieldCheck,
+    }] : []),
   ];
   const connectedPlatforms = platformConnections.filter(
     (connection) => connection.connected,
@@ -2447,7 +2198,9 @@ function Settings({ user }: { user: AccountUser | null }) {
       <header className="settings-heading" tabIndex={-1}>
         <div>
           <p className="settings-breadcrumb">
-            {topic === "overview"
+            {topic === "people"
+              ? "ADMINISTRATION  /  PEOPLE & ACCESS"
+              : topic === "overview"
               ? "SETTINGS"
               : `SETTINGS  /  ${activeTopic?.label ?? "ALL TOPICS"}`}
           </p>
@@ -2476,7 +2229,7 @@ function Settings({ user }: { user: AccountUser | null }) {
       <div className="settings-layout">
         <nav className="settings-topic-sidebar" aria-label="Settings topics">
           <span className="settings-topic-label">Settings</span>
-          {topics.map(({ id, label, icon: Icon }) => (
+          {topics.filter(({ id }) => id !== "people").map(({ id, label, icon: Icon }) => (
             <button
               className={topic === id ? "active" : ""}
               type="button"
@@ -2488,6 +2241,7 @@ function Settings({ user }: { user: AccountUser | null }) {
               <span>{label}</span>
             </button>
           ))}
+          {user?.role === "admin" && <><span className="settings-topic-label administration-label">Administration</span>{topics.filter(({ id }) => id === "people").map(({ id, label, icon: Icon }) => <button className={topic === id ? "active" : ""} type="button" aria-current={topic === id ? "page" : undefined} onClick={() => selectTopic(id)} key={id}><Icon aria-hidden="true" /><span>{label}</span></button>)}</>}
         </nav>
         <div className="settings-panels">
           <nav className="settings-mobile-topics" aria-label="Settings topics">
@@ -2518,7 +2272,8 @@ function Settings({ user }: { user: AccountUser | null }) {
                 <option value="connections">Connections</option>
                 <option value="api">API keys</option>
                 <option value="data">Data & export</option>
-                <option value="account">Account</option>
+                <option value="account">My account</option>
+                {user?.role === "admin" && <option value="people">People &amp; access</option>}
                 <option value="all">View all settings</option>
               </select>
             </label>
@@ -2645,9 +2400,7 @@ function Settings({ user }: { user: AccountUser | null }) {
                       <span>
                         <strong>Account</strong>
                         <small>
-                          {user?.role === "admin"
-                            ? "Profile, security, and people access."
-                            : "Your profile and private workspace preferences."}
+                          Your profile and sign-in security.
                         </small>
                       </span>
                     </div>
@@ -3660,42 +3413,9 @@ curl -X POST -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
                 </section>
               )}
               {showTopic("account") && (
-                <>
-                  <section className="settings-card settings-account-card">
-                    <div className="settings-card-heading">
-                      <span className="settings-section-kicker">
-                        PROFILE & SECURITY
-                      </span>
-                      <h2>Account</h2>
-                    </div>
-                    <p className="settings-help">
-                      Your archive, API keys, connections, and exports remain
-                      private to your account.
-                    </p>
-                    <dl className="settings-account-facts">
-                      <div>
-                        <dt>Workspace</dt>
-                        <dd>{user?.username || "Personal workspace"}</dd>
-                      </div>
-                      <div>
-                        <dt>Role</dt>
-                        <dd>
-                          {user?.role === "admin" ? "Administrator" : "Member"}
-                        </dd>
-                      </div>
-                      {user?.createdAt && (
-                        <div>
-                          <dt>Member since</dt>
-                          <dd>
-                            {new Date(user.createdAt).toLocaleDateString()}
-                          </dd>
-                        </div>
-                      )}
-                    </dl>
-                  </section>
-                  {user?.role === "admin" && <AccessManagement />}
-                </>
+                user && <MyAccount user={user} onUserChange={onUserChange} onSignOut={onSignOut} onOpenData={() => selectTopic("data")} />
               )}
+              {showTopic("people") && user?.role === "admin" && <PeopleAccess currentUser={user} onMyAccount={() => selectTopic("account")} />}
             </>
           )}
         </div>
@@ -5267,7 +4987,12 @@ function App() {
       setCopyFeedback("Couldn’t copy logs. Select and copy them manually.");
     }
   }
-  const profileInitial = user?.username.slice(0, 1).toUpperCase() || "S";
+  const profileInitial = (user?.displayName || user?.username || "S")
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
   const navigateTo = (
     nextTab: AppTab,
     historyMode: "push" | "replace" = "push",
@@ -5315,9 +5040,12 @@ function App() {
     return () => window.removeEventListener("keydown", close);
   }, [tab]);
   const signOut = async () => {
-    await api("/api/auth/logout", { method: "POST" });
-    setUser(null);
-    setAuthState("login");
+    try {
+      await api("/api/auth/logout", { method: "POST" });
+    } finally {
+      setUser(null);
+      setAuthState("login");
+    }
   };
   if (authState === "loading")
     return (
@@ -5417,9 +5145,9 @@ function App() {
             aria-expanded={mobileMenuOpen}
             onClick={() => setMobileMenuOpen(true)}
           >
-            <span className="app-avatar" aria-hidden="true">{profileInitial}</span>
+            <span className="app-avatar" style={{ background: user?.avatarColor || undefined }} aria-hidden="true">{profileInitial}</span>
             <span className="app-profile-copy">
-              <strong>{user?.username || "Personal archive"}</strong>
+              <strong>{user?.displayName || user?.username || "Personal archive"}</strong>
               <small>Personal workspace</small>
             </span>
             <ChevronDown aria-hidden="true" />
@@ -5443,7 +5171,7 @@ function App() {
             aria-expanded={mobileMenuOpen}
             onClick={() => setMobileMenuOpen(true)}
           >
-            <span className="app-avatar" aria-hidden="true">{profileInitial}</span>
+            <span className="app-avatar" style={{ background: user?.avatarColor || undefined }} aria-hidden="true">{profileInitial}</span>
             <ChevronRight aria-hidden="true" />
           </button>
           <span className="app-mobile-wordmark">social knowledge</span>
@@ -6051,7 +5779,7 @@ function App() {
               </section>
             </div>
           )}
-          {tab === "settings" && <Settings user={user} />}
+          {tab === "settings" && <Settings user={user} onUserChange={setUser} onSignOut={signOut} />}
         </main>
       </section>
       {mobileMenuOpen && (
@@ -6069,12 +5797,12 @@ function App() {
           >
             <div className="app-account-menu-heading">
               <div>
-                <span className="app-avatar" aria-hidden="true">
+                <span className="app-avatar" style={{ background: user?.avatarColor || undefined }} aria-hidden="true">
                   {profileInitial}
                 </span>
                 <span>
                   <strong id="account-menu-title">
-                    {user?.username || "Personal archive"}
+                    {user?.displayName || user?.username || "Personal archive"}
                   </strong>
                   <small>Personal workspace</small>
                 </span>
