@@ -55,6 +55,7 @@ Domain services must not depend on initialized server instances or UI code. The 
 ## Data and trust boundaries
 
 - Every account-owned job, capture, connection, export, API key, and OAuth grant is scoped to a user.
+- Account profile fields and suspension state live on the existing users table through additive migrations. Session, API-key, and OAuth lookups enforce suspension at authentication boundaries while preserving account-owned records. Profile and password mutations act only on the session owner; administrator mutations affect access metadata, never private archive content.
 - AI provider credentials and task assignments are separate records. Task assignments own the validated provider, model, and thinking level. Legacy per-provider preferences remain compatible but do not change saved task assignments. Capture jobs snapshot selected models and thinking level at submission or manual retry; Ask uses the current shared analysis assignment. Updating settings does not mutate already queued jobs.
 - Explicit AI connection diagnostics use the account's saved task selection with bounded sample requests. They do not create archive or conversation records. Uploaded test audio stays in memory, and responses contain controlled result codes and selection metadata rather than provider output or raw diagnostics.
 - SQLite is the catalog and queue source of truth. Media and generated notes are referenced durable filesystem artifacts.

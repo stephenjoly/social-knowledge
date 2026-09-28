@@ -5,14 +5,15 @@ import path from "node:path";
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
-import { hash } from "@node-rs/argon2";
-import Fastify from "fastify";
+import { hash, verify } from "@node-rs/argon2";
+import Fastify, { type FastifyRequest } from "fastify";
 import { z } from "zod";
 import { AuthService, SESSION_COOKIE } from "./auth.js";
 import type { AppConfig } from "./config.js";
 import {
   captureSortKeys,
   defaultCaptureSort,
+  type AccountRecord,
   type CaptureCursor,
   type JobStore,
 } from "./db.js";
@@ -54,6 +55,15 @@ const requestIdSchema = z
   .min(8)
   .max(128)
   .regex(/^[A-Za-z0-9._~-]+$/);
+const safeAccount = (user: AccountRecord): AccountRecord => ({
+  id: user.id,
+  username: user.username,
+  displayName: user.displayName,
+  avatarColor: user.avatarColor,
+  role: user.role,
+  suspendedAt: user.suspendedAt,
+  createdAt: user.createdAt,
+});
 
 const activityCursorSchema = z.object({
   createdAt: z.string().datetime(),
@@ -516,8 +526,9 @@ export function buildApp(
       );
       if (!user) return reply.code(409).send({ error: "setup_complete" });
       const session = auth.issueSession(user);
+      if (!session) return reply.code(401).send({ error: "unauthorized" });
       setSessionCookie(reply, session);
-      return reply.code(201).send({ user });
+      return reply.code(201).send({ user: safeAccount(store.getUserById(user.id)!) });
     },
   );
   app.get("/api/auth/demo-accounts", async (_request, reply) => {
@@ -602,8 +613,9 @@ export function buildApp(
           .code(result.reason === "username_taken" ? 409 : 400)
           .send({ error: result.reason });
       const session = auth.issueSession(result.user);
+      if (!session) return reply.code(401).send({ error: "unauthorized" });
       setSessionCookie(reply, session);
-      return reply.code(201).send({ user: result.user });
+      return reply.code(201).send({ user: safeAccount(store.getUserById(result.user.id)!) });
     },
   );
   app.post(
@@ -977,9 +989,61 @@ export function buildApp(
         invitationUrl: `${config.appUrl.replace(/\/$/, "")}/#invite=${token}`,
       };
     };
+    protectedApi.patch("/api/v1/account/profile", async (request, reply) => {
+      const input = z.object({
+        displayName: z.string().trim().min(1).max(100).nullable().optional(),
+        username: z.string().trim().min(2).max(40).optional(),
+        avatarColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+      }).strict().refine((value) => Object.keys(value).length > 0).safeParse(request.body);
+      if (!input.success) return reply.code(400).send({ error: "invalid_request" });
+      try {
+        const updated = store.updateProfile(auth.user(request)!.id, {
+          ...input.data,
+          username: input.data.username?.toLowerCase(),
+        });
+        return updated ? { user: safeAccount(updated) } : reply.code(404).send({ error: "user_not_found" });
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("UNIQUE constraint failed: users.username"))
+          return reply.code(409).send({ error: "username_taken" });
+        throw error;
+      }
+    });
+    protectedApi.post("/api/v1/account/password", {
+      config: {
+        rateLimit: {
+          max: 5,
+          timeWindow: "15 minutes",
+          keyGenerator: (request: FastifyRequest) => AuthService.hashToken(request.cookies[SESSION_COOKIE] ?? request.ip),
+        },
+      },
+    }, async (request, reply) => {
+      const input = z.object({ currentPassword: z.string().min(1).max(1024), newPassword: z.string().min(12).max(1024) }).strict().safeParse(request.body);
+      if (!input.success) return reply.code(400).send({ error: "invalid_request" });
+      const user = store.getUserById(auth.user(request)!.id)!;
+      if (!(await verify(user.passwordHash, input.data.currentPassword))) return reply.code(403).send({ error: "current_password_incorrect" });
+      const nextHash = await hash(input.data.newPassword);
+      if (!auth.user(request) || !store.updatePassword(user.id, nextHash, user.passwordHash))
+        return reply.code(401).send({ error: "unauthorized" });
+      reply.clearCookie(SESSION_COOKIE, { path: "/" });
+      return { ok: true };
+    });
     protectedApi.get("/api/v1/admin/users", async (request, reply) => {
       if (!requireAdmin(request, reply)) return;
       return { users: store.listUsers() };
+    });
+    protectedApi.patch("/api/v1/admin/users/:id", async (request, reply) => {
+      const actor = requireAdmin(request, reply);
+      if (!actor) return;
+      const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+      const input = z.object({ role: z.enum(["member", "admin"]).optional(), suspended: z.boolean().optional() }).strict()
+        .refine((value) => value.role !== undefined || value.suspended !== undefined).safeParse(request.body);
+      if (!params.success || !input.success) return reply.code(400).send({ error: "invalid_request" });
+      const result = store.updateUserAdministration(actor.id, params.data.id, input.data);
+      if (!result.ok) {
+        const status = result.reason === "user_not_found" ? 404 : result.reason === "forbidden" ? 403 : 409;
+        return reply.code(status).send({ error: result.reason });
+      }
+      return { user: safeAccount(result.user) };
     });
     protectedApi.get("/api/v1/admin/invitations", async (request, reply) => {
       if (!requireAdmin(request, reply)) return;

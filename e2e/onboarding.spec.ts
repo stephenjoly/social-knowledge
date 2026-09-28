@@ -44,6 +44,16 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   page,
 }) => {
   const baseUrl = `http://127.0.0.1:${port}`;
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          (window as Window & { __invitationUrl?: string }).__invitationUrl = value;
+        },
+      },
+    });
+  });
   await page.goto(baseUrl);
   await page.getByLabel("Username").fill("first-admin");
   await page
@@ -68,23 +78,30 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   await page.goto(`${baseUrl}/?tab=settings`);
   await page
     .getByRole("navigation", { name: "Settings topics" })
-    .getByRole("button", { name: "Account" })
+    .getByRole("button", { name: "People & access" })
     .click();
   await expect(
-    page.getByRole("heading", { name: "People and access" }),
+    page.getByRole("heading", { name: "People & access" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Create invitation" }).click();
   await expect(
-    page.getByText("Member invitation created. It expires in 24 hours."),
-  ).toBeVisible();
-  const invitationUrl = await page
-    .getByLabel("New invitation link")
-    .inputValue();
+    page.getByRole("status"),
+  ).toContainText("Invitation created.");
+  await page.locator(".invitation-row")
+    .getByRole("button", { name: "Copy link" })
+    .click();
+  await expect(
+    page.getByRole("status"),
+  ).toContainText("Invitation link copied.");
+  const invitationUrl = await page.evaluate(
+    () => (window as Window & { __invitationUrl?: string }).__invitationUrl,
+  );
+  expect(invitationUrl).toBeTruthy();
   expect(invitationUrl).toContain("#invite=");
 
   const invitedContext = await browser.newContext();
   const invitedPage = await invitedContext.newPage();
-  await invitedPage.goto(invitationUrl);
+  await invitedPage.goto(invitationUrl!);
   await expect(
     invitedPage.getByRole("heading", { name: "Join this private archive" }),
   ).toBeVisible();

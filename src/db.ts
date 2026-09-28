@@ -129,7 +129,10 @@ export type InvitationRecord = {
 export type AccountRecord = {
   id: string;
   username: string;
+  displayName: string | null;
+  avatarColor: string | null;
   role: string;
+  suspendedAt: string | null;
   createdAt: string;
 };
 
@@ -1537,15 +1540,10 @@ export class JobStore {
     );
   }
   defaultUserId() {
-    return (
-      (
-        this.database
-          .prepare(
-            "SELECT id FROM users ORDER BY CASE WHEN username='demo' THEN 0 ELSE 1 END,created_at LIMIT 1",
-          )
-          .get() as { id: string } | undefined
-      )?.id ?? null
-    );
+    const user = this.database.prepare(
+      "SELECT id,suspended_at AS suspendedAt FROM users ORDER BY CASE WHEN username='demo' THEN 0 ELSE 1 END,created_at LIMIT 1",
+    ).get() as { id: string; suspendedAt: string | null } | undefined;
+    return user && !user.suspendedAt ? user.id : null;
   }
   createUser(username: string, passwordHash: string, role = "admin") {
     const id = randomUUID();
@@ -1600,9 +1598,50 @@ export class JobStore {
   listUsers(): AccountRecord[] {
     return this.database
       .prepare(
-        "SELECT id,username,role,created_at AS createdAt FROM users ORDER BY created_at,id",
+        "SELECT id,username,display_name AS displayName,avatar_color AS avatarColor,role,suspended_at AS suspendedAt,created_at AS createdAt FROM users ORDER BY created_at,id",
       )
       .all() as AccountRecord[];
+  }
+  getUserById(id: string) {
+    return this.database
+      .prepare(
+        "SELECT id,username,password_hash AS passwordHash,display_name AS displayName,avatar_color AS avatarColor,role,suspended_at AS suspendedAt,created_at AS createdAt FROM users WHERE id=?",
+      )
+      .get(id) as (AccountRecord & { passwordHash: string }) | undefined;
+  }
+  updateProfile(userId: string, input: { displayName?: string | null | undefined; username?: string | undefined; avatarColor?: string | null | undefined }) {
+    const current = this.getUserById(userId);
+    if (!current) return null;
+    this.database.prepare("UPDATE users SET display_name=?,username=?,avatar_color=? WHERE id=?").run(
+      input.displayName === undefined ? current.displayName : input.displayName,
+      input.username ?? current.username,
+      input.avatarColor === undefined ? current.avatarColor : input.avatarColor,
+      userId,
+    );
+    return this.getUserById(userId)!;
+  }
+  updatePassword(userId: string, passwordHash: string, expectedPasswordHash: string) {
+    return this.database.transaction(() => {
+      const changed = this.database.prepare("UPDATE users SET password_hash=? WHERE id=? AND password_hash=? AND suspended_at IS NULL").run(passwordHash, userId, expectedPasswordHash).changes;
+      if (changed) this.database.prepare("DELETE FROM sessions WHERE user_id=?").run(userId);
+      return changed > 0;
+    })();
+  }
+  updateUserAdministration(actorUserId: string, targetUserId: string, input: { role?: InvitationRole | undefined; suspended?: boolean | undefined }): { ok: true; user: AccountRecord } | { ok: false; reason: string } {
+    return this.database.transaction(() => {
+      const actor = this.getUserById(actorUserId), target = this.getUserById(targetUserId);
+      if (!actor || actor.role !== "admin" || actor.suspendedAt) return { ok: false as const, reason: "forbidden" };
+      if (!target) return { ok: false as const, reason: "user_not_found" };
+      const nextRole = input.role ?? target.role;
+      const nextSuspendedAt = input.suspended === undefined ? target.suspendedAt : input.suspended ? new Date().toISOString() : null;
+      if (actorUserId === targetUserId && (nextRole !== "admin" || nextSuspendedAt)) return { ok: false as const, reason: "cannot_modify_self" };
+      if (target.role === "admin" && target.suspendedAt === null && (nextRole !== "admin" || nextSuspendedAt)) {
+        const activeAdmins = this.database.prepare("SELECT COUNT(*) AS count FROM users WHERE role='admin' AND suspended_at IS NULL").get() as { count: number };
+        if (activeAdmins.count <= 1) return { ok: false as const, reason: "last_admin" };
+      }
+      this.database.prepare("UPDATE users SET role=?,suspended_at=? WHERE id=?").run(nextRole, nextSuspendedAt, targetUserId);
+      return { ok: true as const, user: this.getUserById(targetUserId)! };
+    })();
   }
   createInvitation(input: {
     createdByUserId: string;
@@ -1919,32 +1958,32 @@ export class JobStore {
   getUserByUsername(username: string) {
     return this.database
       .prepare(
-        "SELECT id,username,password_hash AS passwordHash,role FROM users WHERE username=?",
+        "SELECT id,username,password_hash AS passwordHash,display_name AS displayName,avatar_color AS avatarColor,role,suspended_at AS suspendedAt,created_at AS createdAt FROM users WHERE username=?",
       )
       .get(username.toLowerCase()) as
-      | { id: string; username: string; passwordHash: string; role: string }
+      | (AccountRecord & { passwordHash: string })
       | undefined;
   }
   createSession(userId: string, tokenHash: string, expiresAt: string) {
-    this.database
+    return this.database
       .prepare(
-        "INSERT INTO sessions(id,user_id,token_hash,expires_at,created_at) VALUES(?,?,?,?,?)",
+        "INSERT INTO sessions(id,user_id,token_hash,expires_at,created_at) SELECT ?,id,?,?,? FROM users WHERE id=? AND suspended_at IS NULL",
       )
       .run(
         randomUUID(),
-        userId,
         tokenHash,
         expiresAt,
         new Date().toISOString(),
-      );
+        userId,
+      ).changes > 0;
   }
   getSession(tokenHash: string) {
     return this.database
       .prepare(
-        "SELECT u.id,u.username,u.role,s.expires_at AS expiresAt FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?",
+        "SELECT u.id,u.username,u.display_name AS displayName,u.avatar_color AS avatarColor,u.role,u.suspended_at AS suspendedAt,u.created_at AS createdAt,s.expires_at AS expiresAt FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND u.suspended_at IS NULL",
       )
       .get(tokenHash, new Date().toISOString()) as
-      | { id: string; username: string; role: string; expiresAt: string }
+      | (AccountRecord & { expiresAt: string })
       | undefined;
   }
   deleteSession(tokenHash: string) {
@@ -1989,7 +2028,7 @@ export class JobStore {
   useApiKey(tokenHash: string) {
     const row = this.database
       .prepare(
-        "SELECT id,user_id AS userId,last_used_at AS lastUsedAt FROM api_keys WHERE token_hash=?",
+        "SELECT k.id,k.user_id AS userId,k.last_used_at AS lastUsedAt FROM api_keys k JOIN users u ON u.id=k.user_id WHERE k.token_hash=? AND u.suspended_at IS NULL",
       )
       .get(tokenHash) as
       { id: string; userId: string; lastUsedAt: string | null } | undefined;
@@ -2069,9 +2108,10 @@ export class JobStore {
     return this.database.transaction(() => {
       const row = this.database
         .prepare(
-          `SELECT code_hash AS codeHash,user_id AS userId,client_id AS clientId,redirect_uri AS redirectUri,
-         code_challenge AS codeChallenge,resource,expires_at AS expiresAt FROM oauth_authorization_codes
-         WHERE code_hash=? AND consumed_at IS NULL AND expires_at>?`,
+          `SELECT c.code_hash AS codeHash,c.user_id AS userId,c.client_id AS clientId,c.redirect_uri AS redirectUri,
+         c.code_challenge AS codeChallenge,c.resource,c.expires_at AS expiresAt FROM oauth_authorization_codes c
+         JOIN users u ON u.id=c.user_id
+         WHERE c.code_hash=? AND c.consumed_at IS NULL AND c.expires_at>? AND u.suspended_at IS NULL`,
         )
         .get(codeHash, new Date().toISOString()) as any;
       if (!row) return null;
@@ -2126,7 +2166,7 @@ export class JobStore {
   useOAuthAccessToken(tokenHash: string) {
     const row = this.database
       .prepare(
-        "SELECT token_hash AS tokenHash,user_id AS userId,client_id AS clientId,scope,resource,last_used_at AS lastUsedAt FROM oauth_access_tokens WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?",
+        "SELECT t.token_hash AS tokenHash,t.user_id AS userId,t.client_id AS clientId,t.scope,t.resource,t.last_used_at AS lastUsedAt FROM oauth_access_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=? AND t.revoked_at IS NULL AND t.expires_at>? AND u.suspended_at IS NULL",
       )
       .get(tokenHash, new Date().toISOString()) as any;
     if (!row) return null;
@@ -2152,7 +2192,7 @@ export class JobStore {
     return this.database.transaction(() => {
       const row = this.database
         .prepare(
-          "SELECT * FROM oauth_refresh_tokens WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?",
+          "SELECT t.* FROM oauth_refresh_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=? AND t.revoked_at IS NULL AND t.expires_at>? AND u.suspended_at IS NULL",
         )
         .get(tokenHash, new Date().toISOString()) as any;
       if (!row) return null;
@@ -3289,6 +3329,12 @@ export class JobStore {
       this.database.exec(
         "ALTER TABLE users ADD COLUMN translate_foreign INTEGER NOT NULL DEFAULT 1",
       );
+    if (!userColumns.includes("display_name"))
+      this.database.exec("ALTER TABLE users ADD COLUMN display_name TEXT");
+    if (!userColumns.includes("avatar_color"))
+      this.database.exec("ALTER TABLE users ADD COLUMN avatar_color TEXT");
+    if (!userColumns.includes("suspended_at"))
+      this.database.exec("ALTER TABLE users ADD COLUMN suspended_at TEXT");
     const captureColumns = (
       this.database.prepare("PRAGMA table_info(captures)").all() as Array<{
         name: string;
