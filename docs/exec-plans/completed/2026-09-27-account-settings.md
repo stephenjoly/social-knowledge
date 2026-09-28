@@ -1,6 +1,6 @@
 # Implement account settings designs 37–41
 
-Status: active
+Status: completed
 Owner: Codex orchestrator and GPT-5.6-Sol workers
 Started: 2026-09-27
 
@@ -28,8 +28,8 @@ Three workers share this isolated workspace with disjoint file ownership: backen
 - [x] Implement settings UI.
 - [x] Review integration and run local CI/browser checks.
 - [x] Create draft PR #31 targeting staging with the initial plan checkpoint.
-- [ ] Push remaining feature commits after preview storage isolation is resolved.
-- [ ] Verify Dokploy preview and report its URL and release identity.
+- [x] Push remaining feature commits after owner accepted shared staging demo storage.
+- [x] Verify Dokploy preview and report its URL and release identity.
 
 ## Decisions
 - 2026-09-27: User requested GPT-5.6-Sol with low thinking for workers; retain Worker auto-review permissions.
@@ -43,6 +43,10 @@ Install lockfile dependencies with `npm ci`; run `npm run check` (docs, TypeScri
 Backend verification uses Node 22.22.3 and covers profile/password changes, authorization failures, additive legacy-schema migration/reopen, suspension across session/API/OAuth/MCP authentication, credential restoration, and password-change rate limiting. Local FFmpeg is 8.1.1 on macOS; CI's Ubuntu package pin is not reproduced on this host.
 
 ## Risks and recovery
-Access control changes require coverage across browser sessions, API keys, and OAuth/MCP. Migrations must be additive and preserve existing data. Preview uses isolated disposable storage. Revert the feature changes for rollback; no production deployment is included.
+Access control changes require coverage across browser sessions, API keys, and OAuth/MCP. Migrations must be additive and preserve existing data. Owner accepted shared staging demo storage for PR #31; isolation remains technical debt. Revert the feature changes for rollback; no production deployment is included.
 
-Integration review: desktop header stacking and mobile overflow fixes are implemented. The invitation table keeps newly generated links in component memory; row copy actions show a selectable URL only after clipboard failure. Final Node 22 verification passed: `npm run check` (139 tests), focused browser checks (6 passed), and full browser suite (10 passed, 4 credential-gated skipped, 0 failed). Desktop and mobile screenshots were inspected; role menus and suspension dialogs are clickable without forced interactions. The proposed dedicated mount-free preview Application remains unapproved; newer feature commits are held locally because pushing would redeploy against shared staging volumes.
+Integration review: desktop header stacking and mobile overflow fixes are implemented. The invitation table keeps newly generated links in component memory; row copy actions show a selectable URL only after clipboard failure. Final Node 22 verification passed: `npm run check` (139 tests), focused browser checks (6 passed), and full browser suite (10 passed, 4 credential-gated skipped, 0 failed). Desktop and mobile screenshots were inspected; role menus and suspension dialogs are clickable without forced interactions. The owner explicitly accepted redeploying the existing preview against shared staging demo storage. Feature commit `2d6ae81` was pushed and Dokploy automatically began its deployment; no preview Application configuration was changed.
+
+- 2026-09-27: Owner confirms staging contains only demo accounts and accepts the shared-data impact for this preview update. Storage isolation remains tracked in technical debt; do not claim this preview has a separate database.
+
+Live verification: Dokploy successfully deployed `2d6ae81df8fa0ba4243e543d14613d9c8331a6ef`. Preview: https://preview-social-knowledge-staging-y3qjds-oztnme.staging.stephenjoly.net/?tab=settings. Demo administrator login, My account, profile save, People & access, and the descriptive role menu passed live checks. Health returned HTTP 200. The served JavaScript SHA-256 matched the locally tested build (`3b1c6e5115c75b07edbaf9ab6e2d72dc0b4084b9d9dd1e7a722f4a0ae62d231c`). No staging branch merge or production promotion occurred.
