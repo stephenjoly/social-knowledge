@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  Database,
   DatabaseBackup,
   FileQuestion,
   Folder,
@@ -36,6 +37,7 @@ import {
   SlidersHorizontal,
   Settings as SettingsIcon,
   UserRound,
+  UsersRound,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -2151,7 +2153,7 @@ function Settings({ user, onUserChange, onSignOut }: { user: AccountUser | null;
       id: "data",
       label: "Data & export",
       description: "Language and portable archives.",
-      icon: DatabaseBackup,
+      icon: Database,
     },
     {
       id: "account",
@@ -2163,7 +2165,7 @@ function Settings({ user, onUserChange, onSignOut }: { user: AccountUser | null;
       id: "people" as const,
       label: "People & access",
       description: "Manage who can sign in and what they can administer.",
-      icon: ShieldCheck,
+      icon: UsersRound,
     }] : []),
   ];
   const connectedPlatforms = platformConnections.filter(
@@ -2194,7 +2196,7 @@ function Settings({ user, onUserChange, onSignOut }: { user: AccountUser | null;
     );
   };
   return (
-    <div className="settings settings-workspace">
+    <div className={`settings settings-workspace${topic === "account" || topic === "people" ? " account-settings-workspace" : ""}`}>
       <header className="settings-heading" tabIndex={-1}>
         <div>
           <p className="settings-breadcrumb">
@@ -2216,7 +2218,7 @@ function Settings({ user, onUserChange, onSignOut }: { user: AccountUser | null;
                 "Review every part of your workspace setup.")}
           </p>
         </div>
-        {topic !== "overview" && topic !== "ai" && (
+        {topic !== "overview" && topic !== "ai" && topic !== "account" && topic !== "people" && (
           <button
             className="settings-back"
             type="button"
@@ -5145,10 +5147,10 @@ function App() {
             aria-expanded={mobileMenuOpen}
             onClick={() => setMobileMenuOpen(true)}
           >
-            <span className="app-avatar" style={{ background: user?.avatarColor || undefined }} aria-hidden="true">{profileInitial}</span>
+            <span className="app-avatar" style={{ background: user?.avatarColor || undefined, color: user?.avatarColor ? "#fff" : undefined }} aria-hidden="true">{profileInitial}</span>
             <span className="app-profile-copy">
               <strong>{user?.displayName || user?.username || "Personal archive"}</strong>
-              <small>Personal workspace</small>
+              <small>{tab === "settings" ? "Account" : "Personal workspace"}</small>
             </span>
             <ChevronDown aria-hidden="true" />
           </button>
@@ -5171,7 +5173,7 @@ function App() {
             aria-expanded={mobileMenuOpen}
             onClick={() => setMobileMenuOpen(true)}
           >
-            <span className="app-avatar" style={{ background: user?.avatarColor || undefined }} aria-hidden="true">{profileInitial}</span>
+            <span className="app-avatar" style={{ background: user?.avatarColor || undefined, color: user?.avatarColor ? "#fff" : undefined }} aria-hidden="true">{profileInitial}</span>
             <ChevronRight aria-hidden="true" />
           </button>
           <span className="app-mobile-wordmark">social knowledge</span>
@@ -5797,14 +5799,14 @@ function App() {
           >
             <div className="app-account-menu-heading">
               <div>
-                <span className="app-avatar" style={{ background: user?.avatarColor || undefined }} aria-hidden="true">
+                <span className="app-avatar" style={{ background: user?.avatarColor || undefined, color: user?.avatarColor ? "#fff" : undefined }} aria-hidden="true">
                   {profileInitial}
                 </span>
                 <span>
                   <strong id="account-menu-title">
                     {user?.displayName || user?.username || "Personal archive"}
                   </strong>
-                  <small>Personal workspace</small>
+                  <small>{tab === "settings" ? "Account" : "Personal workspace"}</small>
                 </span>
               </div>
             </div>

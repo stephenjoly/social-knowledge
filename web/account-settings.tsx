@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { MoreHorizontal, X } from "lucide-react";
+import { MoreHorizontal, Search, UserRoundX, X } from "lucide-react";
 
 export type AccountUser = {
   id: string;
@@ -194,7 +194,10 @@ export function MyAccount({
           <div className="profile-identity">
             <span
               className="profile-avatar"
-              style={{ background: user.avatarColor || "#315a48" }}
+              style={{
+                background: user.avatarColor || "#edf3ee",
+                color: user.avatarColor ? "#fff" : "#4e745e",
+              }}
             >
               {initials({ displayName, username })}
             </span>
@@ -519,6 +522,133 @@ function RoleMenu({
   );
 }
 
+function InvitationActions({
+  copyUrl,
+  canRevoke,
+  canRegenerate,
+  pending,
+  onCopy,
+  onRevoke,
+  onRegenerate,
+}: {
+  copyUrl: string;
+  canRevoke: boolean;
+  canRegenerate: boolean;
+  pending: boolean;
+  onCopy: () => void;
+  onRevoke: () => void;
+  onRegenerate: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const selectAction = (action: () => void) => {
+    setOpen(false);
+    action();
+    window.requestAnimationFrame(() => trigger.current?.focus());
+  };
+  useEffect(() => {
+    if (!open) return;
+    root.current?.querySelector<HTMLElement>("[role='menuitem']")?.focus();
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (
+        event instanceof MouseEvent &&
+        root.current?.contains(event.target as Node)
+      )
+        return;
+      setOpen(false);
+      if (event instanceof KeyboardEvent) trigger.current?.focus();
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [open]);
+  return (
+    <div
+      className="invitation-actions"
+      ref={root}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          setOpen(false);
+      }}
+    >
+      {copyUrl && (
+        <button
+          type="button"
+          className="secondary-button invitation-copy"
+          onClick={onCopy}
+        >
+          Copy link
+        </button>
+      )}
+      {(canRevoke || canRegenerate) && (
+        <button
+          ref={trigger}
+          type="button"
+          className="invitation-overflow"
+          aria-label="Invitation actions"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          <MoreHorizontal />
+        </button>
+      )}
+      {open && (
+        <div
+          className="invitation-actions-menu"
+          role="menu"
+          onKeyDown={(event) => {
+            const items = Array.from(
+              event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                "[role='menuitem']:not(:disabled)",
+              ),
+            );
+            const current = items.indexOf(
+              document.activeElement as HTMLButtonElement,
+            );
+            let next = current;
+            if (event.key === "ArrowDown") next = (current + 1) % items.length;
+            else if (event.key === "ArrowUp")
+              next = (current - 1 + items.length) % items.length;
+            else if (event.key === "Home") next = 0;
+            else if (event.key === "End") next = items.length - 1;
+            else return;
+            event.preventDefault();
+            items[next]?.focus();
+          }}
+        >
+          {canRegenerate && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={pending}
+              onClick={() => selectAction(onRegenerate)}
+            >
+              Regenerate link
+            </button>
+          )}
+          {canRevoke && (
+            <button
+              type="button"
+              role="menuitem"
+              className="danger-menu-item"
+              disabled={pending}
+              onClick={() => selectAction(onRevoke)}
+            >
+              Revoke invitation
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PeopleAccess({
   currentUser,
   onMyAccount,
@@ -728,13 +858,16 @@ export function PeopleAccess({
             <h2>Accounts</h2>
             <small>{users.length} accounts</small>
           </div>
-          <input
-            type="search"
-            placeholder="Search accounts…"
-            aria-label="Search accounts"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          <label className="people-search">
+            <Search aria-hidden="true" />
+            <span className="sr-only">Search accounts</span>
+            <input
+              type="search"
+              placeholder="Search accounts…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
         </header>
         {loadError && (
           <div className="settings-inline-error" role="alert">
@@ -757,7 +890,10 @@ export function PeopleAccess({
               <div className="people-name">
                 <span
                   className="mini-avatar"
-                  style={{ background: person.avatarColor || "#315a48" }}
+                  style={{
+                    background: person.avatarColor || "#ecf1ec",
+                    color: person.avatarColor ? "#fff" : "#4e745e",
+                  }}
                 >
                   {initials(person)}
                 </span>
@@ -825,6 +961,7 @@ export function PeopleAccess({
                               : (setSuspendError(""), setSuspend(person))
                           }
                         >
+                          <UserRoundX aria-hidden="true" />
                           {person.suspendedAt
                             ? "Restore access"
                             : "Suspend access…"}
@@ -882,34 +1019,27 @@ export function PeopleAccess({
               <span>{joined(inv.createdAt)}</span>
               <span className="status">{state}</span>
               <span>
-                {state === "Pending" && invitationLinks[inv.id] && (
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={async () => {
-                      const link = invitationLinks[inv.id];
-                      if (!link) return;
-                      try {
-                        await navigator.clipboard.writeText(link);
-                        setFallbackUrl("");
-                        setMessage("Invitation link copied.");
-                      } catch {
-                        setFallbackUrl(link);
-                        setMessage(
-                          "Select and copy the invitation link above.",
-                        );
-                      }
-                    }}
-                  >
-                    Copy link
-                  </button>
-                )}
-                {state === "Pending" && (
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    disabled={invitationPending === inv.id}
-                    onClick={async () => {
+                <InvitationActions
+                  copyUrl={
+                    state === "Pending" ? invitationLinks[inv.id] || "" : ""
+                  }
+                  canRevoke={state === "Pending"}
+                  canRegenerate={!inv.consumedAt}
+                  pending={invitationPending === inv.id}
+                  onCopy={async () => {
+                    const link = invitationLinks[inv.id];
+                    if (!link) return;
+                    try {
+                      await navigator.clipboard.writeText(link);
+                      setFallbackUrl("");
+                      setMessage("Invitation link copied.");
+                    } catch {
+                      setFallbackUrl(link);
+                      setMessage("Select and copy the invitation link above.");
+                    }
+                  }}
+                  onRevoke={() => {
+                    void (async () => {
                       setInvitationPending(inv.id);
                       try {
                         await request(
@@ -934,17 +1064,10 @@ export function PeopleAccess({
                       } finally {
                         setInvitationPending(null);
                       }
-                    }}
-                  >
-                    Revoke
-                  </button>
-                )}
-                {!inv.consumedAt && (
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    disabled={invitationPending === inv.id}
-                    onClick={async () => {
+                    })();
+                  }}
+                  onRegenerate={() => {
+                    void (async () => {
                       setInvitationPending(inv.id);
                       try {
                         const result = await request<{
@@ -976,11 +1099,9 @@ export function PeopleAccess({
                       } finally {
                         setInvitationPending(null);
                       }
-                    }}
-                  >
-                    Regenerate
-                  </button>
-                )}
+                    })();
+                  }}
+                />
               </span>
             </div>
           );

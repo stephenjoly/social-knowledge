@@ -41,6 +41,31 @@ async function chooseSettingsTopic(page: Page, name: string) {
   await page.getByLabel("More settings topics").selectOption({ label: name });
 }
 
+async function expectAccountDesktopGeometry(page: Page, viewportWidth: 1440 | 1800) {
+  await page.setViewportSize({ width: viewportWidth, height: 1020 });
+  const sidebar = await page.locator(".app-sidebar").boundingBox();
+  const shell = await page.locator(".shell").boundingBox();
+  const topics = await page.locator(".settings-topic-sidebar").boundingBox();
+  const panels = await page.locator(".settings-panels").boundingBox();
+  expect(sidebar).not.toBeNull();
+  expect(shell).not.toBeNull();
+  expect(topics).not.toBeNull();
+  expect(panels).not.toBeNull();
+  expect(sidebar!.width).toBeCloseTo(226, 0);
+  expect(shell!.x).toBeCloseTo(258, 0);
+  expect(shell!.x + shell!.width).toBeCloseTo(viewportWidth - 32, 0);
+  expect(topics!.width).toBeCloseTo(174, 0);
+  expect(panels!.x - (topics!.x + topics!.width)).toBeCloseTo(24, 0);
+  expect(panels!.x + panels!.width).toBeCloseTo(viewportWidth - 32, 0);
+  const cards = page.locator(".account-page-stack > .settings-card, .people-page-stack > .settings-card");
+  for (let index = 0; index < await cards.count(); index += 1) {
+    const card = await cards.nth(index).boundingBox();
+    expect(card).not.toBeNull();
+    expect(card!.x).toBeCloseTo(panels!.x, 0);
+    expect(card!.width).toBeCloseTo(panels!.width, 0);
+  }
+}
+
 test.describe.serial("account profile and access management", () => {
   test.beforeAll(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), "social-knowledge-e2e-account-"));
@@ -67,13 +92,14 @@ test.describe.serial("account profile and access management", () => {
     await expect(settingsTopics.getByRole("button", { name: "My account", exact: true })).toBeVisible();
     await expect(settingsTopics.getByRole("button", { name: "People & access", exact: true })).toBeVisible();
     await chooseSettingsTopic(page, "My account");
+    await expectAccountDesktopGeometry(page, 1440);
 
     const profileCard = page.locator(".profile-card");
     const profileBounds = await profileCard.boundingBox();
     expect(profileBounds).not.toBeNull();
     expect(profileBounds!.x + profileBounds!.width).toBeLessThanOrEqual(1440);
     await page.screenshot({
-      path: "/private/tmp/social-knowledge-my-account-desktop.png",
+      path: "/private/tmp/account-fidelity-my-account-1440.png",
       fullPage: true,
     });
 
@@ -120,15 +146,42 @@ test.describe.serial("account profile and access management", () => {
     await signIn(page, "renamed-admin", updatedAdminPassword);
     await openSettings(page);
     await chooseSettingsTopic(page, "People & access");
+    await expectAccountDesktopGeometry(page, 1440);
+    await expect(
+      page.locator(".people-table"),
+    ).toHaveCSS("border-top-width", "0px");
+
+    const invitationRole = page.getByLabel("Invitation role");
+    const invitationRoleBounds = await invitationRole.boundingBox();
+    expect(invitationRoleBounds).not.toBeNull();
+    expect(invitationRoleBounds!.height).toBeCloseTo(36, 0);
+    await expect(invitationRole).toHaveCSS("font-weight", "400");
+
+    const ownerRow = page.locator(".people-table-row").filter({ hasText: "renamed-admin" });
+    const myAccountAction = ownerRow.getByRole("button", { name: /My account/ });
+    await expect(myAccountAction).toBeVisible();
+    await expect(myAccountAction).toHaveCSS("white-space", "nowrap");
+    const myAccountBounds = await myAccountAction.boundingBox();
+    const peopleTableBounds = await page.locator(".people-table").boundingBox();
+    expect(myAccountBounds).not.toBeNull();
+    expect(peopleTableBounds).not.toBeNull();
+    expect(myAccountBounds!.height).toBeLessThanOrEqual(32);
+    expect(myAccountBounds!.x + myAccountBounds!.width).toBeLessThanOrEqual(
+      peopleTableBounds!.x + peopleTableBounds!.width,
+    );
 
     const memberRow = page.locator(".people-table-row").filter({ hasText: "account-member" });
     const roleTrigger = memberRow.getByRole("button", { name: /^Member/ });
+    const roleBounds = await roleTrigger.boundingBox();
+    expect(roleBounds).not.toBeNull();
+    expect(roleBounds!.height).toBeCloseTo(32, 0);
+    await expect(roleTrigger).toHaveCSS("font-weight", "400");
     await roleTrigger.click();
     const roleMenu = page.getByRole("menu", { name: "Role for account-member" });
     const administratorRole = roleMenu.getByRole("menuitemradio", { name: /^Administrator/ });
     await expect(administratorRole).toBeFocused();
     await page.screenshot({
-      path: "/private/tmp/social-knowledge-people-role-menu-desktop.png",
+      path: "/private/tmp/account-fidelity-people-role-menu-1440.png",
       fullPage: true,
     });
     await page.keyboard.press("Escape");
@@ -163,6 +216,42 @@ test.describe.serial("account profile and access management", () => {
     await page.getByRole("menuitem", { name: "Restore access" }).click();
     await expect(page.getByText("Active", { exact: true }).last()).toBeVisible();
 
+    await expectAccountDesktopGeometry(page, 1800);
+    await expect(myAccountAction).toBeVisible();
+    await expect(myAccountAction).toHaveCSS("white-space", "nowrap");
+    const wideMyAccountBounds = await myAccountAction.boundingBox();
+    const widePeopleTableBounds = await page.locator(".people-table").boundingBox();
+    expect(wideMyAccountBounds).not.toBeNull();
+    expect(widePeopleTableBounds).not.toBeNull();
+    expect(wideMyAccountBounds!.height).toBeLessThanOrEqual(32);
+    expect(wideMyAccountBounds!.x + wideMyAccountBounds!.width).toBeLessThanOrEqual(
+      widePeopleTableBounds!.x + widePeopleTableBounds!.width,
+    );
+    await page.getByRole("button", { name: "Actions for account-member" }).click();
+    await expect(page.getByRole("menuitem", { name: "Suspend access…" })).toBeFocused();
+    await page.screenshot({
+      path: "/private/tmp/account-fidelity-people-actions-1800.png",
+      fullPage: true,
+    });
+    await page.keyboard.press("Escape");
+
+    for (const width of [1280, 1024]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        ),
+      ).toBe(true);
+      await expect(memberRow.getByRole("button", { name: /^Member/ })).toBeVisible();
+      const responsiveActions = page.getByRole("button", { name: "Actions for account-member" });
+      await expect(responsiveActions).toBeVisible();
+      await responsiveActions.click();
+      await expect(page.getByRole("menuitem", { name: "Suspend access…" })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(responsiveActions).toBeFocused();
+      await expect(responsiveActions).toHaveAttribute("aria-expanded", "false");
+    }
+
     await page.setViewportSize({ width: 390, height: 844 });
     const peopleTable = page.locator(".people-table");
     expect(
@@ -174,7 +263,7 @@ test.describe.serial("account profile and access management", () => {
       ),
     ).toBe(true);
     await page.screenshot({
-      path: "/private/tmp/social-knowledge-people-mobile.png",
+      path: "/private/tmp/account-fidelity-people-mobile-390.png",
       fullPage: true,
     });
     const mobileRole = memberRow.getByRole("button", { name: /^Member/ });
@@ -238,7 +327,23 @@ test.describe.serial("account profile and access management", () => {
     await expect(invitation).toContainText("Pending");
     await expect(invitation.getByRole("button", { name: "Copy link" })).toHaveCount(0);
 
-    await invitation.getByRole("button", { name: "Regenerate" }).click();
+    const invitationActions = invitation.getByRole("button", { name: "Invitation actions" });
+    await invitationActions.click();
+    const invitationMenu = invitation.getByRole("menu");
+    const regenerate = invitationMenu.getByRole("menuitem", { name: "Regenerate link" });
+    const revoke = invitationMenu.getByRole("menuitem", { name: "Revoke invitation" });
+    await expect(regenerate).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(revoke).toBeFocused();
+    await page.keyboard.press("Home");
+    await expect(regenerate).toBeFocused();
+    await page.keyboard.press("End");
+    await expect(revoke).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(invitationActions).toBeFocused();
+    await expect(invitationActions).toHaveAttribute("aria-expanded", "false");
+    await invitationActions.click();
+    await invitation.getByRole("menuitem", { name: "Regenerate link" }).click();
     await expect(page.getByRole("status")).toContainText("New invitation link created.");
     invitation = page.locator(".invitation-row").filter({ hasText: "Invite link 1" });
     await expect(invitation.getByRole("button", { name: "Copy link" })).toBeVisible();
@@ -246,10 +351,39 @@ test.describe.serial("account profile and access management", () => {
     await invitation.getByRole("button", { name: "Copy link" }).click();
     await expect(page.getByRole("status")).toContainText("Invitation link copied.");
 
-    await invitation.getByRole("button", { name: "Revoke" }).click();
+    await invitation.getByRole("button", { name: "Invitation actions" }).click();
+    await page.screenshot({
+      path: "/private/tmp/account-fidelity-invitation-actions-1440.png",
+      fullPage: true,
+    });
+    await page.keyboard.press("Escape");
+
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async () => {
+            throw new Error("synthetic_clipboard_unavailable");
+          },
+        },
+      });
+    });
+    await invitation.getByRole("button", { name: "Copy link" }).click();
+    await expect(page.getByRole("status")).toContainText(
+      "Select and copy the invitation link above.",
+    );
+    await expect(page.getByLabel("New invitation link")).toBeVisible();
+
+    await invitation.getByRole("button", { name: "Invitation actions" }).click();
+    await invitation.getByRole("menuitem", { name: "Revoke invitation" }).click();
     await expect(invitation).toContainText("Revoked");
+    await expect(page.getByLabel("New invitation link")).toHaveCount(0);
     await expect(invitation.getByRole("button", { name: "Copy link" })).toHaveCount(0);
-    await expect(invitation.getByRole("button", { name: "Revoke" })).toHaveCount(0);
+    const revokedActions = invitation.getByRole("button", { name: "Invitation actions" });
+    await expect(revokedActions).toBeVisible();
+    await revokedActions.click();
+    await expect(invitation.getByRole("menuitem", { name: "Regenerate link" })).toBeVisible();
+    await expect(invitation.getByRole("menuitem", { name: "Revoke invitation" })).toHaveCount(0);
   });
 
   test("member remains isolated and can navigate account settings on mobile", async ({ page }) => {

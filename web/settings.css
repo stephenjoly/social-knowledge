@@ -1327,7 +1327,13 @@
 }
 
 .settings-topic-sidebar .administration-label {
-  margin-top: 18px;
+  margin-top: 11px;
+  padding-top: 16px;
+  border-top: 1px solid var(--sk-border);
+}
+
+.account-settings-workspace .settings-topic-sidebar button {
+  text-transform: none;
 }
 
 .account-page-stack,
@@ -1335,7 +1341,7 @@
   display: grid;
   min-width: 0;
   width: 100%;
-  max-width: 952px;
+  max-width: none;
   gap: 16px;
 }
 
@@ -1393,9 +1399,10 @@
   font-size: 13px;
 }
 .mini-avatar {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   font-size: 9px;
+  color: #4e745e;
 }
 .profile-identity strong,
 .profile-identity small {
@@ -1440,6 +1447,15 @@
   background: #fff;
   color: var(--sk-ink);
   font-size: 12px;
+}
+.settings-workspace .people-page-stack .invite-card select {
+  height: 36px;
+  min-height: 36px;
+  font-weight: 400;
+}
+.settings-workspace .people-page-stack .invite-card form > button {
+  height: 32px;
+  min-height: 32px;
 }
 .profile-fields small {
   color: var(--sk-muted);
@@ -1506,9 +1522,14 @@
   font-weight: 600;
 }
 .people-page-stack .text-button {
+  width: max-content;
+  justify-self: end;
   border: 0;
   padding: 0;
-  color: #315a48;
+  color: var(--sk-muted);
+  font-size: 10px;
+  font-weight: 400;
+  white-space: nowrap;
 }
 .invite-card {
   display: grid;
@@ -1517,7 +1538,7 @@
 }
 .invite-card form {
   display: grid;
-  grid-template-columns: minmax(250px, 1fr) auto;
+  grid-template-columns: minmax(250px, 1fr) 216px;
   gap: 8px 12px;
 }
 .invite-card form .toggle-label {
@@ -1560,6 +1581,13 @@
   background: transparent;
   color: var(--sk-ink);
 }
+.settings-workspace .people-page-stack .people-table-card {
+  padding: 13px 20px 12px;
+}
+.people-table-card > header {
+  height: 32px;
+  margin-bottom: 17px;
+}
 .people-table-card header h2,
 .invitations-table header h2 {
   display: inline;
@@ -1570,24 +1598,48 @@
   color: var(--sk-muted);
   font-size: 11px;
 }
-.people-table-card input[type="search"] {
-  max-width: 210px;
+.people-search {
+  position: relative;
+  display: block;
+  width: min(274px, 100%);
+}
+.people-search svg {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 12px;
+  width: 14px;
+  height: 14px;
+  color: var(--sk-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.settings-workspace .people-page-stack .people-search input[type="search"] {
+  height: 32px;
+  min-height: 32px;
+  max-width: none;
+  padding-left: 34px;
 }
 .people-table {
-  border: 1px solid var(--sk-border);
-  border-radius: 5px;
+  border: 0;
+  border-radius: 0;
 }
 .people-table-head,
 .people-table-row {
   display: grid;
   grid-template-columns:
-    minmax(190px, 1.35fr) minmax(110px, 0.7fr)
-    110px 80px 92px;
+    minmax(190px, 1fr) 200px
+    151px 143px 32px;
   align-items: center;
   gap: 12px;
   padding: 9px 12px;
 }
+.people-table-row > :nth-child(3) {
+  color: var(--sk-muted);
+  font-size: 11px;
+}
 .people-table-head {
+  min-height: 30px;
   background: #fafbfa;
   color: var(--sk-muted);
   font-size: 9px;
@@ -1596,7 +1648,7 @@
   text-transform: uppercase;
 }
 .people-table-row {
-  min-height: 54px;
+  min-height: 58px;
   border-top: 1px solid var(--sk-border);
   font-size: 11px;
 }
@@ -1610,11 +1662,13 @@
 }
 .role-menu {
   position: relative;
+  width: 150px;
 }
 .role-menu > button {
   display: flex;
   width: 100%;
-  min-height: 29px;
+  height: 32px;
+  min-height: 32px;
   align-items: center;
   justify-content: space-between;
   padding: 0 8px;
@@ -1704,15 +1758,21 @@
 }
 .row-actions {
   position: relative;
+  display: flex;
+  justify-content: flex-end;
   text-align: right;
 }
 .row-actions > button:not(.text-button) {
   width: 28px;
   height: 28px;
   padding: 5px;
-  border: 1px solid var(--sk-border);
+  border: 1px solid transparent;
   border-radius: 4px;
-  background: #fff;
+  background: transparent;
+}
+.row-actions > button[aria-expanded="true"] {
+  border-color: #dce5dc;
+  background: #edf3ee;
 }
 .row-actions svg {
   width: 16px;
@@ -1723,36 +1783,63 @@
   top: 32px;
   right: 0;
   display: grid;
-  width: 205px;
-  padding: 10px;
+  width: 220px;
+  padding: 8px;
   border: 1px solid var(--sk-border);
   border-radius: 5px;
   background: #fff;
   box-shadow: 0 8px 22px #18181b18;
   text-align: left;
 }
+.people-table-head > :nth-child(2) {
+  padding-left: 10px;
+}
+.people-table-head > :nth-child(3),
+.people-table-head > :nth-child(4) {
+  padding-left: 0;
+}
 .account-actions-menu small {
   margin: 3px 0 9px;
   color: var(--sk-muted);
   font-size: 10px;
 }
+.account-actions-menu > strong,
+.account-actions-menu > small {
+  padding-inline: 8px;
+}
 .account-actions-menu button {
-  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  margin-top: 2px;
+  padding: 8px 10px;
   border: 0;
   border-top: 1px solid var(--sk-border);
-  background: transparent;
+  border-radius: 4px;
+  background: #fff4f1;
   color: var(--sk-danger);
   text-align: left;
+}
+.account-actions-menu button svg {
+  width: 14px;
+  height: 14px;
 }
 .invitation-row,
 .invitation-table-head {
   display: grid;
-  grid-template-columns: minmax(110px, 1fr) 90px 90px 65px auto;
+  grid-template-columns:
+    minmax(190px, 1fr) 200px
+    151px 143px 32px;
   align-items: center;
   gap: 12px;
   min-height: 54px;
   border-top: 1px solid var(--sk-border);
   font-size: 11px;
+}
+.invitation-row > :nth-child(2),
+.invitation-table-head > :nth-child(2) {
+  padding-left: 10px;
 }
 .invitation-table-head {
   min-height: 28px;
@@ -1775,6 +1862,57 @@
   display: flex;
   justify-content: flex-end;
   gap: 6px;
+}
+.invitation-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.invitation-overflow {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--sk-muted-strong);
+}
+.invitation-overflow svg {
+  width: 15px;
+}
+.invitation-actions-menu {
+  position: absolute;
+  z-index: 6;
+  top: 32px;
+  right: 0;
+  display: grid;
+  width: 180px;
+  padding: 6px;
+  border: 1px solid var(--sk-border);
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 8px 22px #18181b18;
+}
+.invitation-actions-menu button {
+  min-height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--sk-ink);
+  font-size: 11px;
+  text-align: left;
+}
+.invitation-actions-menu button:hover,
+.invitation-actions-menu button:focus-visible {
+  background: #f3f6f3;
+}
+.invitation-actions-menu .danger-menu-item {
+  color: var(--sk-danger);
 }
 .privacy-note {
   margin: 0 20px;
@@ -1891,6 +2029,60 @@
 .people-empty {
   color: var(--sk-muted);
   font-size: 11px;
+}
+
+@media (max-width: 1320px) {
+  .account-settings-workspace .people-table-head,
+  .account-settings-workspace .invitation-table-head {
+    display: none;
+  }
+
+  .account-settings-workspace .people-table-row,
+  .account-settings-workspace .invitation-row {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px 12px;
+    padding: 14px 12px;
+  }
+
+  .account-settings-workspace .people-table-row > :nth-child(2),
+  .account-settings-workspace .invitation-row > :nth-child(2) {
+    grid-column: 1;
+    grid-row: 2;
+    padding-left: 0;
+  }
+
+  .account-settings-workspace .people-table-row > :nth-child(3),
+  .account-settings-workspace .invitation-row > :nth-child(3) {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .account-settings-workspace .people-table-row > :nth-child(4),
+  .account-settings-workspace .invitation-row > :nth-child(4) {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .account-settings-workspace .people-table-row > .row-actions,
+  .account-settings-workspace .invitation-row > :last-child {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .account-settings-workspace .invitation-row > :last-child {
+    justify-self: end;
+  }
+}
+
+@media (max-width: 1100px) {
+  .account-settings-workspace .invite-card form {
+    grid-template-columns: 1fr;
+  }
+
+  .account-settings-workspace .invite-card form > button {
+    justify-self: end;
+  }
 }
 
 @media (max-width: 900px) {
