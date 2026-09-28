@@ -1,6 +1,6 @@
 # Match account settings to pen.dev
 
-Status: active
+Status: completed
 Owner: Codex orchestrator and GPT-5.6-Sol worker
 
 ## Context and scope
@@ -21,8 +21,10 @@ Frame 40 is 1440px wide: main sidebar 226px, content heading x258, settings navi
 - [x] Inspect screenshots and source geometry.
 - [x] Implement visual corrections.
 - [x] Verify desktop/mobile and browser behavior.
-- [ ] Deploy and verify preview.
+- [x] Deploy and verify preview.
 
 Implementation: Settings uses the same self-hosted Inter font and full desktop gutters throughout its topics. Account tables use light separators, source-sized controls, pale default avatars, muted metadata, aligned invitation columns, and compact keyboard-accessible overflow menus. Tables stack below 1320px to preserve usability with the desktop sidebar. Invitation copying retains a selectable fallback when clipboard access fails.
 
 Local verification: Node 22 `npm run check` passed 139 tests; focused E2E 6/6 and full E2E 10 passed with 4 credential-gated skips. Screenshots reviewed at 1440/1800 desktop and 390 mobile; acceptance also checks 1024/1280 responsiveness, control heights, account-link bounds, keyboard focus, and clipboard fallback.
+
+Live verification: Dokploy deployed `1077a5f76cd4a590aca8577354d87cacc5c5f17d` successfully to the existing PR #31 URL. Browser inspection confirmed source-aligned card x=456 / width=952 at a 1440px viewport, 32px account role controls, Inter sidebar typography, and healthy HTTP 200. The served JavaScript and CSS SHA-256 values matched the final locally checked build. Preview: https://preview-social-knowledge-staging-y3qjds-oztnme.staging.stephenjoly.net/?tab=settings.
