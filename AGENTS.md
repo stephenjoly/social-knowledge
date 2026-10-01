@@ -25,7 +25,7 @@ This file is a map, not the complete project manual. Follow the linked source of
 6. Make the smallest coherent change, add tests at the same boundary, and preserve unrelated changes.
 7. Run `npm run check` before declaring code complete. Run Playwright or live smoke tests for deployed user journeys.
 8. Update durable documentation with behavior, architecture, operations, or decisions; move finished execution plans to `completed/`.
-9. Commit and push meaningful task-scoped checkpoints. Open a draft PR targeting `staging` early.
+9. Commit and push meaningful task-scoped checkpoints following the shared [agent-os CI efficiency skill](https://github.com/stephenjoly/agent-os/blob/main/skills/ci-efficiency/SKILL.md). Open a draft PR targeting `staging` after a coherent local checkpoint, or earlier when preview/review is needed; draft status still triggers CI and preview builds.
 
 ## Non-negotiable invariants
 
