@@ -44,7 +44,7 @@ test("settings topics keep their geometry when scrolling changes", async ({ page
     return { x: rect.x, y: rect.y + window.scrollY, width: rect.width };
   }));
   const baseline = await geometry();
-  for (const name of ["AI", "Connections", "API keys", "Data & export", "Account", "Overview"]) {
+  for (const name of ["AI", "Connections", "API keys", "Data & export", "My account", "Overview"]) {
     await sidebar.getByRole("button", { name, exact: true }).click();
     expect(await geometry()).toEqual(baseline);
   }

@@ -18,19 +18,30 @@ export class AuthService {
   ) {}
   async login(username: string, password: string) {
     const user = this.store.getUserByUsername(username);
-    if (!user || !(await verify(user.passwordHash, password))) return null;
-    return this.issueSession(user);
+    if (!user || user.suspendedAt || !(await verify(user.passwordHash, password))) return null;
+    const current = this.store.getUserById(user.id);
+    if (!current || current.suspendedAt || current.passwordHash !== user.passwordHash) return null;
+    return this.issueSession(current);
   }
   issueSession(user: { id: string; username: string; role: string }) {
     const token = randomBytes(32).toString("base64url");
     const expiresAt = new Date(
       Date.now() + this.config.sessionDays * 86400000,
     ).toISOString();
-    this.store.createSession(user.id, tokenHash(token), expiresAt);
+    if (!this.store.createSession(user.id, tokenHash(token), expiresAt)) return null;
+    const stored = this.store.getUserById(user.id)!;
     return {
       token,
       expiresAt,
-      user: { id: user.id, username: user.username, role: user.role },
+      user: {
+        id: stored.id,
+        username: stored.username,
+        displayName: stored.displayName,
+        avatarColor: stored.avatarColor,
+        role: stored.role,
+        suspendedAt: stored.suspendedAt,
+        createdAt: stored.createdAt,
+      },
     };
   }
   user(request: FastifyRequest) {

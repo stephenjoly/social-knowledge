@@ -2,7 +2,8 @@
   "worktree": {
     "setup": [
       "npm ci",
-      "npm run build"
+      "npm run build",
+      "npx playwright install"
     ],
     "servicePorts": {
       "range": "41000-41019"
