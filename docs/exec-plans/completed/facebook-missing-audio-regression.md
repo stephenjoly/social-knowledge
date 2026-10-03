@@ -1,6 +1,6 @@
 # Preserve valid Facebook video with no extractable audio
 
-Status: active
+Status: complete
 Owner: Codex Worker
 Started: 2026-10-03
 
@@ -37,7 +37,7 @@ Excluded: production retries, platform credential changes, deployed diagnostics,
 - [x] Reviewed downloader, processor, worker, archive, vault, and existing test contracts.
 - [x] Implemented stream-aware behavior and deterministic regressions.
 - [x] Passed focused Vitest coverage and TypeScript checks.
-- [ ] Merge current `origin/staging` and run the complete repository check.
+- [x] Merged `origin/staging` at `7955c51` and passed `npm run check` (28 files, 148 tests).
 
 ## Decisions
 
@@ -48,7 +48,7 @@ Excluded: production retries, platform credential changes, deployed diagnostics,
 ## Verification
 
 - Focused Vitest coverage for downloader selection, processor stream topology, worker orchestration, archive/note behavior.
-- `npm run check`.
+- `npm run check` — passed after the staging merge: documentation harness, TypeScript, production build, and 148 tests.
 
 ## Risks and recovery
 
