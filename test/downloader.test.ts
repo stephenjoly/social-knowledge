@@ -1,9 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { durationMatchFilter, selectComments } from "../src/downloader.js";
+import {
+  audioPreservingFormatSelector,
+  durationMatchFilter,
+  selectComments,
+} from "../src/downloader.js";
 
 describe("download limits", () => {
   it("allows unknown extractor duration for post-download ffprobe enforcement", () => {
     expect(durationMatchFilter(1800)).toBe("duration <=? 1800");
+  });
+
+  it("prefers separate upstream audio before falling back to a muxed format", () => {
+    expect(audioPreservingFormatSelector).toBe(
+      "bestvideo*+bestaudio/best/bestvideo",
+    );
   });
 });
 
