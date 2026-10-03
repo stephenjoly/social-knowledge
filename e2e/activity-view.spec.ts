@@ -146,6 +146,20 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await expect(page.getByRole("status")).toContainText("Safe logs copied.");
   await expect(page.locator(".activity-attention-item")).toHaveCount(2);
   await expect(page.locator(".activity-attention")).toContainText("Highest priority first");
+  // Actionable guidance must remain readable, including with larger browser text.
+  await expect(page.locator(".activity-attention-item small").first()).toHaveCSS("font-size", "14px");
+  await expect(page.locator(".activity-attention-item small").first()).toHaveCSS("white-space", "normal");
+  await expect(page.locator(".activity-attention-item button").first()).toHaveCSS("font-size", "12px");
+  await page.evaluate(() => { document.documentElement.style.fontSize = "20px"; });
+  await expect(page.locator(".activity-heading h1")).toHaveCSS("font-size", "40px");
+  await expect(page.locator(".activity-attention-item small").first()).toHaveCSS("font-size", "17.5px");
+  for (const width of [1440, 720, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await expect(page.getByRole("button", { name: "Retry all" })).toBeVisible();
+  }
+  await page.evaluate(() => { document.documentElement.style.fontSize = ""; });
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   await page.getByRole("button", { name: "All", exact: true }).click();
   await expect(page.locator(".activity-card")).toHaveCount(6);
