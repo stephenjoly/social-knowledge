@@ -63,6 +63,7 @@ import "./auth-redesign.css";
 import "./knowledge-ask.css";
 import "./settings.css";
 import "./inbox.css";
+import "./typography.css";
 import { MyAccount, PeopleAccess, type AccountUser } from "./account-settings";
 
 type Asset = {
