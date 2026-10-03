@@ -36,6 +36,16 @@ Changes to browser journeys should also be exercised against a disposable runnin
 - Record durable architectural decisions in the relevant source-of-truth document or the execution plan's decision log.
 - Record known, concrete deferred work in `docs/tech-debt.md`, with evidence and an exit condition.
 
+## Dashboard typography
+
+`web/typography.css` defines the shared rem-based type scale: 12px captions,
+14px secondary text and controls, 16px body text, 20px section headings, and
+32px page headings (28px on mobile), at the default 16px browser setting.
+Page introductions share this hierarchy across Inbox, Activity, Knowledge base,
+Ask, and Settings. Activity rows, logs, and account controls use these tokens;
+failure guidance wraps so recovery instructions remain readable. Preserve the
+compact archive layout and verify mobile reflow when changing these roles.
+
 ## Documentation discipline
 
 Documentation describes current truth unless clearly labeled as a proposal or historical completed plan. Code, tests, and docs should change together. When they disagree, verify runtime behavior and repair the stale artifact in the same change.
