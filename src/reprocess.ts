@@ -32,7 +32,7 @@ for (const summary of captures) {
   const media: ProcessedMedia = {
     workDir: config.workDir,
     videoPath: video?.path ?? "",
-    audioPath: audio?.path ?? "",
+    audioPath: audio?.path ?? null,
     thumbnailPath: thumbnail?.path ?? null,
     framePaths: [],
     metadata: {
@@ -64,7 +64,7 @@ for (const summary of captures) {
       translationLanguage: capture.translationLanguage,
       analysis,
       archivedVideoPath: video?.path ?? "",
-      archivedAudioPath: audio?.path ?? "",
+      archivedAudioPath: audio?.path ?? null,
       archivedThumbnailPath: thumbnail?.path ?? null,
     });
     store.replaceCaptureAnalysis(capture.id, analysis, notePath);

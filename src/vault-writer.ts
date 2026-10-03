@@ -123,7 +123,10 @@ export class VaultWriter {
       "",
       "## Transcript",
       "",
-      input.transcript || "_Unavailable._",
+      input.transcript ||
+        (input.media.audioPath === null
+          ? "_Unavailable — downloaded media has no extractable audio stream._"
+          : "_Unavailable._"),
       "",
       ...(input.translatedTranscript
         ? [
@@ -137,7 +140,9 @@ export class VaultWriter {
       "",
       `- [Open original post](${input.media.metadata.webpageUrl})`,
       `- Archived video: \`${input.archivedVideoPath}\``,
-      `- Archived audio: \`${input.archivedAudioPath}\``,
+      ...(input.archivedAudioPath
+        ? [`- Archived audio: \`${input.archivedAudioPath}\``]
+        : []),
       ...(input.job.userNote
         ? ["", "## Capture note", "", input.job.userNote]
         : []),

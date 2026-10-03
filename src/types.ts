@@ -108,7 +108,7 @@ export interface DownloadResult {
 }
 
 export interface ProcessedMedia extends DownloadResult {
-  audioPath: string;
+  audioPath: string | null;
   framePaths: string[];
 }
 
@@ -150,7 +150,7 @@ export interface VaultWriteInput {
   translationLanguage: string | null;
   analysis: AnalysisResult;
   archivedVideoPath: string;
-  archivedAudioPath: string;
+  archivedAudioPath: string | null;
   archivedThumbnailPath: string | null;
 }
 import type { LibraryClassification } from "./library.js";
