@@ -221,3 +221,29 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await expect(page.getByRole("button", { name: "Retry all" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Retry list" })).toBeVisible();
 });
+
+
+test("unsupported URL bookmarks stay visible without misleading retry or platform labels", async ({ page }) => {
+  const bookmark = { ...job("bookmark", "failed", "2026-10-03T12:00:00.000Z", { errorCode: "unsupported_platform" }), normalizedUrl: "https://www.tiktok.com/@example/video/123", displayTitle: null };
+  await page.route("**/api/auth/me", (route) => route.fulfill({ contentType: "application/json", body: '{"user":{"id":"fixture-user","username":"Stephen","role":"admin"}}' }));
+  await page.route("**/api/v1/capture-facets", (route) => route.fulfill({ contentType: "application/json", body: '{"categories":[],"topics":[]}' }));
+  await page.route("**/api/v1/captures**", (route) => route.fulfill({ contentType: "application/json", body: '{"captures":[],"nextCursor":null}' }));
+  await page.route("**/api/v1/events", (route) => route.abort());
+  await page.route("**/api/v1/jobs**", (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const body = pathname.endsWith("/failed") ? { failures: [bookmark], nextCursor: null, total: 1 }
+      : pathname.endsWith("/bookmark") ? { job: bookmark, events: [] }
+      : { jobs: [bookmark], nextCursor: null, generatedAt: "2026-10-03T12:01:00.000Z", counts: { active: 0, queued: 0, failed: 1, savedToday: 0, recentEvents: 1 } };
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  const attention = page.locator(".activity-attention-item");
+  await expect(attention).toHaveCount(1);
+  await expect(attention).toContainText("www.tiktok.com");
+  await expect(attention).toContainText("Your URL is retained here");
+  await expect(attention).not.toContainText("Facebook");
+  await expect(attention.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page.locator(".activity-card")).toContainText("URL saved; platform not supported");
+});

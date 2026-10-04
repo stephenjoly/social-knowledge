@@ -187,9 +187,9 @@ export const openApiDocument = (appUrl: string) =>
     paths: {
       "/api/v1/jobs": {
         post: {
-          summary: "Submit a social URL for capture",
+          summary: "Save a URL and capture supported social media",
           description:
-            "Compatible with the Apple Shortcut contract. Limited to 60 requests per hour.",
+            "Persists authenticated HTTPS submissions before AI setup. Unsupported platforms retain a URL bookmark in Activity. A received receipt confirms URL retention, not capture completion. Limited to 60 requests per hour.",
           requestBody: {
             required: true,
             content: {
@@ -209,7 +209,39 @@ export const openApiDocument = (appUrl: string) =>
               },
             },
           },
-          responses: { "202": { description: "Accepted" }, ...errors },
+          responses: {
+            "200": { description: "Existing URL receipt" },
+            "202": {
+              description:
+                "URL persisted; queued capture or unsupported-platform bookmark",
+            },
+            "428": {
+              description:
+                "URL persisted, but AI setup required; includes received=true and job receipt",
+            },
+            ...errors,
+          },
+        },
+      },
+      "/api/v1/shortcut/jobs/{id}": {
+        get: {
+          summary: "Check an owned Shortcut submission",
+          description:
+            "Accepts account bearer keys or the legacy capture token. Returns received=true, a safe job projection, and controlled failure message when failed. Cache-Control: no-store. Limited to 120 requests per minute.",
+          parameters: [
+            {
+              name: "id",
+              in: "path",
+              required: true,
+              schema: { type: "string", format: "uuid" },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Owned URL receipt with current capture status",
+            },
+            ...errors,
+          },
         },
       },
       "/api/v1/knowledge/search": {

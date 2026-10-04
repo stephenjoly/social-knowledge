@@ -433,6 +433,14 @@ const activityStatusCopy: Record<string, string> = {
   failed: "Needs attention",
 };
 const failureCopy: Record<string, { title: string; message: string }> = {
+  unsupported_platform: {
+    title: "URL saved; platform not supported",
+    message: "Your URL is retained here. Media capture for this platform is not supported yet.",
+  },
+  ai_setup_required: {
+    title: "URL saved; AI setup required",
+    message: "Configure transcription and analysis in Settings, then retry this saved URL.",
+  },
   authentication_required: {
     title: "Login cookie expired",
     message: "Refresh the saved login cookies for this platform, then retry.",
@@ -499,7 +507,9 @@ function failureFor(job: ActivityJob) {
 function sourceLabel(url: string) {
   try {
     const parsed = new URL(url);
-    return `${parsed.hostname.includes("instagram") ? "Instagram" : "Facebook"} · ${parsed.pathname.replace(/\/$/, "").split("/").pop() || "post"}`;
+    const host = parsed.hostname;
+    const platform = ["instagram.com", "www.instagram.com"].includes(host) ? "Instagram" : ["facebook.com", "www.facebook.com", "m.facebook.com", "fb.watch"].includes(host) ? "Facebook" : host;
+    return `${platform} · ${parsed.pathname.replace(/\/$/, "").split("/").pop() || "post"}`;
   } catch {
     return "Social post";
   }
@@ -5675,7 +5685,7 @@ function App() {
                       <span className="activity-attention-dot" aria-hidden="true" />
                       <div><strong>{job.displayTitle || sourceReference(job.normalizedUrl)}</strong><small>{sourceLabel(job.normalizedUrl)} · {failureFor(job).message}</small></div>
                       <span className="activity-retry-count">{job.attempts} manual {job.attempts === 1 ? "retry" : "retries"}</span>
-                      <button type="button" disabled={retryPending || retryingIds.includes(job.id)} onClick={() => void retryJob(job)}>{retryingIds.includes(job.id) ? "Retrying…" : "Retry"}</button>
+                      {job.errorCode !== "unsupported_platform" && <button type="button" disabled={retryPending || retryingIds.includes(job.id)} onClick={() => void retryJob(job)}>{retryingIds.includes(job.id) ? "Retrying…" : "Retry"}</button>}
                     </div>
                   ))}
                   {failedNextCursor && <button type="button" className="activity-failed-more" disabled={failedLoadingMore} onClick={() => void loadFailedJobs(true)}>{failedLoadingMore ? "Loading…" : "Load more"}</button>}
