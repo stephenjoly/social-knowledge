@@ -19,7 +19,8 @@ import {
 } from "./db.js";
 import { activityEvents, activityJob } from "./activity.js";
 import type { EventHub } from "./events.js";
-import { normalizeSocialUrl } from "./url.js";
+import { normalizeSubmissionUrl } from "./url.js";
+import { failureCopy, type FailureCode } from "./failures.js";
 import { LibraryPublisher } from "./library-publisher.js";
 import {
   KnowledgeExporter,
@@ -688,27 +689,57 @@ export function buildApp(
       if (!input.success)
         return reply.code(400).send({ error: "invalid_request" });
       try {
-        const selections = aiProviderService.captureSelections(ownerUserId);
-        const social = normalizeSocialUrl(input.data.url);
+        const social = normalizeSubmissionUrl(input.data.url);
+        let selections;
+        let initialFailure: FailureCode | undefined;
+        let setupError: string | undefined;
+        if (social.platform === "unsupported")
+          initialFailure = "unsupported_platform";
+        else {
+          try {
+            selections = aiProviderService.captureSelections(ownerUserId);
+          } catch (error) {
+            const code = error instanceof Error ? error.message : "";
+            if (
+              ![
+                "transcription_required",
+                "analysis_provider_required",
+              ].includes(code)
+            )
+              throw error;
+            initialFailure = "ai_setup_required";
+            setupError = code;
+          }
+        }
         const result = store.createOrGet({
           ownerUserId,
           sourceUrl: social.original,
           normalizedUrl: social.normalized,
           sourceHash: social.hash,
           userNote: input.data.note,
+          ...(initialFailure ? { initialFailure } : {}),
           ...selections,
         });
         const retried =
           !result.created &&
+          !initialFailure &&
           result.job.status === "failed" &&
           store.retry(result.job.id, selections);
         const job = retried ? store.get(result.job.id) : result.job;
         events.publish("job", { id: result.job.id, status: job?.status });
-        return reply.code(result.created || retried ? 202 : 200).send({
-          created: result.created,
-          retried,
-          job: activityJob(job ?? result.job, store.events(result.job.id)),
-        });
+        return reply
+          .code(setupError ? 428 : result.created || retried ? 202 : 200)
+          .send({
+            received: true,
+            ...(job?.errorCode === "unsupported_platform" ||
+            job?.errorCode === "ai_setup_required"
+              ? { message: failureCopy(job.errorCode).message }
+              : {}),
+            ...(setupError ? { error: setupError } : {}),
+            created: result.created,
+            retried,
+            job: activityJob(job ?? result.job, store.events(result.job.id)),
+          });
       } catch (error) {
         const code = error instanceof Error ? error.message : "invalid_url";
         if (
@@ -722,6 +753,44 @@ export function buildApp(
           message: error instanceof Error ? error.message : String(error),
         });
       }
+    },
+  );
+
+  // Capture credentials can inspect only their own receipt, without browser cookies.
+  app.get(
+    "/api/v1/shortcut/jobs/:id",
+    {
+      config: {
+        rateLimit: {
+          max: 120,
+          timeWindow: "1 minute",
+          keyGenerator: (request) =>
+            AuthService.hashToken(request.headers.authorization ?? request.ip),
+        },
+      },
+    },
+    async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      const principal = auth.apiPrincipal(request);
+      const ownerUserId =
+        principal?.userId ??
+        (auth.legacyToken(request) ? store.defaultUserId() : null);
+      if (!ownerUserId) return reply.code(401).send({ error: "unauthorized" });
+      const params = z
+        .object({ id: z.string().uuid() })
+        .safeParse(request.params);
+      if (!params.success)
+        return reply.code(400).send({ error: "invalid_request" });
+      const job = store.getOwned(ownerUserId, params.data.id);
+      if (!job) return reply.code(404).send({ error: "not_found" });
+      const projected = activityJob(job, store.events(job.id));
+      return {
+        received: true,
+        job: projected,
+        ...(projected.errorCode
+          ? { message: failureCopy(projected.errorCode).message }
+          : {}),
+      };
     },
   );
 
