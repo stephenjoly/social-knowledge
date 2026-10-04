@@ -25,6 +25,8 @@ Reuse persisted jobs and existing failure states/codes; no schema migration. Add
 - [x] Implement retention, safe status, and Shortcut generator.
 - [x] Complete checks: npm run check (158 tests), two Activity browser tests, and both token-free artifacts signed successfully. Native import/run verification remains blocked by computer-use denial.
 - [ ] Production rollout and on-device acceptance after owner approval.
+- [x] Correct reported blank If inputs: use Variable wrapper, coerce status to Text, validate references, and add generator regression tests.
+- [ ] Verify replacement on-device; native automation currently fails startup.
 
 ## Decisions
 - 2026-10-03: Owner confirmed all unsupported links should be retained. Bookmarks live in Activity, separate from completed captures.
@@ -36,3 +38,6 @@ Run npm run check; test credential ownership/revocation, unsafe inputs, unsuppor
 
 ## Risks and recovery
 Polling can be interrupted by iOS and is not a background callback. Existing ntfy integration covers later completion/failure when configured. Rollback code does not delete retained jobs; do not retry unsupported bookmarks using older server versions. Old servers do not recognize new failure codes. Deployment remains an explicit staged rollout. The supplied iCloud Shortcut embeds a live bearer credential; share only token-free replacements and rotate/revoke the old credential when practical.
+
+## Shortcut import correction
+The first signed files contained bare WFTextTokenAttachment inputs on If actions. Apple If requires a Type=Variable wrapper. The owner reported blank conditions during import/run; signing did not detect this. Replacement v2 artifacts wrap all If references and coerce dictionary status to Text before string comparisons. Generator tests assert native input shape and producer types. The external action-schema validator reports no action/parameter defects; its remaining findings concern its own branded comment-style requirements.
