@@ -60,7 +60,7 @@ Invitation links remain single-use and expire after 24 hours. Raw links are avai
 
 ## Current scope
 
-The supported source platforms are Facebook and Instagram. The application provides a private dashboard, Apple Shortcut ingestion, account API keys, OAuth-backed read-only MCP access, Obsidian Markdown output, and complete library exports.
+Full media capture supports Facebook and Instagram. Authenticated HTTPS submissions from other platforms, including TikTok, retain the original URL as an account-owned bookmark in Activity with an explicit unsupported-platform message. These bookmarks do not appear as completed captures in Inbox or Library and are never downloaded. Missing AI setup also retains the submitted URL for later retry. Apple Shortcut receipts distinguish URL acceptance from finished capture and provide bounded completion polling. The application provides a private dashboard, Apple Shortcut ingestion, account API keys, OAuth-backed read-only MCP access, Obsidian Markdown output, and complete library exports.
 
 The service does not bypass DRM, paywalls, access controls, or platform permissions. It is not a general-purpose social crawler, shared multi-tenant social network, or public media proxy. Its anonymous `/roadmap` page publishes only the maintained product roadmap and its source document; it never exposes account or archive data.
 

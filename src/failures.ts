@@ -1,4 +1,6 @@
 export const failureCodes = [
+  "unsupported_platform",
+  "ai_setup_required",
   "authentication_required",
   "private_post",
   "unavailable",
@@ -17,6 +19,16 @@ export const failureCodes = [
 export type FailureCode = (typeof failureCodes)[number];
 
 const copy: Record<FailureCode, { title: string; message: string }> = {
+  unsupported_platform: {
+    title: "URL saved; platform not supported",
+    message:
+      "Your URL is retained in Activity. Media capture for this platform is not supported yet.",
+  },
+  ai_setup_required: {
+    title: "URL saved; AI setup required",
+    message:
+      "Your URL is retained in Activity. Configure transcription and analysis in Settings, then retry.",
+  },
   authentication_required: {
     title: "Login cookie expired",
     message: "Refresh the saved login cookies for this platform, then retry.",

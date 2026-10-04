@@ -137,16 +137,24 @@ Troubleshooting: a `401` response means the OAuth connection or API key is missi
 
 ## Apple Shortcut contract
 
-Create a Share Sheet Shortcut that accepts URLs and performs **Get Contents of URL**:
+Generate an importable Share Sheet Shortcut without embedding a secret:
 
-- URL: `https://<internal-service-name>/api/v1/jobs`
-- Method: `POST`
-- Headers:
-  - `Authorization`: `Bearer <API_TOKEN>`
-  - `Content-Type`: `application/json`
-- JSON body:
-  - `url`: the Shortcut input URL
-  - `note`: optional prompted text
+```bash
+python3 scripts/build-shortcut.py --endpoint https://<service-name>/api/v1/jobs --output /tmp/save.shortcut
+shortcuts sign --mode anyone --input /tmp/save.shortcut --output /tmp/save-signed.shortcut
+```
+
+Import the signed file on your Apple device and enter an account API key from Settings. The Shortcut extracts the first URL from shared text, submits JSON `{"url": "…"}` to `POST /api/v1/jobs` with `Authorization: Bearer <account-key>`, checks the server receipt, then polls `GET /api/v1/shortcut/jobs/:id` every five seconds for up to twelve checks. Completed jobs show archive success; failed jobs show the safe server response. If processing takes longer, the receipt points you to Activity; it does not claim completion. iOS can interrupt a running Share Sheet Shortcut, so polling is bounded feedback, not a guaranteed background callback. Server-side ntfy completion/failure notifications are available below.
+
+For a server predating the polling route, add `--receipt-only`. This version checks the submission response and directs you to Activity without polling. Keep the original Shortcut until the replacement is verified on-device. Test by sharing an Instagram/Facebook URL, an unsupported TikTok URL, and a copy with an invalid API key. Never publicly share a personalized Shortcut containing a token. `--personal-source` is only for private local repair of an existing Shortcut.
+
+Receipt contract:
+
+- Authenticated, valid HTTPS submissions persist the original URL as an account-owned job before AI configuration is required. `received: true` plus `job.id` confirms URL retention, not media capture.
+- Supported Facebook/Instagram links queue media capture. Unsupported HTTPS links (including TikTok) are retained in Activity with `unsupported_platform`; they never enter the downloader and cannot be retried. They are URL bookmarks, not completed captures in Inbox/Library.
+- Missing transcription/analysis configuration retains a failed job with `ai_setup_required`. The response remains HTTP 428 for compatibility, now including the persisted receipt. Configure AI in Settings, then retry or resubmit.
+- Invalid/unsafe input and rejected authentication do not create jobs. HTTP 401 means the credential is invalid, revoked, or belongs to a suspended account; account API keys have no automatic expiry.
+- The status route accepts account API keys and the legacy `API_TOKEN`, enforces ownership, disables caching, and returns controlled failure copy without internal diagnostics. Browser job routes continue to require browser sessions.
 
 Prefer an internal route reachable over WireGuard. Do not expose this endpoint publicly without scoped authentication, request limits, and reverse-proxy hardening.
 

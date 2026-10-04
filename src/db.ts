@@ -193,6 +193,7 @@ export class JobStore {
     analysisModel?: string | null;
     analysisThinkingLevel?: "minimal" | "low" | "medium" | "high" | null;
     userNote?: string | undefined;
+    initialFailure?: FailureCode;
   }) {
     const existing = this.getByHash(input.ownerUserId, input.sourceHash);
     if (existing) return { job: existing, created: false };
@@ -200,7 +201,7 @@ export class JobStore {
     const id = randomUUID();
     this.database
       .prepare(
-        `INSERT INTO jobs(id,owner_user_id,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at,ai_provider,transcription_provider,transcription_model,analysis_provider,analysis_model,analysis_thinking_level) VALUES(?,?,?,?,?,?,'queued',0,NULL,NULL,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO jobs(id,owner_user_id,source_url,normalized_url,source_hash,user_note,status,attempts,error,result_note_path,created_at,updated_at,next_attempt_at,ai_provider,transcription_provider,transcription_model,analysis_provider,analysis_model,analysis_thinking_level,error_code) VALUES(?,?,?,?,?,?,?,0,NULL,NULL,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         id,
@@ -209,6 +210,7 @@ export class JobStore {
         input.normalizedUrl,
         input.sourceHash,
         input.userNote?.trim() || null,
+        input.initialFailure ? "failed" : "queued",
         now,
         now,
         now,
@@ -218,8 +220,14 @@ export class JobStore {
         input.analysisProvider ?? input.aiProvider ?? null,
         input.analysisModel ?? null,
         input.analysisThinkingLevel ?? null,
+        input.initialFailure ?? null,
       );
-    this.addEvent(id, "queued", "Capture accepted");
+    this.addEvent(
+      id,
+      input.initialFailure ? "failed" : "queued",
+      input.initialFailure ? null : "Capture accepted",
+      input.initialFailure ?? null,
+    );
     return { job: this.get(id) as JobRecord, created: true };
   }
 
@@ -498,7 +506,7 @@ export class JobStore {
   }
   retry(id: string, selections?: AiTaskSelectionInput | AiProviderId | null) {
     const job = this.get(id);
-    if (!job || job.status !== "failed") return false;
+    if (!job || job.status !== "failed" || job.errorCode === "unsupported_platform") return false;
     const now = new Date().toISOString();
     const snapshot =
       typeof selections === "string"
@@ -537,7 +545,7 @@ export class JobStore {
     return this.database.transaction(() => {
       const rows = this.database
         .prepare(
-          "SELECT id FROM jobs WHERE owner_user_id=? AND status='failed'",
+          "SELECT id FROM jobs WHERE owner_user_id=? AND status='failed' AND (error_code IS NULL OR error_code <> 'unsupported_platform')",
         )
         .all(ownerUserId) as Array<{ id: string }>;
       const now = new Date().toISOString();

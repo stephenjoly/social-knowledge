@@ -142,10 +142,13 @@ function safeFailureCode(value: string | null): FailureCode | null {
     : null;
 }
 
-function safeNormalizedUrl(value: string) {
+function safeNormalizedUrl(value: string, bookmark = false) {
   try {
     const url = new URL(value);
-    if (url.protocol !== "https:" || !safeHosts.has(url.hostname.toLowerCase()))
+    if (
+      url.protocol !== "https:" ||
+      (!bookmark && !safeHosts.has(url.hostname.toLowerCase()))
+    )
       throw new Error("unsafe_url");
     url.username = "";
     url.password = "";
@@ -383,7 +386,7 @@ export function activityJob(
   return {
     id: job.id,
     status,
-    normalizedUrl: safeNormalizedUrl(job.normalizedUrl),
+    normalizedUrl: safeNormalizedUrl(job.normalizedUrl, job.errorCode === "unsupported_platform"),
     displayTitle: safeTitle(job.displayTitle),
     attempts: retryCount,
     errorCode: safeErrorCode(job.errorCode, status),
