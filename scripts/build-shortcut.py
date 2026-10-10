@@ -32,9 +32,9 @@ def build(endpoint, token="", poll=True):
                 "WFValue": value} for key, value in fields.items()]}}
     def key(source, value):
         return action("getvalueforkey", WFInput=variable(source), WFDictionaryKey=value, WFGetDictionaryValueType="Value")
-    def condition(source, value=None):
+    def condition(source, value=None, comment=None):
         group = str(uuid.uuid4()).upper()
-        action("comment", WFCommentActionText=("Only continue when the server returned a job receipt." if value is None else "Check whether the server reported capture status: " + value))
+        action("comment", WFCommentActionText=(comment or ("Only continue when the server returned a job receipt." if value is None else "Check whether the server reported capture status: " + value)))
         parameters = {"GroupingIdentifier": group, "WFControlFlowMode": 0,
                       # If uses WFContentItemFilter input, unlike ordinary actions.
                       # A bare attachment imports as an unbound/blank input chip.
@@ -44,6 +44,8 @@ def build(endpoint, token="", poll=True):
             parameters["WFConditionalActionString"] = value
         action("conditional", **parameters)
         return group
+    def otherwise(group):
+        action("conditional", GroupingIdentifier=group, WFControlFlowMode=1)
     def end(group):
         action("conditional", GroupingIdentifier=group, WFControlFlowMode=2)
     def stop():
@@ -53,7 +55,19 @@ def build(endpoint, token="", poll=True):
     token_id = action("gettext", WFTextActionText=token or "PASTE_API_KEY_HERE")
     urls = action("detect.link", WFInput={"Type": "Variable", "Variable": {
         "WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ExtensionInput"}}})
-    url = action("getitemfromlist", WFInput=variable(urls, "URLs"), WFItemSpecifier="First Item")
+    shared_url = action("getitemfromlist", WFInput=variable(urls, "URLs"), WFItemSpecifier="First Item")
+    input_group = condition(shared_url, comment="Use the shared URL when present; otherwise ask for a link. Running from the editor supplies no share-sheet input.")
+    action("setvariable", WFVariableName="Submitted URL", WFInput=variable(shared_url))
+    otherwise(input_group)
+    entered_url = action("ask", WFAskActionPrompt="Paste the reel or page URL to save", WFInputType="Text")
+    action("setvariable", WFVariableName="Submitted URL", WFInput=variable(entered_url, "Provided Input"))
+    end(input_group)
+    selected_urls = action("detect.link", WFInput={"Type": "Variable", "Variable": {
+        "WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "Variable", "VariableName": "Submitted URL"}}})
+    selected_url = action("getitemfromlist", WFInput=variable(selected_urls, "URLs"), WFItemSpecifier="First Item")
+    # Force a JSON string rather than a URL/list content item, and never POST empty input.
+    url = action("gettext", WFTextActionText=text("", selected_url))
+    valid_input = condition(url, comment="Send only when a URL was extracted. Empty or non-link text must not reach the server.")
     headers = dictionary({"Authorization": text("Bearer ", token_id, name="Text")})
     response = action("downloadurl", WFURL=endpoint, WFHTTPMethod="POST", WFHTTPHeaders=headers,
                       WFHTTPBodyType="JSON", WFJSONValues=dictionary({"url": text("", url)}))
@@ -90,7 +104,10 @@ def build(endpoint, token="", poll=True):
     action("showresult", Text=text("Server received and saved your URL. Capture is still processing; check Activity for its final result. Receipt: ", response))
     stop()
     end(group)
-    action("showresult", Text=text("Server did not confirm saving this URL. Check this response (unauthorized = token rejected; invalid_url = unsupported/invalid link; transcription_required or analysis_provider_required = fix AI Settings): ", response))
+    action("showresult", Text=text("Server did not confirm saving this URL. Check this response (unauthorized = token rejected; invalid_request = URL missing or request malformed; invalid_url = unsafe/invalid link; transcription_required or analysis_provider_required = fix AI Settings): ", response))
+    stop()
+    end(valid_input)
+    action("showresult", Text="No URL found. Share a reel link or paste a complete https:// URL when prompted. Nothing was sent.")
     return {
         "WFWorkflowClientVersion": "4000", "WFWorkflowMinimumClientVersion": 900,
         "WFWorkflowMinimumClientVersionString": "900",
@@ -99,7 +116,6 @@ def build(endpoint, token="", poll=True):
         "WFWorkflowInputContentItemClasses": ["WFSafariWebPageContentItem", "WFURLContentItem", "WFStringContentItem"],
         "WFWorkflowTypes": ["ActionExtension"], "WFQuickActionSurfaces": [],
         "WFWorkflowHasShortcutInputVariables": True,
-        "WFWorkflowNoInputBehavior": {"Name": "AskForInput", "Parameters": {"WFInputType": "URL"}},
         "WFWorkflowImportQuestions": [] if token else [{"ActionIndex": 2, "ParameterKey": "WFTextActionText", "Category": "Parameter", "Text": "Paste your account API key from Social Knowledge Settings. Do not include Bearer.", "DefaultValue": ""}],
     }
 

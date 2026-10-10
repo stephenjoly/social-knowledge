@@ -39,7 +39,7 @@ describe("native Shortcut serialization", () => {
       }
       if (typeof p.UUID === "string") outputs.set(p.UUID, action);
     }
-    expect(conditions).toBe(poll ? 6 : 3);
+    expect(conditions).toBe(poll ? 8 : 5);
   });
   it("wires import setup to the key Text action and avoids completion calls in receipt-only mode", () => {
     const workflow = build(false);
@@ -51,5 +51,42 @@ describe("native Shortcut serialization", () => {
     expect(requests[0]?.WFWorkflowActionParameters.WFHTTPMethod).toBe("POST");
     const detector = workflow.WFWorkflowActions.find((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.detect.link");
     expect(detector?.WFWorkflowActionParameters.WFInput).toMatchObject({ Type: "Variable", Variable: { WFSerializationType: "WFTextTokenAttachment", Value: { Type: "ExtensionInput" } } });
+  });
+});
+
+
+describe("Shortcut submission input", () => {
+  it.each([false, true])("prompts for missing shared input and gates a text JSON URL in polling mode %s", (poll) => {
+    const workflow = build(poll);
+    const actions = workflow.WFWorkflowActions;
+    const promptIndex = actions.findIndex((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.ask");
+    expect(promptIndex).toBeGreaterThan(0);
+    expect(actions[promptIndex]?.WFWorkflowActionParameters).toMatchObject({ WFInputType: "Text", WFAskActionPrompt: "Paste the reel or page URL to save" });
+    const opening = actions.findIndex((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.conditional" && a.WFWorkflowActionParameters.WFControlFlowMode === 0);
+    const group = actions[opening]!.WFWorkflowActionParameters.GroupingIdentifier;
+    const otherwise = actions.findIndex((a) => a.WFWorkflowActionParameters.GroupingIdentifier === group && a.WFWorkflowActionParameters.WFControlFlowMode === 1);
+    const end = actions.findIndex((a) => a.WFWorkflowActionParameters.GroupingIdentifier === group && a.WFWorkflowActionParameters.WFControlFlowMode === 2);
+    expect(otherwise).toBeLessThan(promptIndex);
+    expect(promptIndex).toBeLessThan(end);
+    const setters = actions.filter((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.setvariable");
+    expect(setters).toHaveLength(2);
+    expect(setters.every((a) => a.WFWorkflowActionParameters.WFVariableName === "Submitted URL")).toBe(true);
+    const requestIndex = actions.findIndex((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.downloadurl");
+    const request = actions[requestIndex]!.WFWorkflowActionParameters;
+    const fields = request.WFJSONValues as { Value: { WFDictionaryFieldValueItems: Array<{ WFItemType: number; WFKey: { Value: { string: string } }; WFValue: { Value: { string: string; attachmentsByRange: Record<string, { OutputUUID: string }> } } }> } };
+    const field = fields.Value.WFDictionaryFieldValueItems[0]!;
+    expect(field.WFItemType).toBe(0);
+    expect(field.WFKey.Value.string).toBe("url");
+    expect(field.WFValue.Value.string).toBe("\ufffc");
+    const producerId = field.WFValue.Value.attachmentsByRange["{0, 1}"]!.OutputUUID;
+    const producerIndex = actions.findIndex((a) => a.WFWorkflowActionParameters.UUID === producerId);
+    expect(producerIndex).toBeGreaterThan(end);
+    expect(actions[producerIndex]?.WFWorkflowActionIdentifier).toBe("is.workflow.actions.gettext");
+    const guard = actions.slice(producerIndex + 1, requestIndex).find((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.conditional");
+    expect(guard?.WFWorkflowActionParameters).toMatchObject({ WFCondition: 100, WFControlFlowMode: 0, WFInput: { Variable: { Value: { OutputUUID: producerId } } } });
+    const guardGroup = guard!.WFWorkflowActionParameters.GroupingIdentifier;
+    const guardEnd = actions.findIndex((a) => a.WFWorkflowActionParameters.GroupingIdentifier === guardGroup && a.WFWorkflowActionParameters.WFControlFlowMode === 2);
+    expect(guardEnd).toBeGreaterThan(requestIndex);
+    expect(actions[guardEnd + 1]?.WFWorkflowActionParameters.Text).toContain("Nothing was sent");
   });
 });
