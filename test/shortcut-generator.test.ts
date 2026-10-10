@@ -82,8 +82,19 @@ describe("Shortcut submission input", () => {
     const producerIndex = actions.findIndex((a) => a.WFWorkflowActionParameters.UUID === producerId);
     expect(producerIndex).toBeGreaterThan(end);
     expect(actions[producerIndex]?.WFWorkflowActionIdentifier).toBe("is.workflow.actions.gettext");
-    const guard = actions.slice(producerIndex + 1, requestIndex).find((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.conditional");
-    expect(guard?.WFWorkflowActionParameters).toMatchObject({ WFCondition: 100, WFControlFlowMode: 0, WFInput: { Variable: { Value: { OutputUUID: producerId } } } });
+    const detector = actions.slice(end + 1, producerIndex).find((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.detect.link")!;
+    const guard = actions.slice(end + 1, producerIndex).find((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.conditional");
+    expect(guard?.WFWorkflowActionParameters).toMatchObject({ WFCondition: 100, WFControlFlowMode: 0, WFInput: { Variable: { Value: { OutputUUID: detector.WFWorkflowActionParameters.UUID } } } });
+    // Both item selections must sit inside a matching URL-list existence guard.
+    // Otherwise an empty input could fail at Get First Item before the prompt.
+    for (const [index, action] of actions.entries()) {
+      if (action.WFWorkflowActionIdentifier !== "is.workflow.actions.getitemfromlist") continue;
+      const source = (action.WFWorkflowActionParameters.WFInput as { Value: { OutputUUID: string } }).Value.OutputUUID;
+      const enclosing = actions.slice(0, index).find((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.conditional" && a.WFWorkflowActionParameters.WFControlFlowMode === 0 && (a.WFWorkflowActionParameters.WFInput as { Variable: { Value: { OutputUUID: string } } }).Variable.Value.OutputUUID === source);
+      expect(enclosing).toBeDefined();
+      const closing = actions.findIndex((a) => a.WFWorkflowActionParameters.GroupingIdentifier === enclosing!.WFWorkflowActionParameters.GroupingIdentifier && a.WFWorkflowActionParameters.WFControlFlowMode === 2);
+      expect(index).toBeLessThan(closing);
+    }
     const guardGroup = guard!.WFWorkflowActionParameters.GroupingIdentifier;
     const guardEnd = actions.findIndex((a) => a.WFWorkflowActionParameters.GroupingIdentifier === guardGroup && a.WFWorkflowActionParameters.WFControlFlowMode === 2);
     expect(guardEnd).toBeGreaterThan(requestIndex);

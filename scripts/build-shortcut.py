@@ -55,8 +55,8 @@ def build(endpoint, token="", poll=True):
     token_id = action("gettext", WFTextActionText=token or "PASTE_API_KEY_HERE")
     urls = action("detect.link", WFInput={"Type": "Variable", "Variable": {
         "WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ExtensionInput"}}})
+    input_group = condition(urls, comment="Check for shared URLs before selecting an item. If none exist, ask for a link; running from the editor has no share-sheet input.")
     shared_url = action("getitemfromlist", WFInput=variable(urls, "URLs"), WFItemSpecifier="First Item")
-    input_group = condition(shared_url, comment="Use the shared URL when present; otherwise ask for a link. Running from the editor supplies no share-sheet input.")
     action("setvariable", WFVariableName="Submitted URL", WFInput=variable(shared_url))
     otherwise(input_group)
     entered_url = action("ask", WFAskActionPrompt="Paste the reel or page URL to save", WFInputType="Text")
@@ -64,10 +64,10 @@ def build(endpoint, token="", poll=True):
     end(input_group)
     selected_urls = action("detect.link", WFInput={"Type": "Variable", "Variable": {
         "WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "Variable", "VariableName": "Submitted URL"}}})
+    valid_input = condition(selected_urls, comment="Check that pasted/shared text contains a URL before selecting an item or sending. Blank or non-link input stops locally.")
     selected_url = action("getitemfromlist", WFInput=variable(selected_urls, "URLs"), WFItemSpecifier="First Item")
     # Force a JSON string rather than a URL/list content item, and never POST empty input.
     url = action("gettext", WFTextActionText=text("", selected_url))
-    valid_input = condition(url, comment="Send only when a URL was extracted. Empty or non-link text must not reach the server.")
     headers = dictionary({"Authorization": text("Bearer ", token_id, name="Text")})
     response = action("downloadurl", WFURL=endpoint, WFHTTPMethod="POST", WFHTTPHeaders=headers,
                       WFHTTPBodyType="JSON", WFJSONValues=dictionary({"url": text("", url)}))
