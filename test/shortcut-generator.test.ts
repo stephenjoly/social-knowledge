@@ -50,7 +50,8 @@ describe("native Shortcut serialization", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]?.WFWorkflowActionParameters.WFHTTPMethod).toBe("POST");
     const detector = workflow.WFWorkflowActions.find((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.detect.link");
-    expect(detector?.WFWorkflowActionParameters.WFInput).toMatchObject({ Type: "Variable", Variable: { WFSerializationType: "WFTextTokenAttachment", Value: { Type: "ExtensionInput" } } });
+    expect(detector?.WFWorkflowActionParameters.WFInput).toMatchObject({ WFSerializationType: "WFTextTokenAttachment", Value: { Type: "ExtensionInput" } });
+    expect(detector?.WFWorkflowActionParameters.WFInput).not.toHaveProperty("Variable");
   });
 });
 
@@ -59,6 +60,12 @@ describe("Shortcut submission input", () => {
   it.each([false, true])("prompts for missing shared input and gates a text JSON URL in polling mode %s", (poll) => {
     const workflow = build(poll);
     const actions = workflow.WFWorkflowActions;
+    const detectors = actions.filter((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.detect.link");
+    expect(detectors).toHaveLength(2);
+    expect(detectors[1]?.WFWorkflowActionParameters.WFInput).toEqual({ WFSerializationType: "WFTextTokenAttachment", Value: { Type: "Variable", VariableName: "Submitted URL" } });
+    // A content-filter wrapper here is accepted by signing but leaves URL
+    // extraction disconnected in Shortcuts. It belongs only on If actions.
+    expect(detectors.every((a) => !("Variable" in (a.WFWorkflowActionParameters.WFInput as object)))).toBe(true);
     const promptIndex = actions.findIndex((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.ask");
     expect(promptIndex).toBeGreaterThan(0);
     expect(actions[promptIndex]?.WFWorkflowActionParameters).toMatchObject({ WFInputType: "Text", WFAskActionPrompt: "Paste the reel or page URL to save" });

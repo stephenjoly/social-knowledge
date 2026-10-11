@@ -53,8 +53,10 @@ def build(endpoint, token="", poll=True):
     action("comment", WFCommentActionText="Save one shared URL to Social Knowledge and show the actual server receipt. URL acceptance and completed media capture are separate results.")
     action("comment", WFCommentActionText="Setup: enter your account API key in the Text action below. Never share a personalized copy containing a key. Completion polling requires the updated server; receipt-only mode works with the existing server.")
     token_id = action("gettext", WFTextActionText=token or "PASTE_API_KEY_HERE")
-    urls = action("detect.link", WFInput={"Type": "Variable", "Variable": {
-        "WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ExtensionInput"}}})
+    # Ordinary action inputs use the attachment directly. Only If uses the
+    # content-filter Variable wrapper; wrapping detect.link disconnects its input.
+    urls = action("detect.link", WFInput={
+        "WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "ExtensionInput"}})
     input_group = condition(urls, comment="Check for shared URLs before selecting an item. If none exist, ask for a link; running from the editor has no share-sheet input.")
     shared_url = action("getitemfromlist", WFInput=variable(urls, "URLs"), WFItemSpecifier="First Item")
     action("setvariable", WFVariableName="Submitted URL", WFInput=variable(shared_url))
@@ -62,8 +64,8 @@ def build(endpoint, token="", poll=True):
     entered_url = action("ask", WFAskActionPrompt="Paste the reel or page URL to save", WFInputType="Text")
     action("setvariable", WFVariableName="Submitted URL", WFInput=variable(entered_url, "Provided Input"))
     end(input_group)
-    selected_urls = action("detect.link", WFInput={"Type": "Variable", "Variable": {
-        "WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "Variable", "VariableName": "Submitted URL"}}})
+    selected_urls = action("detect.link", WFInput={
+        "WFSerializationType": "WFTextTokenAttachment", "Value": {"Type": "Variable", "VariableName": "Submitted URL"}})
     valid_input = condition(selected_urls, comment="Check that pasted/shared text contains a URL before selecting an item or sending. Blank or non-link input stops locally.")
     selected_url = action("getitemfromlist", WFInput=variable(selected_urls, "URLs"), WFItemSpecifier="First Item")
     # Force a JSON string rather than a URL/list content item, and never POST empty input.
