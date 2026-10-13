@@ -125,6 +125,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--xml", action="store_true", help="Write a reviewable XML plist source template")
     parser.add_argument("--receipt-only", action="store_true", help="Compatible with the existing server; no completion polling")
     parser.add_argument("--personal-source", help="Private original shortcut file supplying the existing Text action token")
     args = parser.parse_args()
@@ -136,4 +137,4 @@ if __name__ == "__main__":
         if not isinstance(token, str):
             raise ValueError("Expected an existing token Text action")
     with open(args.output, "wb") as output:
-        plistlib.dump(build(args.endpoint, token, not args.receipt_only), output, fmt=plistlib.FMT_BINARY)
+        plistlib.dump(build(args.endpoint, token, not args.receipt_only), output, fmt=plistlib.FMT_XML if args.xml else plistlib.FMT_BINARY)

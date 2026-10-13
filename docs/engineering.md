@@ -32,7 +32,7 @@ Changes to browser journeys should also be exercised against a disposable runnin
 
 - Prefer small, reviewable changes with explicit acceptance criteria.
 - Preserve backward compatibility for persisted data and public API contracts unless the plan explicitly calls for a migration.
-- Keep generated artifacts and dependency caches out of commits.
+- Keep generated artifacts and dependency caches out of commits, except the intentionally versioned token-free Shortcut distribution templates under `shortcuts/`. These include reviewable sources, signed downloads, hashes, and explicit native validation status. Never commit personalized credential-bearing copies.
 - Record durable architectural decisions in the relevant source-of-truth document or the execution plan's decision log.
 - Record known, concrete deferred work in `docs/tech-debt.md`, with evidence and an exit condition.
 
