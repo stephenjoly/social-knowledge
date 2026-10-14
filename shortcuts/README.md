@@ -2,20 +2,22 @@
 
 These files stay in the repository. Do not distribute Shortcut downloads only from `/tmp` or chat attachments.
 
-## Latest candidate: v5
+**v5 failed native testing/user execution with “No URL found” after URL entry. There is currently no verified replacement. The downloads below are retained for investigation, not recommended for use.**
 
-- [Download receipt-only candidate](Save-to-Social-Knowledge-Receipt-v5-candidate.shortcut): submit a link and show the actual server receipt. Start here to verify URL input and submission with fewer actions.
-- [Download completion candidate](Save-to-Social-Knowledge-Completion-v5-candidate.shortcut): submit a link, then check capture status every five seconds for up to twelve checks.
+## Known broken: v5 — do not use
+
+- [Download receipt-only candidate](Save-to-Social-Knowledge-Receipt-v5-candidate.shortcut): archived failed candidate with fewer actions.
+- [Download completion candidate](Save-to-Social-Knowledge-Completion-v5-candidate.shortcut): archived candidate; shares the failing URL input flow.
 
 On GitHub, open the file and choose **Download raw file**. On iPhone, open the downloaded `.shortcut` file in Shortcuts. Enter your existing account API key from Social Knowledge Settings when asked; omit `Bearer`. Never send your key in chat.
 
 Run the new copy from Shortcuts to get the URL prompt, or share a URL directly to it. Blank/non-link input stops locally. A server receipt means the URL was retained; it does not mean the reel finished archiving. Unsupported links stay in Activity. Completion polling can be interrupted by iOS.
 
-**Validation status:** candidate, not a verified release. v4 was reproduced returning “No URL found” with an actual URL. v5 corrects both URL-extraction input references to use direct attachments while retaining the special If wrapper. Generator regression checks pass and these files are Apple-signed. Import, prompt-to-request execution, and completion feedback of v5 still require native verification. Signing and structural tests alone do not prove execution.
+**Validation status:** known broken, not a verified release. v4 was reproduced returning “No URL found” with an actual URL. v5 corrects both URL-extraction input references to use direct attachments while retaining the special If wrapper. Generator regression checks pass and these files are Apple-signed. The imported v5 editor shows both URL-extraction text fields blank. Prompt-to-request execution failed. A local-only diagnostic using text-token inputs is prepared, but native import/testing could not complete because the computer-use tool stalled and misdirected the file dialog. Signing and structural tests alone do not prove execution.
 
 ## Older template
 
-`Save to Social Knowledge.shortcut` is the older unsigned three-action template. It uses an example endpoint and a fixed success message; it is not the updated download. Keep it only as a historical source. Use the v5 candidates above for the current receipt/status contract.
+`Save to Social Knowledge.shortcut` is the older unsigned three-action template. It uses an example endpoint and a fixed success message; it is not the updated download. Keep it only as a historical source. Do not use v5 or the older template as a verified replacement; repair and native validation remain in progress.
 
 ## Source and regeneration
 

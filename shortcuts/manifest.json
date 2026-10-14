@@ -1,12 +1,12 @@
 {
   "version": 5,
-  "status": "candidate",
+  "status": "known-broken",
   "generatedOn": "2026-10-13",
   "endpoint": "https://social-knowledge.stephenjoly.net/api/v1/jobs",
   "containsCredentials": false,
   "apiKeySetup": "Import question; PASTE_API_KEY_HERE placeholder only",
   "appleSigning": "passed",
-  "nativeExecution": "pending",
+  "nativeExecution": "failed: No URL found after URL entry",
   "files": [
     {
       "variant": "receipt",
@@ -22,5 +22,6 @@
       "download": "Save-to-Social-Knowledge-Completion-v5-candidate.shortcut",
       "downloadSha256": "2dba16890bdfda1e04e15a450b3c7dd4cbf6ea3bd76300b78c6f92b988bacd98"
     }
-  ]
+  ],
+  "nativeVerificationBlocker": "Computer-use import stalled/misdirected; local-only diagnostic not imported"
 }
