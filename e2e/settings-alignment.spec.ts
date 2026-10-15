@@ -1,12 +1,14 @@
 import { expect, test } from "@playwright/test";
 import { hash } from "@node-rs/argon2";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { buildApp } from "../src/app.js";
 import { JobStore } from "../src/db.js";
 import { EventHub } from "../src/events.js";
 import { testConfig } from "../test/helpers.js";
+import { createHash } from "node:crypto";
+import { shortcutDownloads } from "../web/shortcut-setup.js";
 
 const port = 8803;
 let root = "";
@@ -63,4 +65,42 @@ test("settings topics keep their geometry when scrolling changes", async ({ page
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator(".settings-mobile-topics")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+
+test("signed-in users can download the signed Shortcut from API key settings", async ({ page }) => {
+  await page.goto(`http://127.0.0.1:${port}`);
+  await expect(page.getByRole("link", { name: "Download iPhone Shortcut" })).toHaveCount(0);
+  await page.getByLabel("Username").fill("qa-user");
+  await page.getByLabel("Password").fill("a-strong-qa-password");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Open Settings", exact: true }).click();
+  await page.getByRole("navigation", { name: "Settings topics" }).getByRole("button", { name: "API keys", exact: true }).click();
+  const setup = page.getByRole("region", { name: "Save reels from your iPhone" });
+  await expect(setup).toContainText("contains no API key");
+  await expect(page.getByRole("button", { name: "Create API key", exact: true })).toBeVisible();
+  const manifest = JSON.parse(await readFile("shortcuts/manifest.json", "utf8")) as { files: Array<{ variant: string; download: string; downloadSha256: string }> };
+  for (const variant of ["completion", "receipt"] as const) {
+    const artifact = manifest.files.find(file => file.variant === variant)!;
+    const content = await readFile(`shortcuts/${artifact.download}`);
+    await page.route(shortcutDownloads[variant], async route => {
+      expect(route.request().headers().authorization).toBeUndefined();
+      expect(route.request().headers().cookie).toBeUndefined();
+      expect(route.request().headers().referer).toBeUndefined();
+      await route.fulfill({ body: content, contentType: "application/octet-stream", headers: { "content-disposition": `attachment; filename="${artifact.download}"` } });
+    });
+    const link = setup.getByRole("link", { name: variant === "completion" ? "Download iPhone Shortcut" : "Receipt-only version", exact: true });
+    await expect(link).toHaveAttribute("href", shortcutDownloads[variant]);
+    const downloading = page.waitForEvent("download");
+    await link.click();
+    const download = await downloading;
+    expect(download.suggestedFilename()).toBe(artifact.download);
+    const downloaded = await readFile((await download.path())!);
+    expect(createHash("sha256").update(downloaded).digest("hex")).toBe(artifact.downloadSha256);
+    await expect(setup).toBeVisible();
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(setup.getByRole("link", { name: "Download iPhone Shortcut", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await setup.screenshot({ path: path.join(os.tmpdir(), "social-shortcut-settings-mobile.png") });
 });

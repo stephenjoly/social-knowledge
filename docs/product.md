@@ -67,3 +67,7 @@ The service does not bypass DRM, paywalls, access controls, or platform permissi
 ## Definition of a good change
 
 A product change should identify the affected journey, state observable acceptance criteria, preserve privacy and provenance, cover failure behavior, and include a way to verify the result without production data. Material scope changes belong in an execution plan and should update this document.
+
+## Apple Shortcut setup
+
+Settings → API keys provides a signed v6 completion Shortcut download and an optional receipt-only variant, alongside account-key creation and import/share instructions. Downloads are public and contain no credentials; users enter their own key in Shortcuts. The published templates connect to social-knowledge.stephenjoly.net, which is shown in the setup card. Files are pinned to the tested repository commit so later branch changes cannot replace the download silently.

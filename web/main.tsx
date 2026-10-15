@@ -65,6 +65,7 @@ import "./settings.css";
 import "./inbox.css";
 import "./typography.css";
 import { MyAccount, PeopleAccess, type AccountUser } from "./account-settings";
+import { ShortcutSetup } from "./shortcut-setup";
 
 type Asset = {
   id: string;
@@ -3329,6 +3330,7 @@ function Settings({ user, onUserChange, onSignOut }: { user: AccountUser | null;
               {showTopic("api") && (
                 <section className="settings-card settings-api-keys-card">
                   <h2>API keys</h2>
+                  <ShortcutSetup />
                   <p className="settings-help">
                     Each account key can submit captures and read, search, and
                     export your knowledge through the Agent API. It cannot

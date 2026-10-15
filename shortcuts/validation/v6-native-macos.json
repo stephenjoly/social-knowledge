@@ -1,0 +1,347 @@
+{
+  "platform": "macOS Shortcuts",
+  "results": [
+    {
+      "case": "receipt-shared-facebook",
+      "passed": true,
+      "visibleResult": "Reel archived successfully",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        }
+      ]
+    },
+    {
+      "case": "receipt-prompt-facebook",
+      "passed": true,
+      "visibleResult": "Reel archived successfully",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        }
+      ]
+    },
+    {
+      "case": "receipt-bare-facebook",
+      "passed": true,
+      "visibleResult": "Reel archived successfully",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        }
+      ]
+    },
+    {
+      "case": "receipt-share-text",
+      "passed": true,
+      "visibleResult": "Reel archived successfully",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        }
+      ]
+    },
+    {
+      "case": "receipt-instagram",
+      "passed": true,
+      "visibleResult": "Reel archived successfully",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        }
+      ]
+    },
+    {
+      "case": "receipt-empty",
+      "passed": true,
+      "visibleResult": "No URL found",
+      "requests": []
+    },
+    {
+      "case": "receipt-invalid",
+      "passed": true,
+      "visibleResult": "No URL found",
+      "requests": []
+    },
+    {
+      "case": "receipt-cancel",
+      "passed": true,
+      "visibleResult": "cancelled",
+      "requests": []
+    },
+    {
+      "case": "receipt-unauthorized",
+      "passed": true,
+      "visibleResult": "Server did not confirm saving this URL",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        }
+      ]
+    },
+    {
+      "case": "receipt-failed",
+      "passed": true,
+      "visibleResult": "URL saved; media capture needs attention",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        }
+      ]
+    },
+    {
+      "case": "receipt-queued",
+      "passed": true,
+      "visibleResult": "Server received and saved your URL. Capture is still processing",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        }
+      ]
+    },
+    {
+      "case": "completion-prompt-facebook",
+      "passed": true,
+      "visibleResult": "Reel archived successfully",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        }
+      ]
+    },
+    {
+      "case": "completion-failed",
+      "passed": true,
+      "visibleResult": "URL saved; media capture failed or is unsupported",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        }
+      ]
+    },
+    {
+      "case": "receipt-tiktok",
+      "passed": true,
+      "visibleResult": "URL saved; media capture needs attention",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        }
+      ]
+    },
+    {
+      "case": "completion-bare-facebook",
+      "passed": true,
+      "visibleResult": "Reel archived successfully",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        }
+      ]
+    },
+    {
+      "case": "completion-unauthorized",
+      "passed": true,
+      "visibleResult": "Server did not confirm saving this URL",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        }
+      ]
+    },
+    {
+      "case": "completion-timeout",
+      "passed": true,
+      "visibleResult": "Server received and saved your URL. Capture is still processing",
+      "requests": [
+        {
+          "method": "POST",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true,
+          "testUrlScheme": "https"
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        },
+        {
+          "method": "GET",
+          "expectedPath": true,
+          "exactTestUrl": true,
+          "textUrl": true,
+          "dummyKey": true
+        }
+      ]
+    }
+  ],
+  "date": "2026-10-15",
+  "macOSVersion": "27.0.1",
+  "macOSBuild": "26A434",
+  "transport": "Native Shortcuts URL scheme; explicit Ask action for prompted cases",
+  "server": "Loopback synthetic receipt fixture; no production credentials or downloads",
+  "limitations": [
+    "Actual iPhone Share Sheet not exercised",
+    "Live account capture not exercised"
+  ]
+}
