@@ -35,3 +35,7 @@ python3 scripts/build-shortcut.py --endpoint https://social-knowledge.stephenjol
 ```
 
 Convert each source to binary with `plistlib`, then sign that same graph with `shortcuts sign --mode anyone`. Do not regenerate UUIDs between source and signing input. Re-run native acceptance after action changes and update manifest hashes/evidence. Signing and structural tests alone do not prove execution. Never use `--personal-source` for repository artifacts or commit a personalized copy.
+
+## In-app setup
+
+The Settings → API keys setup card links to the signed v6 files pinned at commit `e3c7c00b9ba53a24a699add68efb8698c21d68d9`. Updating the published version requires changing the card links as well as these templates and their validation evidence. The card becomes available after the app change is deployed. The owner reported successful real-world use of v6 after the native test run; the committed evidence remains the reproducible local test record.
