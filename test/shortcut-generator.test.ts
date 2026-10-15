@@ -50,7 +50,7 @@ describe("native Shortcut serialization", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]?.WFWorkflowActionParameters.WFHTTPMethod).toBe("POST");
     const detector = workflow.WFWorkflowActions.find((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.detect.link");
-    expect(detector?.WFWorkflowActionParameters.WFInput).toMatchObject({ WFSerializationType: "WFTextTokenAttachment", Value: { Type: "ExtensionInput" } });
+    expect(detector?.WFWorkflowActionParameters.WFInput).toEqual({ WFSerializationType: "WFTextTokenString", Value: { string: "\ufffc", attachmentsByRange: { "{0, 1}": { Type: "ExtensionInput" } } } });
     expect(detector?.WFWorkflowActionParameters.WFInput).not.toHaveProperty("Variable");
   });
 });
@@ -62,9 +62,9 @@ describe("Shortcut submission input", () => {
     const actions = workflow.WFWorkflowActions;
     const detectors = actions.filter((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.detect.link");
     expect(detectors).toHaveLength(2);
-    expect(detectors[1]?.WFWorkflowActionParameters.WFInput).toEqual({ WFSerializationType: "WFTextTokenAttachment", Value: { Type: "Variable", VariableName: "Submitted URL" } });
-    // A content-filter wrapper here is accepted by signing but leaves URL
-    // extraction disconnected in Shortcuts. It belongs only on If actions.
+    expect(detectors[1]?.WFWorkflowActionParameters.WFInput).toEqual({ WFSerializationType: "WFTextTokenString", Value: { string: "\ufffc", attachmentsByRange: { "{0, 1}": { Type: "Variable", VariableName: "Submitted URL" } } } });
+    // Native execution verified these text parameters require token strings.
+    // Both bare attachments and If wrappers import as blank URL inputs.
     expect(detectors.every((a) => !("Variable" in (a.WFWorkflowActionParameters.WFInput as object)))).toBe(true);
     const promptIndex = actions.findIndex((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.ask");
     expect(promptIndex).toBeGreaterThan(0);
@@ -89,6 +89,15 @@ describe("Shortcut submission input", () => {
     const producerIndex = actions.findIndex((a) => a.WFWorkflowActionParameters.UUID === producerId);
     expect(producerIndex).toBeGreaterThan(end);
     expect(actions[producerIndex]?.WFWorkflowActionIdentifier).toBe("is.workflow.actions.gettext");
+    const secure = actions.slice(end + 1, producerIndex).find((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.text.replace");
+    expect(secure?.WFWorkflowActionParameters).toMatchObject({
+      WFReplaceTextFind: "^http://", WFReplaceTextReplace: "https://",
+      WFReplaceTextRegularExpression: true, WFReplaceTextCaseSensitive: false,
+      WFInput: { WFSerializationType: "WFTextTokenString" },
+    });
+    expect(actions[producerIndex]?.WFWorkflowActionParameters.WFTextActionText).toMatchObject({
+      Value: { attachmentsByRange: { "{0, 1}": { OutputUUID: secure?.WFWorkflowActionParameters.UUID } } },
+    });
     const detector = actions.slice(end + 1, producerIndex).find((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.detect.link")!;
     const guard = actions.slice(end + 1, producerIndex).find((a) => a.WFWorkflowActionIdentifier === "is.workflow.actions.conditional");
     expect(guard?.WFWorkflowActionParameters).toMatchObject({ WFCondition: 100, WFControlFlowMode: 0, WFInput: { Variable: { Value: { OutputUUID: detector.WFWorkflowActionParameters.UUID } } } });
@@ -106,5 +115,49 @@ describe("Shortcut submission input", () => {
     const guardEnd = actions.findIndex((a) => a.WFWorkflowActionParameters.GroupingIdentifier === guardGroup && a.WFWorkflowActionParameters.WFControlFlowMode === 2);
     expect(guardEnd).toBeGreaterThan(requestIndex);
     expect(actions[guardEnd + 1]?.WFWorkflowActionParameters.Text).toContain("Nothing was sent");
+  });
+});
+
+
+describe("distributed v6 Shortcut graphs", () => {
+  it("ships the native-tested graph with only deployment configuration changed", () => {
+    const verify = `import hashlib, importlib.util, json, plistlib, re
+from pathlib import Path
+spec=importlib.util.spec_from_file_location("builder", "scripts/build-shortcut.py")
+m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+def canonical(value):
+    ids={}
+    def visit(v):
+        if isinstance(v,dict):return {k:visit(v[k]) for k in sorted(v)}
+        if isinstance(v,list):return [visit(x) for x in v]
+        if isinstance(v,str) and re.fullmatch(r"[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}",v):
+            if v not in ids:ids[v]=str(len(ids))
+            return ids[v]
+        return v
+    return visit(value)
+endpoint="https://social-knowledge.stephenjoly.net/api/v1/jobs"
+for variant in ("receipt","completion"):
+    public=plistlib.loads(Path(f"shortcuts/templates/{variant}-v6.plist").read_bytes())
+    probe=plistlib.loads(Path(f"test/fixtures/shortcuts/{variant}-v6-probe.plist").read_bytes())
+    assert canonical(public)==canonical(m.build(endpoint,poll=variant=="completion"))
+    public["WFWorkflowActions"][2]["WFWorkflowActionParameters"]["WFTextActionText"]="LOCAL_TEST_PLACEHOLDER"
+    public["WFWorkflowImportQuestions"]=[]
+    for action in public["WFWorkflowActions"]:
+        p=action["WFWorkflowActionParameters"]
+        if action["WFWorkflowActionIdentifier"]=="is.workflow.actions.downloadurl":
+            if p["WFHTTPMethod"]=="POST":p["WFURL"]="http://127.0.0.1:18787/api/v1/jobs"
+            else:
+                v=p["WFURL"]["Value"]
+                v["string"]=v["string"].replace("https://social-knowledge.stephenjoly.net","http://127.0.0.1:18787")
+                v["attachmentsByRange"]={"{%d, 1}"%v["string"].index(chr(0xfffc)):next(iter(v["attachmentsByRange"].values()))}
+    assert public==probe,variant
+manifest=json.loads(Path("shortcuts/manifest.json").read_text())
+assert manifest["version"]==6
+for artifact in manifest["files"]:
+    for kind in ("source","download"):
+        assert hashlib.sha256((Path("shortcuts")/artifact[kind]).read_bytes()).hexdigest()==artifact[kind+"Sha256"]
+assert hashlib.sha256((Path("shortcuts")/manifest["nativeEvidence"]).read_bytes()).hexdigest()==manifest["nativeEvidenceSha256"]
+print("native graph parity passed")`;
+    expect(execFileSync("python3", ["-c", verify], { encoding: "utf8" })).toContain("native graph parity passed");
   });
 });

@@ -1,45 +1,37 @@
 # Social Knowledge Shortcut templates
 
-These files stay in the repository. Do not distribute Shortcut downloads only from `/tmp` or chat attachments.
+## v6 — native macOS execution verified
 
-**v5 failed native testing/user execution with “No URL found” after URL entry. There is currently no verified replacement. The downloads below are retained for investigation, not recommended for use.**
+- [Download completion shortcut](Save-to-Social-Knowledge-Completion-v6.shortcut) — recommended: confirms receipt, then checks for completion/failure for about one minute.
+- [Download receipt-only shortcut](Save-to-Social-Knowledge-Receipt-v6.shortcut) — confirms receipt immediately and lets capture continue in Activity.
 
-## Known broken: v5 — do not use
+On GitHub, open the file and choose **Download raw file**. On iPhone, open the downloaded `.shortcut` file in Shortcuts and enter your account API key from Social Knowledge Settings when asked. Omit `Bearer`. Never share your key or a personalized exported shortcut.
 
-- [Download receipt-only candidate](Save-to-Social-Knowledge-Receipt-v5-candidate.shortcut): archived failed candidate with fewer actions.
-- [Download completion candidate](Save-to-Social-Knowledge-Completion-v5-candidate.shortcut): archived candidate; shares the failing URL input flow.
+Use **Share → Save-to-Social-Knowledge-Completion-v6** on a reel. The shortcut receives URLs, text containing links, and Safari web pages. If no shared URL is available, it asks you to paste one. Bare domains such as `facebook.com/reel/1687517479753343` are converted to HTTPS. It saves the first detected URL. Blank/non-link input shows “Nothing was sent”; cancelling stops without a request. A blank invocation is not a connection test.
 
-On GitHub, open the file and choose **Download raw file**. On iPhone, open the downloaded `.shortcut` file in Shortcuts. Enter your existing account API key from Social Knowledge Settings when asked; omit `Bearer`. Never send your key in chat.
+A receipt confirms that the server retained the URL; it does not imply finished media capture. Unsupported links remain in Activity with a failure/unsupported status. Rejected keys show the server error. Completion polling stops after twelve checks, five seconds apart, and reports that capture is still processing. iOS can interrupt polling; this is not a guaranteed background callback.
 
-Run the new copy from Shortcuts to get the URL prompt, or share a URL directly to it. Blank/non-link input stops locally. A server receipt means the URL was retained; it does not mean the reel finished archiving. Unsupported links stay in Activity. Completion polling can be interrupted by iOS.
+## What was verified
 
-**Validation status:** known broken, not a verified release. v4 was reproduced returning “No URL found” with an actual URL. v5 corrects both URL-extraction input references to use direct attachments while retaining the special If wrapper. Generator regression checks pass and these files are Apple-signed. The imported v5 editor shows both URL-extraction text fields blank. Prompt-to-request execution failed. A local-only diagnostic using text-token inputs is prepared, but native import/testing could not complete because the computer-use tool stalled and misdirected the file dialog. Signing and structural tests alone do not prove execution.
+v5 used the wrong serialization for both Get URLs from Input fields. Those text parameters need `WFTextTokenString` containing a variable attachment. A bare attachment or the If-specific wrapper leaves the fields blank. v6 fixes both bindings and upgrades detected HTTP links to HTTPS before submission.
 
-## Older template
+Both variants were actually imported and executed in macOS Shortcuts against a loopback mock server with a dummy key. Native dialogs and exact HTTP URL/body/authentication were checked for shared text, prompted input, bare Facebook URLs, Instagram, TikTok retention feedback, empty/invalid input, cancellation, rejected authentication, failed/queued/completed receipts, completion polling, and the polling timeout. See [native test evidence](validation/v6-native-macos.json) and [the reproducible test fixture](../test/fixtures/shortcuts/README.md).
 
-`Save to Social Knowledge.shortcut` is the older unsigned three-action template. It uses an example endpoint and a fixed success message; it is not the updated download. Keep it only as a historical source. Do not use v5 or the older template as a verified replacement; repair and native validation remain in progress.
+The downloadable graphs reuse the tested action UUIDs and inputs. Only the server URL, key placeholder, and import question differ from the local test copies. Source and signed-download hashes appear in [manifest.json](manifest.json). The entire repository check also passed.
+
+**Limits:** these tests used synthetic server responses, not a real reel download. The actual iPhone Share Sheet and a live account capture were not exercised in this native test run. Backend retention/ownership/status behavior has separate integration and previously deployed acceptance tests. No production server change is required for v6.
+
+## Previous versions
+
+v5 failed with “No URL found” after URL entry. Its files and templates remain solely for diagnosis; do not use them. `Save to Social Knowledge.shortcut` is an older unsigned three-action historical template with an example endpoint and fixed success message.
 
 ## Source and regeneration
 
-Reviewable unsigned sources are under [templates/](templates/); signed downloads and their hashes are listed in [manifest.json](manifest.json). All committed sources use the `PASTE_API_KEY_HERE` placeholder and an import question. The endpoint is the existing production service; no server deployment is needed to replace the Shortcut.
-
-Generate sources and signing inputs from the repository root:
+Keep all future token-free templates and signed downloads in this repository, not only `/tmp` or chat attachments. Reviewable sources are under [templates/](templates/).
 
 ```bash
-python3 scripts/build-shortcut.py --endpoint https://social-knowledge.stephenjoly.net/api/v1/jobs --receipt-only --xml --output shortcuts/templates/receipt-v5-candidate.plist
-python3 scripts/build-shortcut.py --endpoint https://social-knowledge.stephenjoly.net/api/v1/jobs --xml --output shortcuts/templates/completion-v5-candidate.plist
-python3 - <<'SOURCES'
-import plistlib
-from pathlib import Path
-for variant in ("receipt", "completion"):
-    source = Path("shortcuts/templates") / f"{variant}-v5-candidate.plist"
-    with source.open("rb") as file:
-        workflow = plistlib.load(file)
-    with open(f"/tmp/social-{variant}.shortcut", "wb") as file:
-        plistlib.dump(workflow, file, fmt=plistlib.FMT_BINARY)
-SOURCES
-shortcuts sign --mode anyone --input /tmp/social-receipt.shortcut --output shortcuts/Save-to-Social-Knowledge-Receipt-v5-candidate.shortcut
-shortcuts sign --mode anyone --input /tmp/social-completion.shortcut --output shortcuts/Save-to-Social-Knowledge-Completion-v5-candidate.shortcut
+python3 scripts/build-shortcut.py --endpoint https://social-knowledge.stephenjoly.net/api/v1/jobs --receipt-only --xml --output shortcuts/templates/receipt-v6.plist
+python3 scripts/build-shortcut.py --endpoint https://social-knowledge.stephenjoly.net/api/v1/jobs --xml --output shortcuts/templates/completion-v6.plist
 ```
 
-Use one generated workflow per variant when updating sources and signing inputs: convert the XML source to binary with `plistlib` rather than generating a second set of UUIDs. Update manifest hashes after replacing downloads. Keep future versions here, with their validation status and setup instructions. Commit only token-free distribution templates. Never use `--personal-source` for repository artifacts or commit a personalized exported Shortcut.
+Convert each source to binary with `plistlib`, then sign that same graph with `shortcuts sign --mode anyone`. Do not regenerate UUIDs between source and signing input. Re-run native acceptance after action changes and update manifest hashes/evidence. Signing and structural tests alone do not prove execution. Never use `--personal-source` for repository artifacts or commit a personalized copy.

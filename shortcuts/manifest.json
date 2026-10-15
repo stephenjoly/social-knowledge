@@ -1,27 +1,32 @@
 {
-  "version": 5,
-  "status": "known-broken",
-  "generatedOn": "2026-10-13",
+  "version": 6,
+  "status": "macos-native-tested",
+  "generatedOn": "2026-10-15",
   "endpoint": "https://social-knowledge.stephenjoly.net/api/v1/jobs",
   "containsCredentials": false,
   "apiKeySetup": "Import question; PASTE_API_KEY_HERE placeholder only",
   "appleSigning": "passed",
-  "nativeExecution": "failed: No URL found after URL entry",
+  "nativeExecution": "17 cases passed in native macOS Shortcuts against loopback synthetic server",
+  "nativeEvidence": "validation/v6-native-macos.json",
+  "nativeEvidenceSha256": "6d2a0ce4bbb9f1d94383d2f9989fc8486ff098a7256aaa931227875092ba9f78",
+  "nativeLimitations": [
+    "Actual iPhone Share Sheet not exercised",
+    "Live account media capture not exercised"
+  ],
   "files": [
     {
       "variant": "receipt",
-      "source": "templates/receipt-v5-candidate.plist",
-      "sourceSha256": "1aa36fe6cbc9aa61a742897655d4e8a2be55bce833373081174a013e75e1c74d",
-      "download": "Save-to-Social-Knowledge-Receipt-v5-candidate.shortcut",
-      "downloadSha256": "cfa8f21293e7871d12c4696709ef2f4bf50bdf02ecb055291f6f5d0cc738d575"
+      "source": "templates/receipt-v6.plist",
+      "sourceSha256": "02f585ed02a0547deb308153b2ca49183bfc8c49c78ad4784bad1ed91e747315",
+      "download": "Save-to-Social-Knowledge-Receipt-v6.shortcut",
+      "downloadSha256": "d3d6cd724b40cc8f234c2bdff5336ae4dedadcc3e36d414def0940a1623cfe7c"
     },
     {
       "variant": "completion",
-      "source": "templates/completion-v5-candidate.plist",
-      "sourceSha256": "7f48287133a69b2db0a78bbe6f982aeade8ccb985f36df8935e99cd51b2fff76",
-      "download": "Save-to-Social-Knowledge-Completion-v5-candidate.shortcut",
-      "downloadSha256": "2dba16890bdfda1e04e15a450b3c7dd4cbf6ea3bd76300b78c6f92b988bacd98"
+      "source": "templates/completion-v6.plist",
+      "sourceSha256": "9629414c1fd0b581138528219e39af01f74b32b83a99f7a00bad080e70951848",
+      "download": "Save-to-Social-Knowledge-Completion-v6.shortcut",
+      "downloadSha256": "26c8f76d4fe42b0060d086aebfc3106ce4488eddfa8fa6c6b417050ad69a162e"
     }
-  ],
-  "nativeVerificationBlocker": "Computer-use import stalled/misdirected; local-only diagnostic not imported"
+  ]
 }

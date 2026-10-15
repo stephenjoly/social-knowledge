@@ -137,7 +137,7 @@ Troubleshooting: a `401` response means the OAuth connection or API key is missi
 
 ## Apple Shortcut contract
 
-Check native validation status before using any token-free template (v5 is currently known broken) in [shortcuts/](shortcuts/README.md). Sources and Apple-signed candidates are versioned in the repository; temporary chat links are not the distribution source.
+Download the token-free v6 shortcuts from [shortcuts/](shortcuts/README.md). Both variants passed native macOS tests against a local test server; actual iPhone/live-account acceptance remains separate. Sources, Apple-signed downloads, and validation evidence are versioned in the repository. v5 remains known broken.
 
 Generate an importable Share Sheet Shortcut without embedding a secret:
 

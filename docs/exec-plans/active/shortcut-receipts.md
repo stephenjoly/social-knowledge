@@ -24,9 +24,10 @@ Reuse persisted jobs and existing failure states/codes; no schema migration. Add
 - [x] Inspect shared Shortcut and validate credential privately.
 - [x] Implement retention, safe status, and Shortcut generator.
 - [x] Complete checks: npm run check (158 tests), two Activity browser tests, and both token-free artifacts signed successfully. Native import/run verification remains blocked by computer-use denial.
-- [ ] Production rollout and on-device acceptance after owner approval.
+- [x] Backend production rollout completed through release PR #44; live server acceptance passed.
+- [ ] iPhone Share Sheet/live account acceptance (not accessible from this Mac).
 - [x] Correct reported blank If inputs: use Variable wrapper, coerce status to Text, validate references, and add generator regression tests.
-- [ ] Verify replacement on-device; native automation currently fails startup.
+- [x] Verify replacement in native macOS Shortcuts; 17 cases passed for v6.
 
 ## Decisions
 - 2026-10-03: Owner confirmed all unsupported links should be retained. Bookmarks live in Activity, separate from completed captures.
@@ -57,3 +58,13 @@ The owner requested actual repository files because temporary downloads disappea
 The owner supplied a native v5 screenshot showing “No URL found” after entering a URL. Native editor inspection confirmed both `detect.link` WFInput text controls displayed no bound value. Hypothesis: these text parameters require WFTextTokenString with variable attachments, rather than the previously assumed generic attachment representation. A token-free local-only diagnostic template using text-token inputs and a loopback mock endpoint was signed, but it was not imported: computer-use commands took minutes, one took hours, and the file-dialog operation landed in an unrelated directory. No probe is present in Apple CLI inventory and the mock server received zero requests. There is no successful native validation of this candidate hypothesis.
 
 v5 downloads are marked known broken in README/manifest and must not be recommended as working. Preserve artifacts for diagnosis. Do not publish another version as ready until imported native execution proves exact URL and JSON body, prompted input, shared input, empty input, authentication failure, durable receipt, and completion/failure feedback. The blocker is native UI automation; no production credentials or data were used by the diagnostic.
+
+
+## v6 repair and native acceptance — 2026-10-15
+The owner explicitly authorized AppleScript for local testing after the computer-use tool repeatedly hung, then enabled the required Accessibility permission. Native import and visible dialog inspection succeeded. Both Get URLs from Input parameters require WFTextTokenString containing variable attachments. Changing only those inputs made the existing local probe send the exact prompted/shared URL and dummy authorization. Apple also turns a bare Facebook domain into an HTTP URL; v6 upgrades a leading HTTP scheme to HTTPS before the JSON submission.
+
+Seventeen native cases passed against the loopback fixture: prompted/shared URLs, the owner's bare Facebook link, links embedded in text, Instagram, TikTok failed/retained feedback, empty/invalid input, cancellation, rejected keys, immediate complete/failed/queued receipts, completion/failure polling, and a still-processing result after exactly twelve GETs. Visible native messages and exact request URL, body type, authorization, path, and count were asserted. The first mixed-text simulation failed because URL-scheme form encoding used `+` for spaces; the harness now percent-encodes spaces and the case passed. Evidence and harness are committed with v6.
+
+The public source graphs reuse the tested UUIDs; only endpoint/key/import setup differs. A regression checks both generator-to-source parity and exact public-to-probe action parity. Sources, signed downloads, hashes and native evidence remain in `shortcuts/`. No server deployment is required. The test server returns synthetic receipts; this does not prove a real reel download or actual iPhone Share Sheet behavior. The separate backend integration tests cover durable retention and ownership.
+
+Final v6 verification: `npm run check` passed documentation validation, TypeScript, production build, and 164 tests across 30 files. Both public variants were Apple-signed; hashes and graph parity checks passed. Local mock server stopped after 17 successful native cases.
