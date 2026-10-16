@@ -646,6 +646,7 @@ function safeActivityEvent(event: ActivityEvent): ActivityEvent | null {
   };
 }
 type ApiKey = {
+  scope: "full" | "capture";
   id: string;
   name: string;
   prefix: string;
@@ -3330,9 +3331,9 @@ function Settings({ user, onUserChange, onSignOut }: { user: AccountUser | null;
               {showTopic("api") && (
                 <section className="settings-card settings-api-keys-card">
                   <h2>API keys</h2>
-                  <ShortcutSetup />
+                  <ShortcutSetup onCreated={() => load()} keyIds={keys.map((key) => key.id)} />
                   <p className="settings-help">
-                    Each account key can submit captures and read, search, and
+                    General API keys can submit captures and read, search, and
                     export your knowledge through the Agent API. It cannot
                     manage your account or settings.
                   </p>
@@ -3372,7 +3373,7 @@ function Settings({ user, onUserChange, onSignOut }: { user: AccountUser | null;
                         <div>
                           <strong>{key.name}</strong>
                           <small>
-                            {key.prefix}… · created{" "}
+                            {key.scope === "capture" ? "Capture only" : "Capture and knowledge access"} · {key.prefix}… · created{" "}
                             {new Date(key.createdAt).toLocaleDateString()} ·{" "}
                             {key.lastUsedAt
                               ? `last used ${new Date(key.lastUsedAt).toLocaleDateString()}`
