@@ -233,3 +233,11 @@ npm run test:e2e
 Playwright builds the UI and starts a disposable loopback-only Fastify server on port 4185 automatically. Self-contained tests also start their own synthetic SQLite fixture servers. The archive test requires a separately running synthetic deployment and `E2E_USERNAME`/`E2E_PASSWORD`; absent credentials intentionally skip it. Never use production data.
 
 Agents may run these commands autonomously for authorized local QA. Keep test data synthetic and do not submit real messages, calls, or production writes. Retain failure traces/screenshots outside Git; report failed and skipped tests explicitly. Browser caches are shared per host, while dependencies are installed per worktree.
+
+### Guided Shortcut setup
+
+In Settings → API keys, choose **Create Shortcut key**, copy the key, and paste it when importing the signed download. These keys only submit links, check account-owned receipts, and call `GET /api/v1/shortcut/connection`; they cannot search or export knowledge. **Test connection** validates the bearer key from this browser and reports whether AI task configuration is saved. It creates no job and does not verify iPhone installation or live AI access. Existing general API keys keep their permissions.
+
+The key-creation API accepts optional `scope: "capture" | "full"` (default `full` for existing clients). The connection endpoint requires an active account bearer key, ignores browser cookies, returns `{ ok: true, scope, captureReady }`, and disables caching. Missing/revoked/suspended credentials receive 401.
+
+Before rolling back to code predating key scopes, revoke capture-only keys: old code would otherwise treat them as general keys.
