@@ -71,3 +71,5 @@ A product change should identify the affected journey, state observable acceptan
 ## Apple Shortcut setup
 
 Settings → API keys provides a signed v6 completion Shortcut download and an optional receipt-only variant, alongside account-key creation and import/share instructions. Downloads are public and contain no credentials; users enter their own key in Shortcuts. The published templates connect to social-knowledge.stephenjoly.net, which is shown in the setup card. Files are pinned to the tested repository commit so later branch changes cannot replace the download silently.
+
+Guided setup creates a named capture-only key, offers a copy action with manual-copy fallback, and tests the bearer credential without creating a capture. Users still paste the key once during import. The test checks browser connectivity and saved AI configuration, not iPhone installation or live provider availability. Capture-only keys cannot access Agent API or MCP knowledge; existing general keys retain their permissions. Revocation remains in the account key list.

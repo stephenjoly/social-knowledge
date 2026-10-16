@@ -756,6 +756,23 @@ export function buildApp(
     },
   );
 
+  // Bearer-only diagnostic: browser sessions must not mask a missing/revoked key.
+  app.get("/api/v1/shortcut/connection", {
+    config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+  }, async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const principal = auth.apiPrincipal(request);
+    if (!principal) return reply.code(401).send({ error: "unauthorized" });
+    let captureReady = false;
+    try {
+      aiProviderService.captureSelections(principal.userId);
+      captureReady = true;
+    } catch {
+      // This check verifies saved configuration, not live provider access.
+    }
+    return { ok: true, scope: principal.scope, captureReady };
+  });
+
   // Capture credentials can inspect only their own receipt, without browser cookies.
   app.get(
     "/api/v1/shortcut/jobs/:id",
@@ -799,6 +816,7 @@ export function buildApp(
     agentApi.addHook("onRequest", async (request, reply) => {
       const principal = auth.apiPrincipal(request);
       if (!principal) return reply.code(401).send({ error: "unauthorized" });
+      if (principal.scope !== "full") return reply.code(403).send({ error: "insufficient_scope" });
       (request as any).agentPrincipal = principal;
       if (request.method === "GET") {
         const minute = Math.floor(Date.now() / 60000),
@@ -1667,7 +1685,7 @@ export function buildApp(
     protectedApi.post("/api/v1/api-keys", async (request, reply) => {
       const user = auth.user(request)!;
       const input = z
-        .object({ name: z.string().trim().min(1).max(60) })
+        .object({ name: z.string().trim().min(1).max(60), scope: z.enum(["full", "capture"]).default("full") })
         .safeParse(request.body);
       if (!input.success)
         return reply.code(400).send({ error: "invalid_request" });
@@ -1677,8 +1695,9 @@ export function buildApp(
         input.data.name,
         AuthService.hashToken(token),
         token.slice(0, 10),
+        input.data.scope,
       );
-      return reply.code(201).send({ apiKey, token });
+      return reply.header("Cache-Control", "no-store").code(201).send({ apiKey, token });
     });
     protectedApi.delete("/api/v1/api-keys/:id", async (request, reply) => {
       const user = auth.user(request)!;

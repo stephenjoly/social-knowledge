@@ -64,7 +64,7 @@ export class AuthService {
     if (oauth && oauth.scope.split(" ").includes("knowledge:read"))
       return { userId: oauth.userId, credentialId: oauth.clientId, kind: "oauth" as const };
     const api = this.store.useApiKey(hash);
-    return api ? { userId: api.userId, credentialId: api.keyId, kind: "api_key" as const } : null;
+    return api?.scope === "full" ? { userId: api.userId, credentialId: api.keyId, kind: "api_key" as const } : null;
   }
   legacyToken(request: FastifyRequest) {
     const authorization = request.headers.authorization;

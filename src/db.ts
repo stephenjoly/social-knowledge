@@ -2004,17 +2004,19 @@ export class JobStore {
     name: string,
     tokenHash: string,
     prefix: string,
+    scope: "full" | "capture" = "full",
   ) {
     const id = randomUUID();
     this.database
       .prepare(
-        "INSERT INTO api_keys(id,user_id,name,token_hash,prefix,created_at,last_used_at) VALUES(?,?,?,?,?,?,NULL)",
+        "INSERT INTO api_keys(id,user_id,name,token_hash,prefix,created_at,last_used_at,scope) VALUES(?,?,?,?,?,?,NULL,?)",
       )
-      .run(id, userId, name, tokenHash, prefix, new Date().toISOString());
+      .run(id, userId, name, tokenHash, prefix, new Date().toISOString(), scope);
     return {
       id,
       name,
       prefix,
+      scope,
       createdAt: new Date().toISOString(),
       lastUsedAt: null,
     };
@@ -2022,7 +2024,7 @@ export class JobStore {
   listApiKeys(userId: string) {
     return this.database
       .prepare(
-        "SELECT id,name,prefix,created_at AS createdAt,last_used_at AS lastUsedAt FROM api_keys WHERE user_id=? ORDER BY created_at DESC",
+        "SELECT id,name,prefix,scope,created_at AS createdAt,last_used_at AS lastUsedAt FROM api_keys WHERE user_id=? ORDER BY created_at DESC",
       )
       .all(userId);
   }
@@ -2036,10 +2038,10 @@ export class JobStore {
   useApiKey(tokenHash: string) {
     const row = this.database
       .prepare(
-        "SELECT k.id,k.user_id AS userId,k.last_used_at AS lastUsedAt FROM api_keys k JOIN users u ON u.id=k.user_id WHERE k.token_hash=? AND u.suspended_at IS NULL",
+        "SELECT k.id,k.user_id AS userId,k.scope,k.last_used_at AS lastUsedAt FROM api_keys k JOIN users u ON u.id=k.user_id WHERE k.token_hash=? AND u.suspended_at IS NULL",
       )
       .get(tokenHash) as
-      { id: string; userId: string; lastUsedAt: string | null } | undefined;
+      { id: string; userId: string; scope: "full" | "capture"; lastUsedAt: string | null } | undefined;
     if (!row) return null;
     const now = new Date(),
       cutoff = new Date(now.getTime() - 300000).toISOString();
@@ -2047,7 +2049,7 @@ export class JobStore {
       this.database
         .prepare("UPDATE api_keys SET last_used_at=? WHERE id=?")
         .run(now.toISOString(), row.id);
-    return { keyId: row.id, userId: row.userId };
+    return { keyId: row.id, userId: row.userId, scope: row.scope };
   }
 
   registerOAuthClient(input: {
@@ -3208,6 +3210,9 @@ export class JobStore {
     CREATE TABLE IF NOT EXISTS platform_connections(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,platform TEXT NOT NULL CHECK(platform IN ('facebook','instagram')),encrypted_payload TEXT NOT NULL,status TEXT NOT NULL,cookie_count INTEGER NOT NULL,last_validated_at TEXT,last_used_at TEXT,last_error_code TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(user_id,platform));
     CREATE TABLE IF NOT EXISTS ai_provider_connections(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,provider TEXT NOT NULL CHECK(provider IN ('openai','cerebras')),encrypted_payload TEXT NOT NULL,status TEXT NOT NULL,key_hint TEXT NOT NULL,verified_at TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
   `);
+    const keyColumns = this.database.prepare("PRAGMA table_info(api_keys)").all() as Array<{ name: string }>;
+    if (!keyColumns.some((column) => column.name === "scope"))
+      this.database.exec("ALTER TABLE api_keys ADD COLUMN scope TEXT NOT NULL DEFAULT 'full' CHECK(scope IN ('full','capture'))");
     this.migrateAiProviderConnections();
     this.database.exec(`
       CREATE TABLE IF NOT EXISTS ai_task_selections(
