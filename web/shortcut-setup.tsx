@@ -80,7 +80,7 @@ export function ShortcutSetup({ onCreated, keyIds }: { onCreated: () => Promise<
         <input readOnly type="text" value={credential.token} autoComplete="off" spellCheck={false} onFocus={(event) => event.currentTarget.select()} />
       </label>}
       {credential && !active && !busy && <p>This key is no longer in your key list. Create a new key to reconnect.</p>}
-      {message && <p role="status">{message}</p>}
+      {message && (!credential || active) && <p role="status">{message}</p>}
       <p>The connection test checks this browser’s access and your key. After installing, share a link from your iPhone to verify the Shortcut itself.</p>
       <div className="shortcut-download-actions">
         <a className="shortcut-download" href={shortcutDownloads.completion} rel="noreferrer">

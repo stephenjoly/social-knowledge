@@ -33,6 +33,7 @@ const errors = {
     },
   },
   "401": { description: "Missing, invalid, or revoked account API key" },
+  "403": { description: "API key lacks knowledge access (capture-only scope)" },
   "404": { description: "Owned resource not found" },
   "429": {
     description: "Rate limit exceeded",
@@ -51,7 +52,7 @@ export const openApiDocument = (appUrl: string) =>
       title: "Social Knowledge Agent API",
       version: "1.0.0",
       description:
-        "Search, browse, and export an account-owned Social Knowledge archive. Account API keys can also submit captures through POST /api/v1/jobs.",
+        "Search, browse, and export an account-owned Social Knowledge archive using a full account API key. Full and capture-only keys can submit captures through POST /api/v1/jobs.",
     },
     servers: [{ url: appUrl.replace(/\/$/, "") }],
     security: [{ bearerAuth: [] }],
@@ -218,6 +219,23 @@ export const openApiDocument = (appUrl: string) =>
             "428": {
               description:
                 "URL persisted, but AI setup required; includes received=true and job receipt",
+            },
+            ...errors,
+          },
+        },
+      },
+      "/api/v1/shortcut/connection": {
+        get: {
+          operationId: "checkShortcutConnection",
+          summary: "Check an account bearer key without creating a capture",
+          description: "Accepts full or capture-only keys. Ignores browser sessions. Readiness checks saved AI configuration, not live provider access. Responses are not cached.",
+          responses: {
+            "200": {
+              description: "Credential accepted",
+              content: { "application/json": { schema: {
+                type: "object", required: ["ok", "scope", "captureReady"],
+                properties: { ok: { type: "boolean", const: true }, scope: { type: "string", enum: ["full", "capture"] }, captureReady: { type: "boolean" } },
+              } } },
             },
             ...errors,
           },

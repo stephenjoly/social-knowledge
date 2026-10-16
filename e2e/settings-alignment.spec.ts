@@ -82,7 +82,7 @@ test("signed-in users can download the signed Shortcut from API key settings", a
   await setup.getByRole("button", { name: "Create Shortcut key", exact: true }).click();
   await expect(setup.getByLabel("Shortcut key (shown only this visit)")).toHaveValue(/^sk_/);
   await expect(setup.getByRole("button", { name: "Create Shortcut key", exact: true })).toBeDisabled();
-  await expect(page.locator(".key-list")).toContainText("Capture only");
+  await expect(page.locator(".settings-api-keys-card .key-list")).toContainText("Capture only");
   await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("denied"); } } }));
   await setup.getByRole("button", { name: "Copy Shortcut key", exact: true }).click();
   await expect(setup.getByRole("status")).toContainText("Select and copy");
@@ -115,8 +115,9 @@ test("signed-in users can download the signed Shortcut from API key settings", a
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(setup.getByRole("link", { name: "Download iPhone Shortcut", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.locator(".key-list").getByRole("button", { name: "Revoke", exact: true }).click();
+  await page.locator(".settings-api-keys-card .key-list").getByRole("button", { name: "Revoke", exact: true }).click();
   await expect(setup.getByLabel("Shortcut key (shown only this visit)")).toHaveCount(0);
+  await expect(setup.getByRole("status")).toHaveCount(0);
   await expect(setup.getByRole("button", { name: "Create Shortcut key", exact: true })).toBeEnabled();
   await setup.screenshot({ path: path.join(os.tmpdir(), "social-shortcut-settings-mobile.png") });
 });

@@ -19,7 +19,6 @@ it("limits Shortcut keys, checks configuration without jobs, and respects revoca
   const owner = store.createUser("owner", "unused");
   const other = store.createUser("other", "unused");
   const auth = new AuthService(store, config);
-  const cookie = `sk_session=unused`;
   const session = auth.issueSession(owner)!;
   const { SESSION_COOKIE } = await import("../src/auth.js");
   const headers = { cookie: `${SESSION_COOKIE}=${session.token}` };
@@ -35,12 +34,11 @@ it("limits Shortcut keys, checks configuration without jobs, and respects revoca
   expect((await check()).json()).toEqual({ ok: true, scope: "capture", captureReady: false });
   expect(store.list(owner.id)).toEqual([]);
   expect((await app.inject({ url: "/api/v1/shortcut/connection", headers })).statusCode).toBe(401);
-  expect((await app.inject({ url: "/api/v1/shortcut/connection", headers: { cookie } })).statusCode).toBe(401);
   store.saveAiProviderConnection(owner.id, "openai", "test", "test-key");
   store.saveAiTaskSelections(owner.id, { transcriptionProvider: "openai", transcriptionModel: config.transcriptionModel, analysisProvider: "openai", analysisModel: config.analysisModel });
   expect((await check()).json().captureReady).toBe(true);
   expect(store.list(owner.id)).toEqual([]);
-  for (const url of ["/api/v1/knowledge/topics", "/api/v1/knowledge/captures/any", "/api/v1/knowledge/exports/any"]) {
+  for (const url of ["/api/v1/knowledge/search?q=test", "/api/v1/knowledge/topics", "/api/v1/knowledge/captures/any", "/api/v1/knowledge/exports/any"]) {
     expect((await app.inject({ url, headers: bearer })).statusCode).toBe(403);
   }
   expect((await app.inject({ method: "POST", url: "/api/v1/knowledge/exports", headers: bearer, payload: {} })).statusCode).toBe(403);

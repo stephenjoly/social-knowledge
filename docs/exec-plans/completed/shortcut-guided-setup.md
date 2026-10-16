@@ -1,6 +1,6 @@
 # Guided Shortcut credentials and diagnostics
 
-Status: active
+Status: completed
 Owner: Codex
 Started: 2026-10-16
 
@@ -22,8 +22,8 @@ Add a constrained scope column, enforce it at knowledge authorization boundaries
 
 ## Progress
 - [x] Inspect current release and credential consumers.
-- [ ] Implement and verify API, migration, and browser flow.
-- [ ] Publish draft PR and record checks.
+- [x] Implement and verify API, migration, and browser flow.
+- [x] Publish draft PR #47 and record checks.
 
 ## Decisions
 - 2026-10-16: Preserve the signed v6 import contract; guided creation removes name/permission choices while retaining one explicit copy/paste. No user secrets enter downloads or URLs.
@@ -33,3 +33,10 @@ Run scope/isolation/migration tests, npm run check, and Settings Playwright acce
 
 ## Risks and recovery
 Old application versions do not enforce scope. Revoke capture-only keys before rolling back to an older version. The additive column preserves existing records; no destructive migration is required.
+
+## Results
+- Draft PR: https://github.com/stephenjoly/social-knowledge/pull/47 (targets staging).
+- npm run check: documentation, types, build, 163 tests passed; 3 existing tests skipped. Temporary Python runtime under /tmp supplies the pre-existing generator-test dependency.
+- Settings Playwright: desktop geometry and mobile guided setup, copy success/fallback, credential test, signed-download hash/header checks, and revocation passed. Temporary Chromium/libraries under /tmp were required on this host.
+- Live disposable PR preview: health, synthetic member login, capture key creation, diagnostic, denied knowledge access, and revocation passed; synthetic test key removed.
+- Live preview browser navigation could not complete on this host; local real-browser acceptance and live preview API verification are recorded separately. No new iPhone/native execution or production deployment claimed. Signed v6 artifacts are unchanged.
