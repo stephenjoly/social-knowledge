@@ -197,11 +197,11 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   ).toBeVisible({ timeout: 10000 });
 
   await page.getByRole("button", { name: /activity/i }).click();
-  await expect(page.locator(".activity-card").first()).toBeVisible();
-  await expect(page.locator(".activity-stage").first()).toBeVisible();
-  await page.locator(".activity-card").first().click();
-  await expect(page.locator(".activity-inline-log")).toBeVisible();
-  await expect(page.locator(".activity-card").first()).not.toContainText(
+  await expect(page.locator(".activity-row").first()).toBeVisible();
+  await expect(page.locator(".activity-tracker").first()).toBeVisible();
+  await page.locator(".activity-row").first().click();
+  await expect(page.locator(".activity-log")).toBeVisible();
+  await expect(page.locator(".activity-row").first()).not.toContainText(
     "Command failed with exit code",
   );
 

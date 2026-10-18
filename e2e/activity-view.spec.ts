@@ -37,7 +37,7 @@ const job = (
     : stages(options.stage ?? "added", status === "failed"),
 });
 
-test("Activity uses safe inline logs, complete failure counts, and compact account controls", async ({ page, context }) => {
+test("Activity inspects safe logs, complete failure counts, and compact account controls", async ({ page, context }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const failedCookie = job("failed-cookie", "failed", "2026-09-24T12:01:00.000Z", {
     errorCode: "authentication_required",
@@ -107,86 +107,88 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await page.route("**/api/v1/jobs/*/retry", (route) => route.fulfill({ contentType: "application/json", body: "{}" }));
 
   await page.goto("/");
-  const inboxGeometry = await page.locator(".shell").boundingBox();
   const inboxNavigation = await page.locator('.app-nav button[data-tab="inbox"]').boundingBox();
   await page.getByRole("button", { name: "Activity", exact: true }).click();
-  const activityGeometry = await page.locator(".shell").boundingBox();
-  expect(activityGeometry?.x).toBe(inboxGeometry?.x);
-  expect(activityGeometry?.width).toBe(inboxGeometry?.width);
   expect(await page.locator('.app-nav button[data-tab="inbox"]').boundingBox()).toEqual(inboxNavigation);
 
-  await expect(page.getByRole("heading", { name: "Capture activity" })).toBeVisible();
-  await expect(page.locator(".activity-kpi")).toHaveCount(4);
-  await expect(page.locator(".activity-card")).toHaveCount(3);
-  await expect(page.locator(".activity-card.expanded")).toContainText("Newest capture");
-  await expect(page.locator(".activity-inline-log")).toContainText("Capture accepted");
-  await expect(page.locator(".activity-inline-log")).not.toContainText("secret=value");
-  await expect(page.locator(".activity-inline-log")).not.toContainText("/private/internal");
-  await expect(page.locator(".activity-card.expanded .activity-stage").filter({ hasText: "Text" })).toHaveAttribute("title", /running/);
-  const railAlignment = await page.locator(".activity-card.expanded .activity-stages").evaluate((rail) => {
-    const marker = rail.querySelector(".activity-stage-marker")!.getBoundingClientRect();
-    const line = getComputedStyle(rail, "::before");
-    return {
-      width: rail.getBoundingClientRect().width,
-      offset: Math.abs(marker.y + marker.height / 2 - rail.getBoundingClientRect().y - parseFloat(line.top) - parseFloat(line.height) / 2),
-    };
-  });
-  expect(railAlignment.width).toBeLessThanOrEqual(320);
-  expect(railAlignment.offset).toBeLessThanOrEqual(1);
-  await page.screenshot({ path: "test-results/activity-04d-desktop.png", fullPage: true });
-  await page.locator(".activity-card").filter({ hasText: "Earlier capture" }).locator(".activity-row-trigger").click();
-  await expect(page.locator(".activity-card.expanded")).toHaveCount(1);
-  await expect(page.locator(".activity-card.expanded")).toContainText("Earlier capture");
-  await expect(page.locator(".activity-card.expanded .activity-row-trigger")).toHaveCSS("outline-style", "none");
+  await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
+  await expect(page.locator(".activity-stat")).toHaveCount(4);
+  await expect(page.locator(".activity-stat.attention strong")).toHaveText("2");
+  await expect(page.locator(".activity-stat.saved strong")).toHaveText("12");
+  await expect(page.locator(".activity-row")).toHaveCount(6);
+  await expect(page.getByLabel("Filter captures")).toHaveValue("all");
+  await expect(page.locator(".activity-row.selected")).toContainText("Newest capture");
+  const inspector = page.getByRole("region", { name: "Capture details" });
+  await expect(inspector.getByRole("heading", { name: "Newest capture" })).toBeVisible();
+  await expect(inspector.locator(".activity-log")).toContainText("Capture accepted");
+  await expect(inspector.locator(".activity-log")).not.toContainText("secret=value");
+  await expect(inspector.locator(".activity-log")).not.toContainText("/private/internal");
+  await expect(inspector.locator(".activity-check.active")).toContainText("Transcribing");
+  await expect(inspector.locator(".activity-check.active")).toContainText("0:01");
+  await expect(page.locator(".activity-row.selected .activity-tracker-step")).toHaveCount(5);
+  await page.screenshot({ path: "test-results/activity-04-desktop.png" });
+
+  await page.locator(".activity-row").filter({ hasText: "Earlier capture" }).click();
+  await expect(page.locator(".activity-row.selected")).toHaveCount(1);
+  await expect(page.locator(".activity-row.selected")).toContainText("Earlier capture");
+  await expect(inspector.getByRole("heading", { name: "Earlier capture" })).toBeVisible();
+  await expect(page.locator(".activity-row.selected")).toHaveCSS("outline-style", "none");
   await page.keyboard.press("Tab");
   await page.keyboard.press("Shift+Tab");
-  await expect(page.locator(".activity-card.expanded .activity-row-trigger")).toHaveCSS("outline-style", "solid");
-  await page.locator(".activity-card").filter({ hasText: "Newest capture" }).locator(".activity-row-trigger").click();
-  await page.getByRole("button", { name: "Copy logs" }).click();
-  await expect(page.getByRole("status")).toContainText("Safe logs copied.");
-  await expect(page.locator(".activity-attention-item")).toHaveCount(2);
-  await expect(page.locator(".activity-attention")).toContainText("Highest priority first");
-  // Actionable guidance must remain readable, including with larger browser text.
-  await expect(page.locator(".activity-attention-item small").first()).toHaveCSS("font-size", "14px");
-  await expect(page.locator(".activity-attention-item small").first()).toHaveCSS("white-space", "normal");
-  await expect(page.locator(".activity-attention-item button").first()).toHaveCSS("font-size", "12px");
+  await expect(page.locator(".activity-row.selected")).toHaveCSS("outline-style", "solid");
+  await page.locator(".activity-row").filter({ hasText: "Newest capture" }).click();
+  await page.getByRole("button", { name: "Copy safe logs" }).click();
+  await expect(inspector.getByRole("status")).toContainText("Safe logs copied.");
+
+  const attention = page.locator(".activity-attention-item");
+  await expect(attention).toHaveCount(2);
+  await expect(page.locator(".activity-attention")).toContainText("2 captures failed");
+  await expect(attention.first()).toContainText("Instagram session expired");
+  await expect(attention.first()).toContainText("failed at Found · attempt 3");
+  await expect(page.getByRole("button", { name: "Fix connection" })).toHaveCount(1);
+  await expect(attention.getByRole("button", { name: "Retry", exact: true })).toHaveCount(2);
+  await attention.nth(1).locator(".activity-attention-copy").click();
+  await expect(inspector).toContainText("The post downloaded, but its video or audio could not be processed.");
+
+  // Type follows the reader's browser text size.
   await page.evaluate(() => { document.documentElement.style.fontSize = "20px"; });
-  await expect(page.locator(".activity-heading h1")).toHaveCSS("font-size", "40px");
-  await expect(page.locator(".activity-attention-item small").first()).toHaveCSS("font-size", "17.5px");
-  for (const width of [1440, 720, 390]) {
+  await expect(page.locator(".activity-header h1")).toHaveCSS("font-size", "35px");
+  await expect(page.locator(".activity-attention-copy span").first()).toHaveCSS("font-size", "15px");
+  for (const width of [1440, 1024, 720, 390]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-    await expect(page.getByRole("button", { name: "Retry all" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry all failed" })).toBeVisible();
   }
   await page.evaluate(() => { document.documentElement.style.fontSize = ""; });
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  await page.getByRole("button", { name: "All", exact: true }).click();
-  await expect(page.locator(".activity-card")).toHaveCount(6);
-  await page.locator(".activity-card").filter({ hasText: "Saved capture" }).locator(".activity-row-trigger").click();
-  await expect(page.locator(".activity-inline-log")).toContainText("Saved");
-  await expect(page.locator(".activity-inline-log")).toContainText("Capture archived");
+  await page.locator(".activity-row").filter({ hasText: "Saved capture" }).click();
+  await expect(inspector.locator(".activity-log")).toContainText("Saved");
+  await expect(inspector.locator(".activity-log")).toContainText("Capture archived");
+  await expect(inspector.locator(".activity-log")).toContainText("Includes previous attempts");
   const logEntries = page.getByLabel("Processing log entries");
-  expect(await page.locator(".activity-inline-log").evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(320);
   expect(await logEntries.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
   await logEntries.focus();
   await page.keyboard.press("End");
   await expect.poll(() => logEntries.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-  await expect(page.getByRole("button", { name: "Copy logs" })).toBeVisible();
-  await expect(page.locator(".activity-inline-log .activity-log-dot.failed")).toHaveCount(1);
-  await expect(page.locator(".activity-inline-log")).toContainText("The post downloaded, but its video or audio could not be processed.");
-  await expect(page.locator(".activity-inline-log")).toContainText("Attempt 2");
+  await expect(inspector.locator(".activity-log li.failed")).toHaveCount(1);
+  await expect(inspector.locator(".activity-log")).toContainText("The post downloaded, but its video or audio could not be processed.");
+  await expect(inspector.locator(".activity-log")).toContainText("attempt 2");
+  await expect(inspector.locator(".activity-log")).toContainText("Manual retry requested");
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.locator(".activity-inline-log").evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(320);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(page.locator(".activity-inline-log")).toContainText("Manual retry requested");
-  await page.getByRole("button", { name: "Copy logs" }).click();
+  await page.getByRole("button", { name: "Copy safe logs" }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Saved");
-  await page.locator(".activity-card").filter({ hasText: "Newest capture" }).locator(".activity-row-trigger").click();
+
+  await page.getByLabel("Filter captures").selectOption("active");
+  await expect(page.locator(".activity-row")).toHaveCount(3);
+  await page.getByLabel("Filter captures").selectOption("all");
+  await expect(page.locator(".activity-row")).toHaveCount(6);
+  await page.locator(".activity-row").filter({ hasText: "Newest capture" }).click();
   await page.getByRole("button", { name: "Load more captures" }).click();
-  await expect(page.locator(".activity-card")).toHaveCount(7);
-  await page.getByRole("button", { name: "Retry all" }).click();
+  await expect(page.locator(".activity-row")).toHaveCount(7);
+  await page.getByRole("button", { name: "Retry all failed" }).click();
   await expect(page.getByRole("button", { name: "Retrying…" }).first()).toBeDisabled();
   await expect.poll(() => retried.sort()).toEqual(["failed-cookie", "failed-media"]);
   await expect(page.locator(".activity-feedback")).toContainText("2 captures re-queued.");
@@ -204,9 +206,9 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await page.setViewportSize({ width: 900, height: 900 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator(".activity-card.expanded .activity-row-copy strong")).toHaveText("Newest capture");
-  await expect(page.locator(".activity-card.expanded .activity-row-copy strong")).toBeVisible();
-  await expect(page.getByLabel("Stage durations")).toContainText("Text running");
+  await expect(page.locator(".activity-row.selected strong")).toHaveText("Newest capture");
+  await expect(page.locator(".activity-row.selected strong")).toBeVisible();
+  await expect(page.getByLabel("Stages")).toContainText("Transcribing");
   await page.screenshot({ path: "test-results/activity-04d-mobile.png", fullPage: true });
   await page.locator(".app-menu-trigger").click();
   await expect(page.locator(".app-sidebar").getByRole("button", { name: "Open Settings" })).toBeVisible();
@@ -217,8 +219,8 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await page.route(/\/api\/v1\/jobs\/failed\?/, (route) => route.fulfill({ status: 503, body: "{}" }));
   await page.reload();
   await page.getByRole("button", { name: "Activity", exact: true }).click();
-  await expect(page.locator(".activity-attention")).toContainText("2 items");
-  await expect(page.getByRole("button", { name: "Retry all" })).toBeEnabled();
+  await expect(page.locator(".activity-attention")).toContainText("2 captures failed");
+  await expect(page.getByRole("button", { name: "Retry all failed" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Retry list" })).toBeVisible();
 });
 
@@ -240,10 +242,12 @@ test("unsupported URL bookmarks stay visible without misleading retry or platfor
   await page.getByRole("button", { name: "Activity", exact: true }).click();
   const attention = page.locator(".activity-attention-item");
   await expect(attention).toHaveCount(1);
-  await expect(attention).toContainText("www.tiktok.com");
-  await expect(attention).toContainText("Your URL is retained here");
+  await expect(attention).toContainText("tiktok.com/@example/video/123");
+  await expect(attention).toContainText("URL saved; platform not supported");
   await expect(attention).not.toContainText("Facebook");
   await expect(attention.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "All", exact: true }).click();
-  await expect(page.locator(".activity-card")).toContainText("URL saved; platform not supported");
+  await expect(attention.getByRole("button", { name: "Fix connection" })).toHaveCount(0);
+  await expect(page.locator(".activity-row")).toContainText("Failed at Added");
+  await expect(page.locator(".activity-row")).toContainText("www.tiktok.com");
+  await expect(page.getByRole("region", { name: "Capture details" })).toContainText("Your URL is retained here");
 });

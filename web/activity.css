@@ -1,0 +1,709 @@
+/*
+ * Activity page, screen 04 of the UI v2 contract. Geometry follows
+ * docs/design/ui-v2/pen-sources/m3_activity.js and mprelude.js.
+ */
+@import "./design-tokens.css";
+
+@font-face {
+  font-family: "Activity Inter";
+  src: url("./fonts/inter-latin-wght-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+.shell:has(> .activity-page) {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.activity-page {
+  --activity-saved: #4f6fa8;
+  --activity-step-live: #9fc3ab;
+  --activity-attention-fill: #fffdf8;
+
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 40px 56px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: "Activity Inter", var(--font-sans);
+  font-size: var(--type-control);
+  line-height: normal;
+}
+
+.activity-page :where(h1, h2, h3, p, ol, ul) {
+  margin: 0;
+  padding: 0;
+}
+
+.activity-page :where(ol, ul) {
+  list-style: none;
+}
+
+/* Page header */
+.activity-header {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.activity-header-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.activity-kicker {
+  color: var(--placeholder);
+  font-size: var(--type-kicker);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-kicker);
+  text-transform: uppercase;
+}
+
+.activity-header h1 {
+  color: var(--ink);
+  font-size: var(--type-page-title);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-page-title);
+}
+
+.activity-header-text p {
+  color: var(--muted);
+  font-size: var(--type-page-description);
+  line-height: var(--leading-page-description);
+}
+
+.activity-feedback {
+  align-self: center;
+  max-width: 280px;
+  margin-bottom: -2px;
+  color: var(--green-ink);
+  font-size: var(--type-metadata);
+  text-align: right;
+}
+
+/* Stat cards */
+.activity-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.activity-stat {
+  gap: 8px;
+  padding: 13px 15px;
+}
+
+.activity-stat-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--type-row-help);
+  font-weight: var(--weight-medium);
+}
+
+.activity-stat-label svg {
+  flex: none;
+}
+
+.activity-stat.processing svg {
+  color: var(--green);
+}
+
+.activity-stat.queued svg {
+  color: var(--placeholder);
+}
+
+.activity-stat.attention svg {
+  color: var(--amber);
+}
+
+.activity-stat.saved svg {
+  color: var(--activity-saved);
+}
+
+.activity-stat strong {
+  color: var(--ink);
+  font-size: 1.625rem;
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.6px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Body: work on the left, the selected capture on the right */
+.activity-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: start;
+}
+
+.activity-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.activity-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 17px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.activity-card-head > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.activity-card-head h2 {
+  color: var(--ink);
+  font-size: var(--type-card-heading);
+  font-weight: var(--weight-semibold);
+}
+
+.activity-card-head p {
+  color: var(--muted);
+  font-size: var(--type-metadata);
+}
+
+.activity-filter {
+  flex: none;
+  width: 140px;
+}
+
+.activity-empty {
+  padding: 20px 18px;
+  color: var(--muted);
+  font-size: var(--type-control);
+}
+
+.activity-inline-action {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--green-ink);
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.activity-more {
+  width: 100%;
+  padding: 11px 18px;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--green-ink);
+  font: inherit;
+  font-size: var(--type-metadata);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.activity-more:disabled {
+  color: var(--placeholder);
+  cursor: default;
+}
+
+/* Thumbnails */
+.activity-thumb {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-badge);
+  background: var(--thumb, var(--subtle));
+  color: #0000003d;
+}
+
+.activity-thumb.large {
+  width: 40px;
+  height: 40px;
+  background: #e1e7f0;
+}
+
+/* Needs attention */
+.activity-attention {
+  border-color: var(--amber-border);
+  background: var(--activity-attention-fill);
+}
+
+.activity-attention-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 17px 11px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.activity-attention-item:last-child {
+  border-bottom: 0;
+}
+
+.activity-attention-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-badge-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.activity-attention-copy strong {
+  color: var(--ink);
+  font-size: var(--type-row-title);
+  font-weight: var(--weight-semibold);
+}
+
+.activity-attention-copy span {
+  color: var(--muted);
+  font-size: var(--type-metadata);
+  overflow-wrap: anywhere;
+}
+
+.activity-attention-copy:focus-visible,
+.activity-row:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: -2px;
+}
+
+/* Capture rows */
+.activity-rows > li {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.activity-rows > li:last-child {
+  border-bottom: 0;
+}
+
+.activity-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 17px 10px;
+  border: 0;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.activity-row:hover {
+  background: var(--canvas);
+}
+
+.activity-row.selected,
+.activity-row.highlighted {
+  background: var(--process-bg);
+}
+
+.activity-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.activity-row-text strong,
+.activity-row-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-row-text strong {
+  color: var(--ink);
+  font-size: var(--type-control);
+  font-weight: var(--weight-semibold);
+}
+
+.activity-row-text span {
+  color: var(--muted);
+  font-size: var(--type-caption);
+}
+
+.activity-row-progress {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  width: 130px;
+}
+
+.activity-tracker {
+  display: flex;
+  gap: 3px;
+}
+
+.activity-tracker-step {
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.activity-tracker-step.completed {
+  background: var(--green);
+}
+
+.activity-tracker-step.active {
+  background: var(--activity-step-live);
+}
+
+.activity-tracker-step.failed {
+  background: var(--amber);
+}
+
+.activity-row-status {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--type-caption);
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-row-status.live {
+  color: var(--green);
+}
+
+.activity-row-status.done {
+  color: var(--muted);
+}
+
+.activity-row-status.warn {
+  color: var(--amber-ink);
+}
+
+/* Inspector */
+.activity-inspector {
+  min-height: 0;
+}
+
+.activity-inspector-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 15px 17px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.activity-inspector-head h2 {
+  color: var(--ink);
+  font-size: var(--type-card-heading);
+  font-weight: var(--weight-semibold);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.activity-inspector-head p {
+  color: var(--muted);
+  font-size: var(--type-metadata);
+}
+
+.activity-inspector-head .activity-inspector-failure {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--amber-border);
+  border-radius: var(--radius-control);
+  background: var(--amber-row);
+  color: var(--amber-ink);
+  line-height: var(--leading-row-help);
+}
+
+.activity-inspector-failure strong {
+  font-weight: var(--weight-semibold);
+}
+
+.activity-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 17px;
+}
+
+.activity-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.activity-check svg {
+  flex: none;
+  color: var(--green);
+}
+
+.activity-check.queued svg {
+  color: var(--faint);
+}
+
+.activity-check.failed svg {
+  color: var(--amber-icon);
+}
+
+.activity-check.active svg {
+  animation: activity-spin 1.2s linear infinite;
+}
+
+.activity-check-label {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--type-control);
+  font-weight: var(--weight-medium);
+}
+
+.activity-check.active .activity-check-label {
+  font-weight: var(--weight-semibold);
+}
+
+.activity-check.queued .activity-check-label {
+  color: var(--placeholder);
+}
+
+.activity-check.failed .activity-check-label {
+  color: var(--amber-ink);
+}
+
+.activity-check-duration {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--type-metadata);
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.activity-log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 0;
+  padding: 12px 17px;
+  border-top: 1px solid var(--hairline);
+  background: var(--canvas);
+}
+
+.activity-log-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.activity-log h3 {
+  color: var(--placeholder);
+  font-size: var(--type-kicker);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-group-label);
+  text-transform: uppercase;
+}
+
+.activity-log-head span,
+.activity-log > p {
+  color: var(--muted);
+  font-size: var(--type-caption);
+}
+
+.activity-log ol {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.activity-log ol:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+.activity-log li {
+  display: flex;
+  gap: 2ch;
+  color: var(--muted-strong);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption);
+  line-height: 1.3;
+}
+
+.activity-log li time {
+  flex: none;
+}
+
+.activity-log li span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.activity-log li.failed {
+  color: var(--amber-ink);
+}
+
+.activity-inspector-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 17px 11px;
+  border-top: 1px solid var(--hairline);
+}
+
+.activity-copy-feedback {
+  color: var(--muted);
+  font-size: var(--type-caption);
+}
+
+@keyframes activity-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-check.active svg {
+    animation: none;
+  }
+}
+
+/*
+ * Wide screens: the page fills the viewport like the drawing, the work column
+ * scrolls on its own, and the inspector runs to the bottom edge.
+ */
+@media (min-width: 1101px) and (min-height: 620px) {
+  html:has(.activity-page) {
+    scrollbar-gutter: auto;
+  }
+
+  .activity-page {
+    height: 100dvh;
+  }
+
+  .activity-body {
+    flex: 1;
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .activity-main {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+
+  .activity-main > * {
+    flex: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .activity-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .activity-log ol {
+    max-height: 280px;
+  }
+}
+
+@media (max-width: 780px) {
+  .activity-page {
+    gap: 16px;
+    padding: 24px 16px 96px;
+  }
+
+  .activity-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .activity-header-text {
+    flex-basis: 100%;
+  }
+
+  .activity-feedback {
+    order: 1;
+    flex-basis: 100%;
+    max-width: none;
+    text-align: left;
+  }
+
+  .activity-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .activity-card-head,
+  .activity-attention-item,
+  .activity-row,
+  .activity-inspector-head,
+  .activity-checklist,
+  .activity-log,
+  .activity-inspector-foot {
+    padding-right: 13px;
+    padding-left: 13px;
+  }
+
+  .activity-attention-item {
+    flex-wrap: wrap;
+  }
+
+  .activity-attention-copy {
+    flex-basis: calc(100% - 52px);
+  }
+
+  .activity-attention-copy + .ui-btn {
+    margin-left: 52px;
+  }
+
+  .activity-filter {
+    width: 128px;
+  }
+
+  .activity-row-progress {
+    width: 96px;
+  }
+
+  .activity-tracker-step {
+    width: 16px;
+  }
+}
