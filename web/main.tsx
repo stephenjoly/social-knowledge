@@ -701,6 +701,7 @@ function App() {
       setCaptureError(false);
       setCaptureSubmitted(false);
     }
+    if (nextTab !== "capture") setDetail(null);
     setTab(nextTab);
     setMobileMenuOpen(false);
     const nextUrl = new URL(window.location.href);
@@ -885,6 +886,7 @@ function App() {
           </button>}
         </header>
         <main className="shell">
+          {detail && <Detail id={detail} from={tab} onClose={() => setDetail(null)} />}
           {(tab === "inbox" || tab === "capture") && (
             <section className="inbox-page" aria-labelledby="inbox-title">
               <div className="inbox-hero">
@@ -1534,7 +1536,6 @@ function App() {
           </section>
         </div>
       )}
-      {detail && <Detail id={detail} onClose={() => setDetail(null)} />}
     </div>
   );
 }
