@@ -1,6 +1,32 @@
-import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import {
+  Children,
+  isValidElement,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import {
+  ArrowUp,
+  Brain,
+  Check,
+  ChevronDown,
+  Copy,
+  CornerDownRight,
+  History,
+  LibraryBig,
+  MessageSquare,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  Square,
+  Trash2,
+} from "lucide-react";
 import {
   applyStreamEvent,
   finishStream,
@@ -10,42 +36,194 @@ import {
   SseDecoder,
   type StreamState,
 } from "../chat-stream";
-import type { AskSource, ChatMessage, Conversation } from "../shared/types";
-import { api } from "../shared/api";
-import { PlatformMark } from "../components/platform";
+import type {
+  AiProviderState,
+  AskSource,
+  Capture,
+  ChatMessage,
+  Conversation,
+} from "../shared/types";
+import { api, assetUrl } from "../shared/api";
+import { ActionButton, Chip, IconBox } from "../components/ui/primitives";
+import {
+  answerWithCaptureLinks,
+  type CaptureFacets,
+  conversationTimeLabel,
+  latestSources,
+  safeSourceUrl,
+  sourceAttribution,
+  suggestionsFrom,
+  thumbTint,
+} from "./ask-format";
+import "../ask.css";
 
-function answerWithCaptureLinks(content: string, sources: AskSource[]) {
-  const sourcesByCitation = new Map(
-    sources.map((source) => [source.citation, source]),
-  );
-  let normalized = content;
-  let replacedCaptureId = false;
-  for (const source of sources) {
-    const captureCitation = `[${source.id}]`;
-    if (normalized.includes(captureCitation)) {
-      normalized = normalized.replaceAll(
-        captureCitation,
-        `[${source.citation}]`,
-      );
-      replacedCaptureId = true;
-    }
+const recentLimit = 5;
+
+type SourceDetails = { thumbUrl: string | null; sourceType: string | null };
+
+function isCitationLink(node: ReactNode) {
+  if (!isValidElement(node)) return false;
+  const href = (node.props as { href?: unknown }).href;
+  return typeof href === "string" && href.startsWith("capture:");
+}
+
+/** Moves citations that end a list item into the right-hand citation column. */
+function splitTrailingCitations(children: ReactNode) {
+  const body = Children.toArray(children);
+  const citations: ReactNode[] = [];
+  while (body.length) {
+    const last = body[body.length - 1];
+    if (typeof last === "string" && !last.trim()) body.pop();
+    else if (isCitationLink(last)) citations.unshift(body.pop());
+    else break;
   }
-  if (replacedCaptureId)
-    normalized = normalized.replace(/\n{2,}Sources:\s*(?:\[\d+]\s*)+$/i, "");
-  return normalized.replace(/\[(\d+)]/g, (citation, value: string) => {
-    const source = sourcesByCitation.get(Number(value));
-    return source ? `[${value}](capture:${source.id})` : citation;
-  });
+  return { body, citations };
+}
+
+function useDismiss(
+  open: boolean,
+  close: () => void,
+  ref: RefObject<HTMLElement | null>,
+) {
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) close();
+    };
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, close, ref]);
+}
+
+function Composer({
+  variant,
+  value,
+  onChange,
+  onSubmit,
+  onStop,
+  streaming,
+  thinkingLevel,
+}: {
+  variant: "home" | "follow-up";
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  onStop: () => void;
+  streaming: boolean;
+  thinkingLevel: string | null;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [value]);
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.nativeEvent.isComposing
+    ) {
+      event.preventDefault();
+      onSubmit();
+    }
+  };
+  const chips = (
+    <>
+      <Chip className="ask-chip" icon={LibraryBig}>
+        Whole archive
+      </Chip>
+      {variant === "home" && thinkingLevel && (
+        <Chip className="ask-chip" icon={Brain}>
+          Thinking: {thinkingLevel.slice(0, 1).toUpperCase()}
+          {thinkingLevel.slice(1)}
+        </Chip>
+      )}
+    </>
+  );
+  const send = (
+    <button
+      type={streaming ? "button" : "submit"}
+      className={`ask-send${streaming ? " ask-stop" : ""}`}
+      disabled={!streaming && !value.trim()}
+      onClick={streaming ? onStop : undefined}
+    >
+      {streaming ? (
+        <Square size={12} fill="currentColor" aria-hidden="true" />
+      ) : (
+        <ArrowUp size={16} aria-hidden="true" />
+      )}
+      <span className="sr-only">{streaming ? "Stop" : "Send"}</span>
+    </button>
+  );
+  return (
+    <form
+      className={`ask-composer ask-composer-${variant}`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <textarea
+        ref={textareaRef}
+        rows={1}
+        aria-label="Ask your archive"
+        placeholder={
+          variant === "home"
+            ? "Ask anything about your archive…"
+            : "Ask a follow-up…"
+        }
+        maxLength={2000}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
+      />
+      {variant === "home" ? (
+        <div className="ask-composer-bar">
+          {chips}
+          <span className="ask-composer-flex" />
+          {send}
+        </div>
+      ) : (
+        <>
+          {chips}
+          {send}
+        </>
+      )}
+    </form>
+  );
 }
 
 export function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationsLoaded, setConversationsLoaded] = useState(false);
+  const [listError, setListError] = useState("");
   const [current, setCurrent] = useState<Conversation | null>(null);
   const [question, setQuestion] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState("");
   const [reconciliationNotice, setReconciliationNotice] = useState("");
-  const [conversationListOpen, setConversationListOpen] = useState(false);
+  const [liveMessage, setLiveMessage] = useState("");
+  const [facets, setFacets] = useState<CaptureFacets | null>(null);
+  const [thinkingLevel, setThinkingLevel] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [titleMenuOpen, setTitleMenuOpen] = useState(false);
+  const [showAllRecent, setShowAllRecent] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [sourceDetails, setSourceDetails] = useState<
+    Record<string, SourceDetails>
+  >({});
+  const historyRef = useRef<HTMLDivElement>(null);
+  const titleMenuRef = useRef<HTMLDivElement>(null);
+  const threadEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const selectedConversationIdRef = useRef<string | null>(null);
   const activeAttemptRef = useRef<{
@@ -70,17 +248,18 @@ export function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
         : existing,
     );
   }
-  async function loadList(openFirst = true) {
-    const result = await api<{ conversations: Conversation[] }>(
-      "/api/v1/conversations",
-    );
-    setConversations(result.conversations);
-    if (
-      openFirst &&
-      !selectedConversationIdRef.current &&
-      result.conversations[0]
-    )
-      await openConversation(result.conversations[0].id);
+  async function loadList() {
+    try {
+      const result = await api<{ conversations: Conversation[] }>(
+        "/api/v1/conversations",
+      );
+      setConversations(result.conversations);
+      setListError("");
+    } catch {
+      setListError("Recent conversations could not be loaded.");
+    } finally {
+      setConversationsLoaded(true);
+    }
   }
   async function fetchConversation(id: string) {
     const result = await api<{ conversation: Conversation }>(
@@ -90,7 +269,16 @@ export function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
   }
   async function openConversation(id: string) {
     selectedConversationIdRef.current = id;
-    const conversation = await fetchConversation(id);
+    setHistoryOpen(false);
+    setError("");
+    let conversation: Conversation;
+    try {
+      conversation = await fetchConversation(id);
+    } catch {
+      if (selectedConversationIdRef.current === id)
+        setError("This conversation could not be opened. Try again.");
+      return;
+    }
     if (selectedConversationIdRef.current !== id) return;
     const active = activeAttemptRef.current;
     const activeForConversation = active?.conversationId === id ? active : null;
@@ -127,21 +315,89 @@ export function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
       ),
     );
   }
-  async function createConversation() {
-    const result = await api<{ conversation: Conversation }>(
-      "/api/v1/conversations",
-      { method: "POST", body: JSON.stringify({}) },
-    );
-    selectedConversationIdRef.current = result.conversation.id;
-    setCurrent(result.conversation);
-    const list = await api<{ conversations: Conversation[] }>(
-      "/api/v1/conversations",
-    );
-    setConversations(list.conversations);
+  function startNewChat() {
+    selectedConversationIdRef.current = null;
+    setCurrent(null);
+    setHistoryOpen(false);
+    setTitleMenuOpen(false);
+    setError("");
+    setQuestion("");
+  }
+  async function deleteCurrent() {
+    if (!current) return;
+    setTitleMenuOpen(false);
+    if (!window.confirm("Delete this conversation?")) return;
+    try {
+      await api(`/api/v1/conversations/${current.id}`, { method: "DELETE" });
+    } catch {
+      setError("This conversation could not be deleted. Try again.");
+      return;
+    }
+    startNewChat();
+    await loadList();
   }
   useEffect(() => {
     void loadList();
+    void api<CaptureFacets>("/api/v1/capture-facets")
+      .then(setFacets)
+      .catch(() => setFacets(null));
+    void api<AiProviderState>("/api/v1/ai-providers")
+      .then((state) =>
+        setThinkingLevel(state.selections.analysis?.thinkingLevel ?? null),
+      )
+      .catch(() => setThinkingLevel(null));
   }, []);
+
+  const panelSources = latestSources(current?.messages);
+  const panelSourceKey = panelSources.map((source) => source.id).join(",");
+  useEffect(() => {
+    const missing = panelSources.filter(
+      (source) => !(source.id in sourceDetails),
+    );
+    if (!missing.length) return;
+    let cancelled = false;
+    void Promise.all(
+      missing.map(async (source): Promise<[string, SourceDetails]> => {
+        try {
+          const { capture } = await api<{ capture: Capture }>(
+            `/api/v1/captures/${source.id}`,
+          );
+          const thumb = capture.assets.find(
+            (asset) => asset.kind === "thumbnail" || asset.kind === "image",
+          );
+          return [
+            source.id,
+            {
+              thumbUrl: thumb ? assetUrl(capture.id, thumb.id) : null,
+              sourceType: capture.sourceType,
+            },
+          ];
+        } catch {
+          return [source.id, { thumbUrl: null, sourceType: null }];
+        }
+      }),
+    ).then((entries) => {
+      if (!cancelled)
+        setSourceDetails((existing) => ({
+          ...existing,
+          ...Object.fromEntries(entries),
+        }));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelSourceKey]);
+
+  const messageCount = current?.messages?.length ?? 0;
+  const lastContentLength =
+    current?.messages?.[messageCount - 1]?.content.length ?? 0;
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView?.({ block: "end" });
+  }, [current?.id, messageCount, lastContentLength]);
+
+  useDismiss(historyOpen, () => setHistoryOpen(false), historyRef);
+  useDismiss(titleMenuOpen, () => setTitleMenuOpen(false), titleMenuRef);
 
   function applyConversationSnapshot(
     snapshot: Conversation,
@@ -289,6 +545,7 @@ export function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
     setStreaming(true);
     setError("");
     setReconciliationNotice("");
+    setLiveMessage("Searching your archive…");
     let outcome: StreamOutcome | null = null;
     try {
       const response = await fetch(url, {
@@ -304,6 +561,9 @@ export function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
         selectedConversationIdRef.current === conversationId
       )
         setError(outcome.errorMessage);
+      setLiveMessage(
+        outcome.status === "failed" ? "The answer failed." : "Answer ready.",
+      );
     } catch (cause) {
       const aborted =
         (cause instanceof DOMException && cause.name === "AbortError") ||
@@ -335,6 +595,7 @@ export function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
         status: outcome.status,
         errorCode: outcome.errorCode,
       });
+      setLiveMessage(aborted ? "Answer stopped." : "The answer failed.");
       if (!aborted && selectedConversationIdRef.current === conversationId)
         setError(cause instanceof Error ? cause.message : "Ask AI failed.");
     } finally {
@@ -346,7 +607,7 @@ export function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
             ...(optimisticUserId ? [optimisticUserId] : []),
           ]);
         }
-        await loadList(false).catch(() => undefined);
+        await loadList().catch(() => undefined);
       } finally {
         partialAnswersRef.current.delete(temporaryId);
         serverAssistantIdsRef.current.delete(temporaryId);
@@ -362,11 +623,16 @@ export function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
     if (!cleaned || streaming) return;
     let conversation = current;
     if (!conversation) {
-      const result = await api<{ conversation: Conversation }>(
-        "/api/v1/conversations",
-        { method: "POST", body: JSON.stringify({}) },
-      );
-      conversation = result.conversation;
+      try {
+        const result = await api<{ conversation: Conversation }>(
+          "/api/v1/conversations",
+          { method: "POST", body: JSON.stringify({}) },
+        );
+        conversation = result.conversation;
+      } catch {
+        setError("Ask AI could not start a conversation. Try again.");
+        return;
+      }
       selectedConversationIdRef.current = conversation.id;
       setCurrent(conversation);
     }
@@ -434,255 +700,463 @@ export function AskAI({ onOpen }: { onOpen: (id: string) => void }) {
       null,
     );
   }
-  const suggestions = [
-    "What Lisbon restaurants have I saved?",
-    "Summarize my saved Portugal recommendations.",
-    "Which products have creators recommended?",
-  ];
-  return (
-    <div className="ask-page-wrap">
-      <div className="ask-page-intro">
-        <div>
-          <div className="eyebrow">Your saved archive</div>
-          <h1>Ask</h1>
-          <p>Answers from your saved posts, with sources.</p>
-        </div>
-      </div>
-      <div className="ask-page">
-        <aside
-          className={`conversation-sidebar ${conversationListOpen ? "open" : ""}`}
-          aria-label="Ask conversations"
-        >
-          <div className="conversation-sidebar-heading">
-            <strong>Conversations</strong>
-            <button
-              type="button"
-              className="conversation-list-toggle"
-              aria-expanded={conversationListOpen}
-              aria-controls="ask-conversation-list"
-              onClick={() => setConversationListOpen((open) => !open)}
-            >
-              {conversationListOpen ? "Hide" : "Browse"}
-            </button>
-          </div>
-          <button
-            className="new-chat"
-            onClick={() => void createConversation()}
-          >
-            ＋ New conversation
-          </button>
-          <div id="ask-conversation-list" className="conversation-list">
-            {conversations.map((conversation) => (
+  async function copyAnswer(message: ChatMessage) {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedId(message.id);
+      setLiveMessage("Answer copied.");
+      window.setTimeout(
+        () => setCopiedId((id) => (id === message.id ? null : id)),
+        1600,
+      );
+    } catch {
+      setLiveMessage("The answer could not be copied.");
+    }
+  }
+
+  function markdownComponents(message: ChatMessage): Components {
+    return {
+      a: ({ href, children }) => {
+        if (href?.startsWith("capture:")) {
+          const source = message.sources.find(
+            ({ id }) => id === href.slice(8),
+          );
+          if (source)
+            return (
               <button
-                key={conversation.id}
-                className={current?.id === conversation.id ? "selected" : ""}
-                onClick={() => {
-                  setConversationListOpen(false);
-                  void openConversation(conversation.id);
-                }}
+                type="button"
+                className="ask-cite"
+                aria-label={`Open source ${source.citation}: ${source.title}`}
+                title={source.title}
+                onClick={() => onOpen(source.id)}
               >
-                <span>{conversation.title}</span>
-                <small>{conversation.messageCount ?? 0} messages</small>
+                {children}
               </button>
+            );
+        }
+        return (
+          <a href={href} target="_blank" rel="noreferrer noopener">
+            {children}
+          </a>
+        );
+      },
+      li: ({ children }) => {
+        const { body, citations } = splitTrailingCitations(children);
+        return (
+          <li>
+            <span className="ask-bullet" aria-hidden="true" />
+            <span className="ask-li-body">
+              <span className="ask-li-text">{body}</span>
+              {citations.length > 0 && (
+                <span className="ask-li-cites">{citations}</span>
+              )}
+            </span>
+          </li>
+        );
+      },
+    };
+  }
+
+  const suggestions = suggestionsFrom(facets);
+  const suggestionRows = [suggestions.slice(0, 2), suggestions.slice(2, 4)];
+  const recent = showAllRecent
+    ? conversations
+    : conversations.slice(0, recentLimit);
+  const lastAssistant = [...(current?.messages ?? [])]
+    .reverse()
+    .find((message) => message.role === "assistant");
+  const notices = (
+    <>
+      {error && (
+        <p className="ask-notice ask-notice-error" role="alert">
+          {error}
+        </p>
+      )}
+      {reconciliationNotice && (
+        <p className="ask-notice" role="status">
+          {reconciliationNotice}
+        </p>
+      )}
+    </>
+  );
+  const composer = (variant: "home" | "follow-up") => (
+    <Composer
+      variant={variant}
+      value={question}
+      onChange={setQuestion}
+      onSubmit={() => void send()}
+      onStop={() => abortRef.current?.abort()}
+      streaming={streaming}
+      thinkingLevel={thinkingLevel}
+    />
+  );
+  const liveRegion = (
+    <p className="sr-only" role="status" aria-live="polite">
+      {liveMessage}
+    </p>
+  );
+
+  if (!current?.messages?.length)
+    return (
+      <div className="ask-v2">
+        {liveRegion}
+        <section className="ask-home" aria-labelledby="ask-title">
+          <IconBox icon={Sparkles} size={44} tone="green" />
+          <div className="ask-home-heading">
+            <h1 id="ask-title">Ask what you&apos;ve saved</h1>
+            <p>
+              Answers come only from your saved posts, with sources you can
+              open.
+            </p>
+          </div>
+          <div className="ask-home-column">
+            {composer("home")}
+            {notices}
+          </div>
+          <div
+            className="ask-suggestions ask-home-column"
+            aria-label="Suggested questions"
+            role="group"
+          >
+            {suggestionRows.map((row, index) => (
+              <div className="ask-suggestion-row" key={index}>
+                {row.map((suggestion) => (
+                  <button
+                    type="button"
+                    className="ask-suggestion"
+                    key={suggestion}
+                    disabled={streaming}
+                    onClick={() => void send(suggestion)}
+                  >
+                    <CornerDownRight size={13} aria-hidden="true" />
+                    <span>{suggestion}</span>
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
-        </aside>
-        <section className="chat-panel">
-          <div className="chat-heading">
-            <div>
-              <div className="eyebrow">Your saved archive</div>
-              <h1>Ask AI</h1>
-            </div>
-            {current && (
-              <button
-                className="delete-chat"
-                disabled={streaming}
-                onClick={async () => {
-                  if (!window.confirm("Delete this conversation?")) return;
-                  await api(`/api/v1/conversations/${current.id}`, {
-                    method: "DELETE",
-                  });
-                  setCurrent(null);
-                  selectedConversationIdRef.current = null;
-                  await loadList();
-                }}
-              >
-                Delete
-              </button>
-            )}
-          </div>
-          <div className="messages">
-            {!current?.messages?.length && (
-              <div className="ask-empty">
-                <h2>Ask what you’ve saved.</h2>
-                <p>
-                  Answers are grounded only in your archived captures and link
-                  back to their evidence.
+          {(conversations.length > 0 || listError) && (
+            <section
+              className="ask-recent ask-home-column"
+              aria-labelledby="ask-recent-title"
+            >
+              <h2 id="ask-recent-title">Recent conversations</h2>
+              {listError ? (
+                <p className="ask-recent-error" role="alert">
+                  {listError}{" "}
+                  <button type="button" onClick={() => void loadList()}>
+                    Retry
+                  </button>
                 </p>
-                <div className="suggestions">
-                  {suggestions.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      onClick={() => void send(suggestion)}
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {current?.messages?.map((message) => (
-              <article
-                className={`chat-message ${message.role} ${message.status}`}
-                key={message.id}
-              >
-                <div className="message-role">
-                  {message.role === "user" ? "You" : "Social Knowledge"}
-                </div>
-                <div className="message-content">
-                  {message.content ? (
-                    message.role === "assistant" ? (
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        urlTransform={(url) =>
-                          /^(capture:|https?:|mailto:)/i.test(url) ? url : ""
-                        }
-                        components={{
-                          a: ({ href, children }) => {
-                            if (href?.startsWith("capture:")) {
-                              const source = message.sources.find(
-                                ({ id }) => id === href.slice(8),
-                              );
-                              if (source)
-                                return (
-                                  <button
-                                    type="button"
-                                    className={`inline-capture-link platform-${source.platform.toLowerCase()}`}
-                                    aria-label={`Open ${source.platform} reel: ${source.title}`}
-                                    title={`Open ${source.title}`}
-                                    onClick={() => onOpen(source.id)}
-                                  >
-                                    <PlatformMark platform={source.platform} />
-                                    <span>{children}</span>
-                                  </button>
-                                );
-                            }
-                            return (
-                              <a href={href} target="_blank" rel="noreferrer">
-                                {children}
-                              </a>
-                            );
-                          },
-                        }}
-                      >
-                        {answerWithCaptureLinks(
-                          message.content,
-                          message.sources,
-                        )}
-                      </ReactMarkdown>
-                    ) : (
-                      message.content
-                    )
-                  ) : message.status === "pending" ? (
-                    <span className="typing">
-                      {message.statusText || "Searching your archive…"}
-                    </span>
-                  ) : (
-                    <span>
-                      {message.status === "cancelled"
-                        ? "Answer stopped."
-                        : "Ask AI could not finish this answer."}
-                    </span>
-                  )}
-                </div>
-                {message.role === "assistant" &&
-                  (message.status === "failed" ||
-                    message.status === "cancelled") && (
-                    <button
-                      className="retry-answer"
-                      disabled={streaming}
-                      onClick={() => void retry(message)}
-                    >
-                      Retry
-                    </button>
-                  )}
-                {message.role === "assistant" &&
-                  message.sufficient === false && (
-                    <small className="insufficient">
-                      The saved archive did not contain enough evidence.
-                    </small>
-                  )}
-                {message.sources?.length > 0 && (
-                  <div className="answer-sources">
-                    <strong>Sources</strong>
-                    {message.sources.map((source) => (
+              ) : (
+                <ul>
+                  {recent.map((conversation) => (
+                    <li key={conversation.id}>
                       <button
-                        key={source.id}
-                        aria-label={`Open ${source.platform} reel: ${source.title}`}
+                        type="button"
+                        className="ask-recent-row"
+                        aria-current={
+                          current?.id === conversation.id ? "true" : undefined
+                        }
+                        onClick={() => void openConversation(conversation.id)}
+                      >
+                        <MessageSquare size={14} aria-hidden="true" />
+                        <span className="ask-recent-title">
+                          {conversation.title}
+                        </span>
+                        <time dateTime={conversation.updatedAt}>
+                          {conversationTimeLabel(conversation.updatedAt)}
+                        </time>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {!listError && conversations.length > recentLimit && (
+                <button
+                  type="button"
+                  className="ask-recent-more"
+                  onClick={() => setShowAllRecent((value) => !value)}
+                >
+                  {showAllRecent
+                    ? "Show fewer"
+                    : `Show all ${conversations.length} conversations`}
+                </button>
+              )}
+            </section>
+          )}
+          {!conversationsLoaded && (
+            <p className="sr-only" role="status">
+              Loading conversations…
+            </p>
+          )}
+        </section>
+      </div>
+    );
+
+  return (
+    <div className="ask-v2">
+      {liveRegion}
+      <div className="ask-conversation">
+        <section className="ask-chat" aria-labelledby="ask-chat-title">
+          <div className="ask-chat-bar">
+            <div className="ask-popover-anchor ask-title-anchor" ref={titleMenuRef}>
+              <h1 id="ask-chat-title" className="ask-title-heading">
+                <button
+                  type="button"
+                  className="ask-title"
+                  aria-haspopup="menu"
+                  aria-expanded={titleMenuOpen}
+                  onClick={() => setTitleMenuOpen((open) => !open)}
+                >
+                  <span>{current.title}</span>
+                  <ChevronDown size={14} aria-hidden="true" />
+                </button>
+              </h1>
+              {titleMenuOpen && (
+                <div className="ask-popover ask-title-menu" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="ask-menu-item ask-menu-danger"
+                    disabled={streaming}
+                    onClick={() => void deleteCurrent()}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                    Delete conversation
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="ask-popover-anchor" ref={historyRef}>
+              <ActionButton
+                variant="ghost"
+                icon={History}
+                aria-expanded={historyOpen}
+                aria-controls="ask-history"
+                onClick={() => setHistoryOpen((open) => !open)}
+              >
+                History
+              </ActionButton>
+              {historyOpen && (
+                <div
+                  id="ask-history"
+                  className="ask-popover ask-history"
+                  role="group"
+                  aria-label="Conversation history"
+                >
+                  {conversations.length === 0 ? (
+                    <p className="ask-history-empty">No conversations yet.</p>
+                  ) : (
+                    conversations.map((conversation) => (
+                      <button
+                        type="button"
+                        key={conversation.id}
+                        className="ask-history-row"
+                        aria-current={
+                          current.id === conversation.id ? "true" : undefined
+                        }
+                        onClick={() => void openConversation(conversation.id)}
+                      >
+                        <span>{conversation.title}</span>
+                        <time dateTime={conversation.updatedAt}>
+                          {conversationTimeLabel(conversation.updatedAt)}
+                        </time>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            <ActionButton icon={Plus} onClick={startNewChat}>
+              New chat
+            </ActionButton>
+          </div>
+          <div className="ask-thread">
+            <div className="ask-thread-inner">
+              {current.messages.map((message) => (
+                <article
+                  className={`ask-message ${message.role} ${message.status}`}
+                  key={message.id}
+                  aria-label={
+                    message.role === "user" ? "Your question" : "Answer"
+                  }
+                >
+                  {message.role === "user" ? (
+                    <p className="ask-bubble">{message.content}</p>
+                  ) : (
+                    <>
+                      <IconBox icon={Sparkles} size={28} tone="green" />
+                      <div className="ask-answer">
+                        {message.content ? (
+                          <div className="ask-answer-body">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              skipHtml
+                              urlTransform={(url) =>
+                                /^(capture:|https?:|mailto:)/i.test(url)
+                                  ? url
+                                  : ""
+                              }
+                              components={markdownComponents(message)}
+                            >
+                              {answerWithCaptureLinks(
+                                message.content,
+                                message.sources,
+                              )}
+                            </ReactMarkdown>
+                          </div>
+                        ) : message.status === "pending" ? (
+                          <p className="ask-pending">
+                            {message.statusText || "Searching your archive…"}
+                          </p>
+                        ) : (
+                          <p className="ask-answer-failed">
+                            {message.status === "cancelled"
+                              ? "Answer stopped."
+                              : "Ask AI could not finish this answer."}
+                          </p>
+                        )}
+                        {message.sufficient === false && (
+                          <p className="ask-insufficient">
+                            The saved archive did not contain enough evidence.
+                          </p>
+                        )}
+                        {(message.status === "failed" ||
+                          message.status === "cancelled") && (
+                          <div className="ask-answer-actions">
+                            <ActionButton
+                              icon={RotateCcw}
+                              disabled={streaming}
+                              onClick={() => void retry(message)}
+                            >
+                              Retry
+                            </ActionButton>
+                          </div>
+                        )}
+                        {message.status === "complete" && message.content && (
+                          <div className="ask-answer-actions">
+                            <button
+                              type="button"
+                              className="ask-icon-action"
+                              onClick={() => void copyAnswer(message)}
+                            >
+                              {copiedId === message.id ? (
+                                <Check size={14} aria-hidden="true" />
+                              ) : (
+                                <Copy size={14} aria-hidden="true" />
+                              )}
+                              <span className="sr-only">
+                                {copiedId === message.id
+                                  ? "Copied"
+                                  : "Copy answer"}
+                              </span>
+                            </button>
+                            {message.id === lastAssistant?.id && (
+                              <button
+                                type="button"
+                                className="ask-icon-action"
+                                disabled={streaming}
+                                onClick={() => {
+                                  const asked = current.messages?.find(
+                                    (item) => item.id === message.userMessageId,
+                                  );
+                                  if (asked) void send(asked.content);
+                                }}
+                              >
+                                <RotateCcw size={14} aria-hidden="true" />
+                                <span className="sr-only">Ask again</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </article>
+              ))}
+              <div ref={threadEndRef} />
+            </div>
+          </div>
+          <div className="ask-composer-wrap">
+            {notices}
+            {composer("follow-up")}
+          </div>
+        </section>
+        <aside className="ask-sources" aria-labelledby="ask-sources-title">
+          <div className="ask-sources-head">
+            <h2 id="ask-sources-title">Sources</h2>
+            <span>
+              {panelSources.length}{" "}
+              {panelSources.length === 1 ? "saved post" : "saved posts"}
+            </span>
+          </div>
+          {panelSources.length === 0 ? (
+            <p className="ask-sources-empty">
+              Saved posts an answer cites will appear here.
+            </p>
+          ) : (
+            <ol className="ask-source-list">
+              {panelSources.map((source) => {
+                const details = sourceDetails[source.id];
+                const url = safeSourceUrl(source.sourceUrl);
+                const attribution = sourceAttribution(
+                  source,
+                  details?.sourceType ?? undefined,
+                );
+                return (
+                  <li className="ask-source" key={source.id}>
+                    <span className="ask-source-thumb" aria-hidden="true">
+                      <span
+                        className="ask-source-image"
+                        style={{ background: thumbTint(source.citation) }}
+                      >
+                        {details?.thumbUrl && (
+                          <img
+                            src={details.thumbUrl}
+                            alt=""
+                            onError={(event) => {
+                              event.currentTarget.hidden = true;
+                            }}
+                          />
+                        )}
+                      </span>
+                      <span className="ask-source-number">
+                        {source.citation}
+                      </span>
+                    </span>
+                    <span className="ask-source-text">
+                      <button
+                        type="button"
+                        className="ask-source-open"
                         onClick={() => onOpen(source.id)}
                       >
-                        <span
-                          className={`source-number platform-${source.platform.toLowerCase()}`}
-                        >
-                          <PlatformMark platform={source.platform} />
-                          <span>{source.citation}</span>
+                        <span className="sr-only">
+                          Source {source.citation}:{" "}
                         </span>
-                        <span>
-                          <b>{source.title}</b>
-                          <small>
-                            {source.breadcrumb.join(" › ") || source.platform}
-                          </small>
-                        </span>
+                        {source.title}
                       </button>
-                    ))}
-                  </div>
-                )}
-              </article>
-            ))}
-          </div>
-          {error && (
-            <p className="chat-error" role="alert">
-              {error}
-            </p>
+                      {url ? (
+                        <a
+                          className="ask-source-link"
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          title="Open the original post"
+                        >
+                          {attribution}
+                          <span className="sr-only"> (original post)</span>
+                        </a>
+                      ) : (
+                        <span className="ask-source-link">{attribution}</span>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
           )}
-          {reconciliationNotice && (
-            <p className="chat-error" role="status">
-              {reconciliationNotice}
-            </p>
-          )}
-          <form
-            className="chat-composer"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void send();
-            }}
-          >
-            <textarea
-              aria-label="Ask your archive"
-              placeholder="Ask about your saved places, products, recommendations…"
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void send();
-                }
-              }}
-            />
-            <button
-              type={streaming ? "button" : "submit"}
-              className={streaming ? "stop-answer" : ""}
-              disabled={!streaming && !question.trim()}
-              onClick={streaming ? () => abortRef.current?.abort() : undefined}
-            >
-              {streaming ? "Stop" : "Send"}
-            </button>
-          </form>
-          <small className="grounding-note">
-            Answers use only your saved archive. Open sources to verify creator
-            claims.
-          </small>
-        </section>
+        </aside>
       </div>
     </div>
   );
