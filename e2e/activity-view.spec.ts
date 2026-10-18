@@ -193,14 +193,13 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
 
   await page.locator(".app-account-trigger").click();
   const accountMenu = page.getByRole("dialog");
-  await expect(accountMenu.getByRole("button", { name: "Profile" })).toBeVisible();
-  await expect(accountMenu.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
   await expect(accountMenu.getByRole("button", { name: "Log out" })).toBeVisible();
+  await expect(accountMenu.getByRole("button", { name: "Settings", exact: true })).toHaveCount(0);
   await page.locator(".app-account-menu-layer").click({ position: { x: 500, y: 300 } });
   await expect(accountMenu).toHaveCount(0);
-  await expect(page.locator('.app-sidebar .app-nav button[data-tab="settings"]')).toBeHidden();
   await page.locator(".app-profile-settings").click();
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Settings" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Back to archive" }).click();
   await page.getByRole("button", { name: "Activity", exact: true }).click();
   await page.setViewportSize({ width: 900, height: 900 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -208,10 +207,11 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await expect(page.locator(".activity-card.expanded .activity-row-copy strong")).toHaveText("Newest capture");
   await expect(page.locator(".activity-card.expanded .activity-row-copy strong")).toBeVisible();
   await expect(page.getByLabel("Stage durations")).toContainText("Text running");
-  await expect(page.locator('.app-nav button[data-tab="settings"]')).toBeVisible();
   await page.screenshot({ path: "test-results/activity-04d-mobile.png", fullPage: true });
   await page.locator(".app-menu-trigger").click();
-  await expect(page.getByRole("dialog").getByRole("button", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.locator(".app-sidebar").getByRole("button", { name: "Open Settings" })).toBeVisible();
+  await expect(page.locator(".app-sidebar .app-processing")).toBeVisible();
+  await page.getByRole("button", { name: "Close menu" }).click();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
   await page.route(/\/api\/v1\/jobs\/failed\?/, (route) => route.fulfill({ status: 503, body: "{}" }));

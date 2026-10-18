@@ -106,7 +106,7 @@ test("shows a useful library home and opens category, topic, and capture", async
   const forward = page.getByRole("button", { name: "Forward in knowledge base", exact: true });
   await expect(back).toBeDisabled();
   await expect(forward).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Capture a post", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Capture a post", exact: true })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Move capture", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Travel 0", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Unclassified 0", exact: true })).toHaveCount(0);

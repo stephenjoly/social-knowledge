@@ -51,12 +51,12 @@ async function expectAccountDesktopGeometry(page: Page, viewportWidth: 1440 | 18
   expect(shell).not.toBeNull();
   expect(topics).not.toBeNull();
   expect(panels).not.toBeNull();
-  expect(sidebar!.width).toBeCloseTo(226, 0);
-  expect(shell!.x).toBeCloseTo(258, 0);
-  expect(shell!.x + shell!.width).toBeCloseTo(viewportWidth - 32, 0);
+  expect(sidebar!.width).toBeCloseTo(264, 0);
+  expect(shell!.x).toBeCloseTo(264, 0);
+  expect(shell!.x + shell!.width).toBeCloseTo(viewportWidth, 0);
   expect(topics!.width).toBeCloseTo(174, 0);
   expect(panels!.x - (topics!.x + topics!.width)).toBeCloseTo(24, 0);
-  expect(panels!.x + panels!.width).toBeCloseTo(viewportWidth - 32, 0);
+  expect(panels!.x + panels!.width).toBeCloseTo(viewportWidth - 72, 0);
   const cards = page.locator(".account-page-stack > .settings-card, .people-page-stack > .settings-card");
   for (let index = 0; index < await cards.count(); index += 1) {
     const card = await cards.nth(index).boundingBox();

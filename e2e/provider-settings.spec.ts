@@ -122,8 +122,8 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await page.getByLabel("Password").fill("a-strong-qa-password");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Capture a post", exact: true }).click();
-  await page.getByLabel("Post URL").fill("https://www.instagram.com/reel/qa-test/");
-  await page.getByRole("button", { name: "Capture post", exact: true }).click();
+  await page.getByLabel("Post link").fill("https://www.instagram.com/reel/qa-test/");
+  await page.getByRole("button", { name: "Save to archive", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   await page
     .getByRole("navigation", { name: "Settings topics" })

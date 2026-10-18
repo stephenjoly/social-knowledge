@@ -126,7 +126,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
     "Activity",
     "Knowledge base",
     "Ask",
-    "Settings",
+    "Open menu",
   ])
     await expect(
       invitedPage.getByRole("button", { name: label, exact: true }),
@@ -159,12 +159,11 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   await expect(
     invitedPage.getByRole("heading", { name: "Ask AI" }),
   ).toBeVisible();
-  await invitedPage
-    .getByRole("button", { name: "Settings", exact: true })
-    .click();
-  await expect(
-    invitedPage.getByRole("heading", { name: "Settings" }),
-  ).toBeVisible();
+  await invitedPage.getByRole("button", { name: "Open menu" }).click();
+  await invitedPage.getByRole("button", { name: "Open Settings" }).click();
+  await expect(invitedPage).toHaveURL(/tab=settings/);
+  await invitedPage.getByRole("button", { name: "Open menu" }).click();
+  await invitedPage.getByRole("button", { name: "Back to archive" }).click();
   await invitedPage.getByRole("button", { name: "Inbox", exact: true }).click();
   await invitedPage
     .getByRole("button", { name: "Capture a post", exact: true })
@@ -177,6 +176,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   await expect(
     invitedPage.getByRole("heading", { name: "Inbox", exact: true }),
   ).toBeVisible();
+  await invitedPage.getByRole("button", { name: "Open menu" }).click();
   await invitedPage.getByRole("button", { name: "Open account menu" }).click();
   const accountMenu = invitedPage.getByRole("dialog");
   await expect(

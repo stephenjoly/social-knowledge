@@ -20,8 +20,8 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(
     page.getByRole("button", { name: "Inbox", exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".capture-card").first()).toBeVisible();
-  await page.getByRole("button", { name: "+ Add filter" }).click();
+  await expect(page.locator(".inbox-row").first()).toBeVisible();
+  await page.getByRole("button", { name: "Add filter" }).click();
   const platformFilter = page.getByLabel("Platform");
   await expect(platformFilter).toBeVisible();
   await platformFilter.selectOption("instagram");

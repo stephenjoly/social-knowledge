@@ -81,6 +81,8 @@ const stageVerbs: Record<string, string> = {
   writing: "Filing",
 };
 
+const pipelineOrder = Object.keys(stageVerbs);
+
 function jobSubject(job: ActivityJob) {
   if (job.displayTitle) return job.displayTitle;
   try {
@@ -93,13 +95,18 @@ function jobSubject(job: ActivityJob) {
   }
 }
 
-/** The oldest in-flight job is the one the worker is furthest into. */
+/** The in-flight job closest to finishing, oldest first on ties. */
 export function currentProcessingJob(jobs: ActivityJob[]) {
   return (
     jobs
       .filter((job) => Object.hasOwn(stageVerbs, job.status))
-      .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))[0] ??
-    null
+      .sort(
+        (a, b) =>
+          jobProgress(b) - jobProgress(a) ||
+          pipelineOrder.indexOf(b.status) - pipelineOrder.indexOf(a.status) ||
+          Date.parse(a.createdAt) - Date.parse(b.createdAt) ||
+          a.id.localeCompare(b.id),
+      )[0] ?? null
   );
 }
 
@@ -187,7 +194,7 @@ export function ProcessingCard({
     <section className="app-processing" aria-label="Processing">
       <div className="app-processing-head">
         <LoaderCircle className="app-processing-spinner" size={15} aria-hidden="true" />
-        <strong role="status">{title}</strong>
+        <strong aria-live="polite">{title}</strong>
         <button type="button" className="app-processing-view" aria-label="View processing in Activity" onClick={onView}>
           View
         </button>
@@ -469,9 +476,10 @@ export function MobileTabBar({
   const activeTab = tab === "capture" ? "inbox" : tab;
   return (
     <nav className="app-tabbar" aria-label="Mobile navigation">
-      {appDestinations.map(({ tab: next, shortLabel, icon: Icon }) => (
+      {appDestinations.map(({ tab: next, label, shortLabel, icon: Icon }) => (
         <button
           type="button"
+          aria-label={label}
           className={activeTab === next ? "active" : ""}
           aria-current={activeTab === next ? "page" : undefined}
           onClick={() => onNavigate(next)}

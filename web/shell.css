@@ -881,9 +881,6 @@
     box-shadow: var(--shadow-dialog);
     transform: translateX(-100%);
     visibility: hidden;
-    transition:
-      transform 200ms ease,
-      visibility 0s linear 200ms;
   }
 
   .app-sidebar.open {
@@ -990,7 +987,9 @@
     cursor: pointer;
   }
 
-  .app-tabbar button.active {
+  .app-tabbar button.active,
+  .app-tabbar button:hover {
+    background: transparent;
     color: var(--ink);
     font-weight: var(--weight-semibold);
   }

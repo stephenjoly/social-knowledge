@@ -36,17 +36,24 @@ test("keeps invalid links in the capture dialog and confirms submission", async 
   await page.getByLabel("Username").fill(username!);
   await page.getByLabel("Password").fill(password!);
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("button", { name: "Capture a post" }).click();
+  const trigger = page.getByRole("button", { name: "Capture a post" });
+  await trigger.click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Capture a post" });
-  await dialog.getByLabel("Post URL").fill("https://example.com/post");
-  await dialog.getByRole("button", { name: "Capture post" }).click();
+  await expect(dialog.getByLabel("Post link")).toBeFocused();
+  await dialog.getByLabel("Post link").fill("https://example.com/post");
+  await dialog.getByRole("button", { name: "Save to archive" }).click();
   await expect(dialog.getByRole("alert")).toHaveText(
     "Enter a valid Facebook or Instagram post URL.",
   );
   await dialog
-    .getByLabel("Post URL")
+    .getByLabel("Post link")
     .fill("https://www.instagram.com/reel/synthetic/");
-  await dialog.getByRole("button", { name: "Capture post" }).click();
+  await expect(dialog.getByText("Instagram reel detected")).toBeVisible();
+  await dialog.getByRole("button", { name: "Save to archive" }).click();
   await expect(
     page.getByRole("dialog", { name: "Post submitted" }),
   ).toBeVisible();

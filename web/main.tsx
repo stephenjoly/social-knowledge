@@ -771,7 +771,10 @@ function App() {
                   ? e.message
                   : "Submission failed",
       );
-      if (providerRequired) navigateTo("settings", "replace");
+      if (providerRequired) {
+        navigateTo("settings", "replace");
+        setSettingsTopic("ai");
+      }
     } finally {
       setSubmitting(false);
     }
