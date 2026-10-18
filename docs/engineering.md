@@ -46,6 +46,19 @@ Ask, and Settings. Activity rows, logs, and account controls use these tokens;
 failure guidance wraps so recovery instructions remain readable. Preserve the
 compact archive layout and verify mobile reflow when changing these roles.
 
+## Dashboard UI v2 tokens and primitives
+
+`web/design-tokens.css` declares the colour, type, radius, and shadow tokens
+from [`docs/design/ui-v2-spec.md`](design/ui-v2-spec.md). The shared primitives
+live in `web/components/ui/` and are exported from `primitives.ts`; their styles
+in `primitives.css` import the tokens and use the `ui-` class prefix. The v2
+button is `ActionButton` with `ui-btn` classes, because the legacy `Button` and
+`.ui-button` remain in use until the old shell is retired.
+
+Component tests are `test/**/*.test.tsx`. They are type-checked by
+`tsconfig.web.json`, not the server config, and render with `react-dom/server`
+rather than a DOM testing library.
+
 ## Documentation discipline
 
 Documentation describes current truth unless clearly labeled as a proposal or historical completed plan. Code, tests, and docs should change together. When they disagree, verify runtime behavior and repair the stale artifact in the same change.
