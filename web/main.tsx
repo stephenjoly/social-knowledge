@@ -383,6 +383,7 @@ function App() {
     }
     if (nextTab === "settings" && tab !== "settings") setSettingsTopic("account");
     if (nextTab !== "settings") lastArchiveTab.current = nextTab;
+    setDetail(null);
     setTab(nextTab);
     setCaptureOpen(false);
     setMobileMenuOpen(false);
@@ -583,6 +584,7 @@ function App() {
           onCapture={openCapture}
         />
         <main className="shell" id="main-content">
+          {detail && <Detail id={detail} from={tab} onClose={() => setDetail(null)} />}
           {tab === "inbox" && (
             <InboxPage refreshToken={inboxRefresh} onOpen={setDetail} />
           )}
@@ -656,7 +658,6 @@ function App() {
           onCapture={paletteCapture}
         />
       )}
-      {detail && <Detail id={detail} onClose={() => setDetail(null)} />}
     </div>
   );
 }

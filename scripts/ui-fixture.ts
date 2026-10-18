@@ -30,7 +30,43 @@ type SeedCapture = {
   translationLanguage: string | null;
   durationSeconds: number;
   ageMinutes: number;
+  commentCount?: number;
+  confidence?: number;
 };
+
+/** A thinner seed for captures that only need to exist in the knowledge base. */
+function brief(
+  slug: string,
+  title: string,
+  creator: string,
+  domain: string,
+  subcategory: string,
+  ageMinutes: number,
+  takeaways: string[] = [],
+  extra: Partial<SeedCapture> = {},
+): SeedCapture {
+  return {
+    slug,
+    platform: "instagram",
+    sourceType: "video",
+    title,
+    creator,
+    domain,
+    subcategory,
+    topics: [subcategory.toLowerCase()],
+    synopsis: title,
+    whyUseful: "",
+    takeaways,
+    recommendations: [],
+    claims: [],
+    entities: [],
+    sourceLanguage: "en",
+    translationLanguage: null,
+    durationSeconds: 45,
+    ageMinutes,
+    ...extra,
+  };
+}
 
 const captures: SeedCapture[] = [
   {
@@ -43,26 +79,27 @@ const captures: SeedCapture[] = [
     subcategory: "Lisbon",
     topics: ["restaurants", "pastry"],
     synopsis:
-      "Manteigaria in Chiado makes the pastel de nata locals rate above the famous Belem version.",
-    whyUseful: "Names a specific bakery and the best time to arrive.",
+      "Manteigaria in Chiado makes the pastel de nata locals rate above the famous Belém version.",
+    whyUseful: "Go before 10am, eat it warm at the counter, and add cinnamon, not sugar.",
     takeaways: [
       "Fresh batches come out every 20 to 30 minutes; ask for one from the newest tray.",
       "The Chiado shop is faster than the Time Out Market branch.",
-      "Each tart is about EUR 1.30 and a box of six travels well for a day.",
+      "€1.30 each; a box of six travels well for about a day.",
     ],
     recommendations: [
-      "Add Manteigaria on Rua do Loreto to the Lisbon trip list.",
-      "Compare it with Pasteis de Belem on the same morning if there is time.",
+      "Add Manteigaria (Rua do Loreto 2) to the Lisbon trip list.",
+      "Compare with Pastéis de Belém on the same day if you have time.",
     ],
-    claims: ["Open until midnight every day. Opening hours may have changed."],
+    claims: ["“Open until midnight every day.” Opening hours may have changed."],
     entities: [
       { name: "Manteigaria", type: "place", location: "Chiado, Lisbon" },
-      { name: "Pasteis de Belem", type: "place", location: "Belem, Lisbon" },
+      { name: "Pastéis de Belém", type: "place", location: "Belém, Lisbon" },
     ],
     sourceLanguage: "pt",
     translationLanguage: "en",
     durationSeconds: 48,
     ageMinutes: 310,
+    commentCount: 12,
   },
   {
     slug: "deadlift-mistakes",
@@ -169,7 +206,7 @@ const captures: SeedCapture[] = [
     synopsis: "Small plates spots that take no bookings.",
     whyUseful: "Names arrival times that avoid the queue.",
     takeaways: [
-      "Taberna da Rua das Flores takes no bookings; arrive at 7pm.",
+      "Taberna da Rua das Flores takes no bookings. Arrive at 7pm or expect an hour's wait.",
       "Campo de Ourique market is calmer than Time Out at lunch.",
     ],
     recommendations: ["Plan dinner for 7pm on the first night."],
@@ -226,6 +263,57 @@ const captures: SeedCapture[] = [
     durationSeconds: 0,
     ageMinutes: 11000,
   },
+  // Knowledge base density: the rest of the Lisbon topic, a few more topics per
+  // category for the home cards, and captures the AI could not place.
+  brief(
+    "lisbon-tourist-traps",
+    "Lisbon tourist traps (and what to do instead)",
+    "slowtravelpt",
+    "Travel",
+    "Lisbon",
+    7000,
+    [
+      "Skip Time Out Market at lunch; go mid-afternoon or eat in Campo de Ourique instead.",
+      "Tram 28 is quieter before 9am or from the Martim Moniz end.",
+    ],
+    { platform: "facebook", topics: ["restaurants"] },
+  ),
+  brief(
+    "sintra-day",
+    "A perfect Sintra day",
+    "wanderingana",
+    "Travel",
+    "Lisbon",
+    9000,
+    [
+      "Sintra is best as an early weekday train trip. Buy palace tickets online the night before.",
+      "Walk down from Pena rather than queueing for the shuttle bus.",
+    ],
+    { topics: ["day trips"] },
+  ),
+  brief("alfama-golden-hour", "Alfama at golden hour", "lisboalight", "Travel", "Lisbon", 10000, [], {
+    topics: ["neighbourhoods"],
+  }),
+  brief("kyoto-temples", "Kyoto temples before the crowds", "slowjapan", "Travel", "Kyoto", 12000),
+  brief("carry-on-packing", "Packing a week into one carry-on", "lightpacker", "Travel", "Packing", 12100),
+  brief("deadlift-cues", "Two cues that fixed my deadlift lockout", "coachmarta", "Health & Wellness", "Strength Training", 12200),
+  brief("zone-2-pace", "Finding your Zone 2 pace without a monitor", "drlenahart", "Health & Wellness", "Zone 2", 12300),
+  brief("sleep-routine", "A wind-down routine for better sleep", "sleepwell", "Health & Wellness", "Sleep", 12400),
+  brief("hip-hinge", "Learning the hip hinge with a dowel", "coachmarta", "Health & Wellness", "Strength Training", 12410),
+  brief("zone-2-walks", "Incline walking as Zone 2", "drlenahart", "Health & Wellness", "Zone 2", 12420),
+  brief("caffeine-cutoff", "When to stop caffeine for better sleep", "sleepwell", "Health & Wellness", "Sleep", 12430),
+  brief("tray-bake", "Three weeknight tray bakes", "weeknightkitchen", "Food & Cooking", "Weeknight", 12500),
+  brief("focaccia", "No-knead focaccia", "breadathome", "Food & Cooking", "Baking", 12600),
+  brief("miso-butter", "Miso butter, five ways", "umamiclub", "Food & Cooking", "Miso", 12700),
+  brief("weekly-review", "The Friday review that sets up Monday", "calmproductive", "Productivity", "Weekly planning", 12800),
+  brief("planning-template", "A one-page weekly planning template", "calmproductive", "Productivity", "Weekly planning", 12850),
+  brief("deep-focus", "Ninety-minute focus blocks", "deepworkdaily", "Productivity", "Focus", 12900),
+  brief("index-fund-fees", "What index fund fees really cost", "plainmoney", "Personal Finance", "Index funds", 13000),
+  brief("budget-buckets", "A three-bucket budget", "plainmoney", "Personal Finance", "Budgeting", 13100),
+  brief("tap-washer", "Fix a dripping tap in ten minutes", "fixitfriday", "Home & DIY", "Repairs", 13200),
+  brief("desk-mobility", "A 10-minute mobility flow for desk workers", "movedaily", "Other", "Other", 13300, [], { confidence: 0.4 }),
+  brief("starter-smell", "Why your sourdough starter smells like nail polish", "breadathome", "Other", "Other", 13400, [], { confidence: 0.4 }),
+  brief("museum-pass", "The museum pass that actually pays for itself", "citysaver", "Other", "Other", 13500, [], { confidence: 0.4 }),
 ];
 
 function analysisFor(seed: SeedCapture): AnalysisResult {
@@ -244,11 +332,11 @@ function analysisFor(seed: SeedCapture): AnalysisResult {
     evidence: [],
     classification: {
       primaryDomain: seed.domain,
-      country: seed.domain === "Travel" ? "Portugal" : null,
+      country: seed.subcategory === "Lisbon" ? "Portugal" : null,
       city: seed.subcategory === "Lisbon" ? "Lisbon" : null,
       subcategory: seed.subcategory,
       secondaryTopics: seed.topics,
-      confidence: 0.9,
+      confidence: seed.confidence ?? 0.9,
     },
   } as AnalysisResult;
 }
@@ -266,6 +354,14 @@ export async function seedUiFixture(store: JobStore, config: AppConfig) {
     displayName: fixtureAccount.displayName,
     avatarColor: "#3f6b52",
   });
+
+  const ensureLibraryNode = (parentId: string | null, label: string, kind: string): string =>
+    store["ensureLibraryNode"](parentId, label, kind);
+  const lisbonNodeId = ensureLibraryNode(
+    ensureLibraryNode(null, "Travel", "domain"),
+    "Lisbon",
+    "city",
+  );
 
   for (const seed of captures) {
     const sourceUrl =
@@ -301,14 +397,26 @@ export async function seedUiFixture(store: JobStore, config: AppConfig) {
       sourceLanguage: seed.sourceLanguage,
       translatedTranscript: seed.translationLanguage ? seed.synopsis : null,
       translationLanguage: seed.translationLanguage,
-      comments: [],
+      comments: Array.from({ length: seed.commentCount ?? 0 }, (_, index) => ({
+        author: `reader${index + 1}`,
+        text: `Synthetic comment ${index + 1} about ${seed.title}.`,
+        likeCount: 12 - index,
+        isPinned: index === 0,
+      })),
       analysis: analysisFor(seed),
       publishedAt: null,
       durationSeconds: seed.durationSeconds || null,
       notePath,
       assets: [],
     })!;
-    store.assignClassification(capture.id, capture.analysis.classification);
+    store.database
+      .prepare("UPDATE captures SET created_at=? WHERE id=?")
+      .run(new Date(Date.now() - seed.ageMinutes * 60_000).toISOString(), capture.id);
+    // The drawings file Lisbon directly under Travel as a place, which the
+    // automatic classifier only reaches through a country node.
+    if (seed.domain === "Travel" && seed.subcategory === "Lisbon")
+      store.moveCapture(capture.id, lisbonNodeId);
+    else store.assignClassification(capture.id, capture.analysis.classification);
     store.setDisplayTitle(job.id, seed.title);
     for (const status of ["downloading", "processing", "transcribing"] as const)
       store.setStatus(job.id, status);
