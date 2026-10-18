@@ -514,6 +514,7 @@ function InviteDialog({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [link, setLink] = useState("");
+  const [copyFailed, setCopyFailed] = useState(false);
   const [copyMessage, setCopyMessage] = useState("");
   const create = async (event: FormEvent) => {
     event.preventDefault();
@@ -573,21 +574,29 @@ function InviteDialog({
     >
       {link ? (
         <div className="st-field">
-          <label htmlFor="new-invitation-link">Invitation link</label>
           <div className="st-inline-controls">
-            <Input
-              id="new-invitation-link"
-              className="st-grow st-mono"
-              readOnly
-              value={link}
-              onFocus={(event) => event.currentTarget.select()}
-            />
+            {copyFailed && (
+              <Input
+                aria-label="New invitation link"
+                className="st-grow st-mono"
+                readOnly
+                value={link}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            )}
             <ActionButton
               icon={Copy}
+              variant={copyFailed ? "default" : "primary"}
               onClick={() =>
                 void navigator.clipboard.writeText(link).then(
-                  () => setCopyMessage("Invitation link copied."),
-                  () => setCopyMessage("Select and copy the invitation link."),
+                  () => {
+                    setCopyFailed(false);
+                    setCopyMessage("Invitation link copied.");
+                  },
+                  () => {
+                    setCopyFailed(true);
+                    setCopyMessage("Select and copy the invitation link.");
+                  },
                 )
               }
             >
@@ -645,6 +654,8 @@ export function PeopleAccess({ currentUser }: { currentUser: AccountUser }) {
   const [invitationLinks, setInvitationLinks] = useState<
     Record<string, string>
   >({});
+  const [invitationMessage, setInvitationMessage] = useState("");
+  const [fallbackUrl, setFallbackUrl] = useState("");
   const [suspend, setSuspend] = useState<AccountUser | null>(null);
   const [suspendError, setSuspendError] = useState("");
   const [pending, setPending] = useState(false);
@@ -697,7 +708,8 @@ export function PeopleAccess({ currentUser }: { currentUser: AccountUser }) {
     action: "revoke" | "regenerate",
   ) => {
     setInvitationPending(invitation.id);
-    setMessage("");
+    setInvitationMessage("");
+    setFallbackUrl("");
     try {
       if (action === "revoke") {
         await request(`/api/v1/admin/invitations/${invitation.id}/revoke`, {
@@ -708,7 +720,7 @@ export function PeopleAccess({ currentUser }: { currentUser: AccountUser }) {
           delete next[invitation.id];
           return next;
         });
-        setMessage("Invitation revoked.");
+        setInvitationMessage("Invitation revoked.");
       } else {
         const result = await request<{
           invitation: Invitation;
@@ -725,13 +737,13 @@ export function PeopleAccess({ currentUser }: { currentUser: AccountUser }) {
             delete next[invitation.id];
           return next;
         });
-        setMessage(
+        setInvitationMessage(
           "New invitation link created. Copy it now; the previous link no longer works.",
         );
       }
       await load();
     } catch (error) {
-      setMessage(
+      setInvitationMessage(
         error instanceof Error && !/^[a-z0-9_]+$/.test(error.message)
           ? error.message
           : action === "revoke"
@@ -882,6 +894,20 @@ export function PeopleAccess({ currentUser }: { currentUser: AccountUser }) {
       <SettingsSection
         title="Open invitations"
         description="Links expire after 24 hours. Anyone with the link can create one account."
+        after={
+          <>
+            {fallbackUrl && (
+              <Input
+                className="st-mono"
+                readOnly
+                aria-label="New invitation link"
+                value={fallbackUrl}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            )}
+            <Feedback>{invitationMessage}</Feedback>
+          </>
+        }
       >
         {openInvitations.map((invitation) => {
           const link = invitationLinks[invitation.id];
@@ -901,9 +927,13 @@ export function PeopleAccess({ currentUser }: { currentUser: AccountUser }) {
                   onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(link);
-                      setMessage("Invitation link copied.");
+                      setFallbackUrl("");
+                      setInvitationMessage("Invitation link copied.");
                     } catch {
-                      setMessage(`Copy this invitation link: ${link}`);
+                      setFallbackUrl(link);
+                      setInvitationMessage(
+                        "Select and copy the invitation link above.",
+                      );
                     }
                   }}
                 >
@@ -940,7 +970,8 @@ export function PeopleAccess({ currentUser }: { currentUser: AccountUser }) {
           onClose={() => setInviteOpen(false)}
           onCreated={async (invitation, url) => {
             setInvitationLinks((links) => ({ ...links, [invitation.id]: url }));
-            setMessage(
+            setFallbackUrl("");
+            setInvitationMessage(
               "Invitation created. Copy it now; it cannot be retrieved later.",
             );
             await load();

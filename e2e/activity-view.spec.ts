@@ -200,7 +200,7 @@ test("Activity uses safe inline logs, complete failure counts, and compact accou
   await expect(accountMenu).toHaveCount(0);
   await expect(page.locator('.app-sidebar .app-nav button[data-tab="settings"]')).toBeHidden();
   await page.locator(".app-profile-settings").click();
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "My account" })).toBeVisible();
   await page.getByRole("button", { name: "Activity", exact: true }).click();
   await page.setViewportSize({ width: 900, height: 900 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
