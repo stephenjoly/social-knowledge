@@ -1,6 +1,6 @@
 import {
   FormEvent,
-  useDeferredValue,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -9,18 +9,10 @@ import {
 import { createRoot } from "react-dom/client";
 import {
   ChevronDown,
-  ChevronRight,
   Copy,
-  LogOut,
-  Plus,
   RotateCw,
-  Search,
-  Settings as SettingsIcon,
-  UserRound,
-  X,
 } from "lucide-react";
 import type {
-  Capture,
   ActivityStageName,
   ActivityStage,
   ActivityJob,
@@ -29,27 +21,26 @@ import type {
   ActivityCounts,
   ActivityPage,
   FailedActivityPage,
-  CaptureFacets,
-  InboxView,
-  InboxSortKey,
   AppTab,
+  PlatformConnection,
   SettingsTopic,
 } from "./shared/types";
 import { api } from "./shared/api";
 import { platformFor, formatPreciseDuration } from "./shared/format";
 import { Auth, ProviderOnboarding } from "./pages/auth";
-import {
-  inboxSortOptions,
-  CaptureCard,
-  CaptureTableRow,
-  CaptureMobileRow,
-  InboxLoadingCards,
-} from "./pages/inbox";
+import { InboxPage } from "./pages/inbox";
 import { Detail } from "./pages/capture-detail";
 import { Settings } from "./pages/settings";
 import { Library } from "./pages/library";
 import { AskAI } from "./pages/ask";
-import { AppNavigation } from "./pages/app-shell";
+import {
+  MobileTabBar,
+  MobileTopbar,
+  Sidebar,
+  appDestinations,
+} from "./pages/app-shell";
+import { CaptureDialog } from "./components/capture-dialog";
+import { CommandPalette } from "./components/command-palette";
 import type { AccountUser } from "./account-settings";
 import "./styles.css";
 import "./activity-capture.css";
@@ -58,6 +49,7 @@ import "./knowledge-ask.css";
 import "./settings.css";
 import "./inbox.css";
 import "./typography.css";
+import "./shell.css";
 
 const activityStages: ActivityStageName[] = [
   "added",
@@ -262,15 +254,28 @@ function safeActivityEvent(event: ActivityEvent): ActivityEvent | null {
   };
 }
 
+/** `?tab=capture` is the pre-dialog deep link; it now opens the dialog over Inbox. */
 function tabFromLocation(): AppTab {
   const value = new URLSearchParams(window.location.search).get("tab");
   return value === "library" ||
     value === "ask" ||
     value === "activity" ||
-    value === "capture" ||
     value === "settings"
     ? value
     : "inbox";
+}
+
+function captureFromLocation() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("tab") === "capture" || params.has("capture");
+}
+
+function isTypingTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      target.closest("input, textarea, select, [contenteditable='true']") !== null)
+  );
 }
 
 function App() {
@@ -290,9 +295,13 @@ function App() {
     return token;
   });
   const [tab, setTab] = useState<AppTab>(tabFromLocation);
-  const [settingsTopic, setSettingsTopic] = useState<SettingsTopic>("overview");
+  const [settingsTopic, setSettingsTopic] = useState<SettingsTopic>("account");
+  const lastArchiveTab = useRef<AppTab>(tab === "settings" ? "inbox" : tab);
+  const [captureOpen, setCaptureOpen] = useState(captureFromLocation);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [inboxRefresh, setInboxRefresh] = useState(0);
+  const [connectionsNeedAttention, setConnectionsNeedAttention] = useState(false);
   const highlightedJob = new URLSearchParams(window.location.search).get("job");
-  const [captures, setCaptures] = useState<Capture[]>([]);
   const [activityJobs, setActivityJobs] = useState<ActivityJob[]>([]);
   const [activityNextCursor, setActivityNextCursor] = useState<string | null>(
     null,
@@ -314,49 +323,13 @@ function App() {
   const [failedError, setFailedError] = useState(false);
   const [failedLoadingMore, setFailedLoadingMore] = useState(false);
   const failedRequest = useRef(0);
-  const [search, setSearch] = useState("");
-  const deferredSearch = useDeferredValue(search);
-  const [platform, setPlatform] = useState("");
-  const [category, setCategory] = useState("");
-  const [topic, setTopic] = useState("");
-  const [inboxView, setInboxView] = useState<InboxView>(() => {
-    try {
-      return window.localStorage.getItem("social-knowledge:inbox-view") ===
-        "table"
-        ? "table"
-        : "tiles";
-    } catch {
-      return "tiles";
-    }
-  });
-  const [sort, setSort] = useState<InboxSortKey>("savedAt");
-  const [direction, setDirection] = useState<"asc" | "desc">("desc");
-  const [filterBuilderOpen, setFilterBuilderOpen] = useState(false);
-  const [facets, setFacets] = useState<CaptureFacets>({
-    categories: [],
-    topics: [],
-  });
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loadingInbox, setLoadingInbox] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [inboxError, setInboxError] = useState<string | null>(null);
-  const inboxRequest = useRef(0);
   const liveRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inboxFilters = useRef({
-    search: "",
-    platform: "",
-    category: "",
-    topic: "",
-  });
-  const inboxPresentation = useRef<{
-    sort: InboxSortKey;
-    direction: "asc" | "desc";
-  }>({ sort: "savedAt", direction: "desc" });
   const [detail, setDetail] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [captureUrl, setCaptureUrl] = useState("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
+  const [captureMessage, setCaptureMessage] = useState("");
   const [captureError, setCaptureError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [captureSubmitted, setCaptureSubmitted] = useState(false);
@@ -379,58 +352,6 @@ function App() {
       setUser(null);
       const err = e as { body?: { setupRequired?: boolean } };
       setAuthState(err.body?.setupRequired ? "setup" : "login");
-    }
-  }
-  async function loadInboxPage(append = false) {
-    const requestId = ++inboxRequest.current;
-    const cursor = append ? nextCursor : null;
-    if (append && !cursor) return;
-    if (append) {
-      setLoadingMore(true);
-    } else {
-      setLoadingInbox(true);
-      setLoadingMore(false);
-      setCaptures([]);
-      setNextCursor(null);
-      setInboxError(null);
-    }
-    const query = new URLSearchParams({ limit: "48" });
-    const filters = inboxFilters.current;
-    if (filters.search) query.set("search", filters.search);
-    if (filters.platform) query.set("platform", filters.platform);
-    if (filters.category) query.set("nodeId", filters.category);
-    if (filters.topic) query.set("topic", filters.topic);
-    query.set("sort", inboxPresentation.current.sort);
-    query.set("direction", inboxPresentation.current.direction);
-    if (cursor) query.set("cursor", cursor);
-    try {
-      const page = await api<{
-        captures: Capture[];
-        nextCursor: string | null;
-      }>(`/api/v1/captures?${query}`);
-      if (requestId !== inboxRequest.current) return;
-      setCaptures((current) => {
-        if (!append) return page.captures;
-        const existing = new Set(current.map((capture) => capture.id));
-        return [
-          ...current,
-          ...page.captures.filter((capture) => !existing.has(capture.id)),
-        ];
-      });
-      setNextCursor(page.nextCursor);
-      setInboxError(null);
-    } catch (error) {
-      if (requestId === inboxRequest.current)
-        setInboxError(
-          append
-            ? "Unable to load more captures. Try again."
-            : "Unable to load captures. Try again.",
-        );
-    } finally {
-      if (requestId === inboxRequest.current) {
-        if (append) setLoadingMore(false);
-        else setLoadingInbox(false);
-      }
     }
   }
   async function loadActivityPage(
@@ -508,17 +429,21 @@ function App() {
         setFailedLoadingMore(false);
     }
   }
-  async function loadSupportingData() {
-    const facets = await api<CaptureFacets>("/api/v1/capture-facets");
-    setFacets(facets);
+  async function loadConnectionAttention() {
+    try {
+      const result = await api<{ connections: PlatformConnection[] }>(
+        "/api/v1/platform-connections",
+      );
+      setConnectionsNeedAttention(
+        result.connections.some((item) => item.status === "needs_attention"),
+      );
+    } catch {
+      setConnectionsNeedAttention(false);
+    }
   }
   async function load() {
-    await Promise.all([
-      loadInboxPage(),
-      loadSupportingData(),
-      loadActivityPage(),
-      loadFailedJobs(),
-    ]);
+    setInboxRefresh((current) => current + 1);
+    await Promise.all([loadActivityPage(), loadFailedJobs()]);
   }
   function scheduleLiveRefresh() {
     if (liveRefreshTimer.current) return;
@@ -532,25 +457,7 @@ function App() {
   }, []);
   useEffect(() => {
     if (authState !== "ready") return;
-    inboxFilters.current = {
-      search: deferredSearch,
-      platform,
-      category,
-      topic,
-    };
-    inboxPresentation.current = { sort, direction };
-    void loadInboxPage();
-  }, [authState, deferredSearch, platform, category, topic, sort, direction]);
-  useEffect(() => {
-    try {
-      window.localStorage.setItem("social-knowledge:inbox-view", inboxView);
-    } catch {
-      // Keep this preference optional when storage is unavailable.
-    }
-  }, [inboxView]);
-  useEffect(() => {
-    if (authState !== "ready") return;
-    void loadSupportingData();
+    void loadConnectionAttention();
     const stream = new EventSource("/api/v1/events");
     stream.onmessage = () => scheduleLiveRefresh();
     return () => {
@@ -569,20 +476,6 @@ function App() {
     if (authState !== "ready") return;
     void loadFailedJobs();
   }, [authState]);
-  const hasInboxFilters = Boolean(search || platform || category || topic);
-  const activeCategory =
-    facets.categories.find((facet) => facet.id === category)?.label ?? null;
-  const selectedSort = inboxSortOptions.find((option) => option.key === sort)!;
-  const sortValue = `${sort}:${direction}`;
-  const applySort = (nextSort: InboxSortKey) => {
-    if (nextSort === sort) {
-      setDirection((current) => (current === "asc" ? "desc" : "asc"));
-      return;
-    }
-    setSort(nextSort);
-    setDirection(nextSort === "savedAt" ? "desc" : "asc");
-  };
-  const activeJobCount = activityCounts.active;
   const visibleActivityJobs = useMemo(
     () =>
       [...activityJobs].sort(
@@ -686,26 +579,13 @@ function App() {
       setCopyFeedback("Couldn’t copy logs. Select and copy them manually.");
     }
   }
-  const profileInitial = (user?.displayName || user?.username || "S")
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  const navigateTo = (
-    nextTab: AppTab,
-    historyMode: "push" | "replace" = "push",
+  const navigateRef = useRef<(nextTab: AppTab) => void>(() => undefined);
+  const writeLocation = (
+    update: (params: URLSearchParams) => void,
+    historyMode: "push" | "replace",
   ) => {
-    if (nextTab === "capture") {
-      setMessage("");
-      setCaptureError(false);
-      setCaptureSubmitted(false);
-    }
-    setTab(nextTab);
-    setMobileMenuOpen(false);
     const nextUrl = new URL(window.location.href);
-    if (nextTab === "inbox") nextUrl.searchParams.delete("tab");
-    else nextUrl.searchParams.set("tab", nextTab);
+    update(nextUrl.searchParams);
     const path = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
     if (
       path !==
@@ -718,26 +598,98 @@ function App() {
       );
     }
   };
+  const openCapture = () => {
+    setCaptureMessage("");
+    setCaptureError(false);
+    setCaptureSubmitted(false);
+    setMobileMenuOpen(false);
+    setPaletteOpen(false);
+    setCaptureOpen(true);
+    writeLocation((params) => params.set("capture", "1"), "push");
+  };
+  const closeCapture = () => {
+    setCaptureOpen(false);
+    writeLocation((params) => params.delete("capture"), "replace");
+  };
+  const navigateTo = (
+    nextTab: AppTab,
+    historyMode: "push" | "replace" = "push",
+  ) => {
+    if (nextTab === "capture") {
+      openCapture();
+      return;
+    }
+    if (nextTab === "settings" && tab !== "settings") setSettingsTopic("account");
+    if (nextTab !== "settings") lastArchiveTab.current = nextTab;
+    setTab(nextTab);
+    setCaptureOpen(false);
+    setMobileMenuOpen(false);
+    writeLocation((params) => {
+      params.delete("capture");
+      if (nextTab === "inbox") params.delete("tab");
+      else params.set("tab", nextTab);
+    }, historyMode);
+  };
+  navigateRef.current = navigateTo;
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "capture")
+      writeLocation((params) => {
+        params.delete("tab");
+        params.set("capture", "1");
+      }, "replace");
     const restore = () => {
-      const nextTab = tabFromLocation();
-      if (nextTab === "capture") {
+      const nextCapture = captureFromLocation();
+      if (nextCapture) {
         setCaptureSubmitted(false);
-        setMessage("");
+        setCaptureMessage("");
       }
+      const nextTab = tabFromLocation();
+      if (nextTab !== "settings") lastArchiveTab.current = nextTab;
       setTab(nextTab);
+      setCaptureOpen(nextCapture);
     };
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
   }, []);
   useEffect(() => {
-    if (tab !== "capture") return;
-    const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") navigateTo("inbox", "replace");
+    if (authState !== "ready") return;
+    let pendingG = 0;
+    const onKey = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && key === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
+      if (
+        event.defaultPrevented ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        isTypingTarget(event.target) ||
+        document.querySelector('[aria-modal="true"]')
+      )
+        return;
+      if (pendingG && Date.now() - pendingG < 1200) {
+        pendingG = 0;
+        const destination = appDestinations.find((item) => item.shortcut === key);
+        if (destination) {
+          event.preventDefault();
+          navigateRef.current(destination.tab);
+        }
+        return;
+      }
+      pendingG = key === "g" && !event.shiftKey ? Date.now() : 0;
     };
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
-  }, [tab]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [authState]);
+  useEffect(() => {
+    if (authState === "ready" && tab === "settings") void loadConnectionAttention();
+  }, [authState, tab, settingsTopic]);
+  const closePalette = useCallback(() => setPaletteOpen(false), []);
+  const paletteNavigate = useCallback((nextTab: AppTab) => navigateRef.current(nextTab), []);
+  const paletteCapture = useCallback(() => navigateRef.current("capture"), []);
   const signOut = async () => {
     try {
       await api("/api/auth/logout", { method: "POST" });
@@ -777,7 +729,7 @@ function App() {
     event.preventDefault();
     setSubmitting(true);
     setCaptureError(false);
-    setMessage("Submitting…");
+    setCaptureMessage("Submitting…");
     try {
       const result = await api<{
         created: boolean;
@@ -787,7 +739,7 @@ function App() {
         method: "POST",
         body: JSON.stringify({ url: captureUrl, note: note || undefined }),
       });
-      setMessage(
+      setCaptureMessage(
         result.retried
           ? "The previous failure was re-queued."
           : result.created
@@ -806,7 +758,7 @@ function App() {
         "transcription_required",
       ].includes(errorCode ?? "");
       setCaptureError(true);
-      setMessage(
+      setCaptureMessage(
         errorCode === "transcription_required"
           ? "Choose a connected OpenAI transcription model in Settings before capturing."
           : errorCode === "analysis_provider_required"
@@ -824,448 +776,50 @@ function App() {
       setSubmitting(false);
     }
   }
+  const liveWork = activityCounts.active + activityCounts.queued > 0;
   return (
-    <div className="app-frame">
-      <aside className="app-sidebar">
-        <div className="app-sidebar-brand">
-          <span className="app-wordmark">social knowledge</span>
-          <span className="app-workspace-label">Private archive</span>
-        </div>
-        <AppNavigation
-          tab={tab}
-          activeCount={activeJobCount}
-          onNavigate={navigateTo}
+    <div className={`app-frame${tab === "settings" ? " app-frame-settings" : ""}`}>
+      <Sidebar
+        tab={tab}
+        settingsTopic={settingsTopic}
+        isAdmin={user?.role === "admin"}
+        connectionsNeedAttention={connectionsNeedAttention}
+        activityCounts={activityCounts}
+        activityJobs={activityJobs}
+        userName={user?.displayName || user?.username || "Personal archive"}
+        username={user?.username ?? null}
+        avatarColor={user?.avatarColor || undefined}
+        mobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
+        onNavigate={navigateTo}
+        onSettingsTopic={(topic) => {
+          setSettingsTopic(topic);
+          setMobileMenuOpen(false);
+        }}
+        onBack={() => navigateTo(lastArchiveTab.current)}
+        onCapture={openCapture}
+        onOpenPalette={() => {
+          setMobileMenuOpen(false);
+          setPaletteOpen(true);
+        }}
+        onSignOut={() => void signOut()}
+      />
+      {mobileMenuOpen && (
+        <div
+          className="app-sidebar-scrim"
+          role="presentation"
+          onClick={() => setMobileMenuOpen(false)}
         />
-        <div className="app-profile">
-          <button
-            type="button"
-            className="app-account-trigger"
-            aria-label="Open account menu"
-            aria-expanded={mobileMenuOpen}
-            onClick={() => setMobileMenuOpen(true)}
-          >
-            <span className="app-avatar" style={{ background: user?.avatarColor || undefined, color: user?.avatarColor ? "#fff" : undefined }} aria-hidden="true">{profileInitial}</span>
-            <span className="app-profile-copy">
-              <strong>{user?.displayName || user?.username || "Personal archive"}</strong>
-              <small>{tab === "settings" ? "Account" : "Personal workspace"}</small>
-            </span>
-            <ChevronDown aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="app-profile-settings"
-            aria-label="Open Settings"
-            onClick={() => navigateTo("settings")}
-          >
-            <SettingsIcon aria-hidden="true" />
-          </button>
-        </div>
-      </aside>
+      )}
       <section className="app-workspace">
-        <header className="app-topbar">
-          <button
-            type="button"
-            className="app-menu-trigger"
-            aria-label="Open account menu"
-            aria-expanded={mobileMenuOpen}
-            onClick={() => setMobileMenuOpen(true)}
-          >
-            <span className="app-avatar" style={{ background: user?.avatarColor || undefined, color: user?.avatarColor ? "#fff" : undefined }} aria-hidden="true">{profileInitial}</span>
-            <ChevronRight aria-hidden="true" />
-          </button>
-          <span className="app-mobile-wordmark">social knowledge</span>
-          {(tab === "inbox" || tab === "capture") && <button
-            type="button"
-            className="app-capture"
-            aria-label="Capture a post"
-            onClick={() => navigateTo("capture")}
-          >
-            <Plus aria-hidden="true" />
-            <span>Capture link</span>
-          </button>}
-        </header>
-        <main className="shell">
-          {(tab === "inbox" || tab === "capture") && (
-            <section className="inbox-page" aria-labelledby="inbox-title">
-              <div className="inbox-hero">
-                <div className="eyebrow">Your archive</div>
-                <h1 id="inbox-title">Inbox</h1>
-                <p>The posts you chose to keep, ready when you need them.</p>
-                <button
-                  type="button"
-                  className="inbox-mobile-capture"
-                  aria-label="Capture a post"
-                  onClick={() => navigateTo("capture")}
-                >
-                  <Plus aria-hidden="true" /> Capture
-                </button>
-              </div>
-              <section
-                className="inbox-collection"
-                aria-labelledby="captures-heading"
-              >
-                <header className="inbox-collection-heading">
-                  <div>
-                    <h2 id="captures-heading">Captures</h2>
-                  </div>
-                </header>
-                <div className="inbox-filter-panel">
-                  <div className="inbox-toolbar">
-                    <label className="filter-search">
-                      <Search aria-hidden="true" />
-                      <span className="sr-only">Search your archive</span>
-                      <input
-                        placeholder="Search titles, notes, or creators"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                      />
-                      {search && (
-                        <button
-                          type="button"
-                          aria-label="Clear search"
-                          onClick={() => setSearch("")}
-                        >
-                          <X aria-hidden="true" />
-                        </button>
-                      )}
-                    </label>
-                    <div className="inbox-toolbar-actions">
-                      <button
-                        type="button"
-                        className="inbox-filter-trigger"
-                        aria-expanded={filterBuilderOpen}
-                        aria-controls="inbox-filter-builder"
-                        onClick={() => setFilterBuilderOpen(true)}
-                      >
-                        + Add filter
-                      </button>
-                      <label className="inbox-sort-control">
-                        <span className="sr-only">Sort captures</span>
-                        <select
-                          aria-label="Sort captures"
-                          value={sortValue}
-                          onChange={(event) => {
-                            const [nextSort, nextDirection] =
-                              event.target.value.split(":") as [
-                                InboxSortKey,
-                                "asc" | "desc",
-                              ];
-                            setSort(nextSort);
-                            setDirection(nextDirection);
-                          }}
-                        >
-                          {inboxSortOptions.flatMap((option) => [
-                            <option
-                              key={`${option.key}:desc`}
-                              value={`${option.key}:desc`}
-                            >
-                              {option.descending}
-                            </option>,
-                            <option
-                              key={`${option.key}:asc`}
-                              value={`${option.key}:asc`}
-                            >
-                              {option.ascending}
-                            </option>,
-                          ])}
-                        </select>
-                      </label>
-                      <div
-                        className="inbox-view-toggle"
-                        role="group"
-                        aria-label="Capture view"
-                      >
-                        <button
-                          type="button"
-                          className={inboxView === "tiles" ? "active" : ""}
-                          aria-pressed={inboxView === "tiles"}
-                          onClick={() => setInboxView("tiles")}
-                        >
-                          <span aria-hidden="true">▦</span>
-                          <span>Tiles</span>
-                        </button>
-                        <button
-                          type="button"
-                          className={inboxView === "table" ? "active" : ""}
-                          aria-pressed={inboxView === "table"}
-                          onClick={() => setInboxView("table")}
-                        >
-                          <span aria-hidden="true">☷</span>
-                          <span>Table</span>
-                        </button>
-                      </div>
-                    </div>
-                    {filterBuilderOpen && (
-                      <div
-                        className="inbox-filter-scrim"
-                        onMouseDown={(event) => {
-                          if (event.target === event.currentTarget)
-                            setFilterBuilderOpen(false);
-                        }}
-                      >
-                        <section
-                          className="inbox-filter-builder"
-                          id="inbox-filter-builder"
-                          role="dialog"
-                          aria-modal="true"
-                          aria-labelledby="inbox-filter-heading"
-                        >
-                          <header>
-                            <div>
-                              <span className="eyebrow">Filter captures</span>
-                              <h3 id="inbox-filter-heading">Add filter</h3>
-                            </div>
-                            <button
-                              type="button"
-                              aria-label="Close filters"
-                              onClick={() => setFilterBuilderOpen(false)}
-                            >
-                              <X aria-hidden="true" />
-                            </button>
-                          </header>
-                          <div className="inbox-filter-fields">
-                            <label>
-                              <span>Platform</span>
-                              <select
-                                value={platform}
-                                onChange={(event) =>
-                                  setPlatform(event.target.value)
-                                }
-                              >
-                                <option value="">Any platform</option>
-                                <option value="facebook">Facebook</option>
-                                <option value="instagram">Instagram</option>
-                              </select>
-                            </label>
-                            <label>
-                              <span>Category</span>
-                              <select
-                                value={category}
-                                onChange={(event) =>
-                                  setCategory(event.target.value)
-                                }
-                              >
-                                <option value="">Any category</option>
-                                {facets.categories.map((facet) => (
-                                  <option value={facet.id} key={facet.id}>
-                                    {facet.label} ({facet.count})
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label>
-                              <span>Topic</span>
-                              <select
-                                value={topic}
-                                onChange={(event) =>
-                                  setTopic(event.target.value)
-                                }
-                              >
-                                <option value="">Any topic</option>
-                                {facets.topics.map((facet) => (
-                                  <option value={facet.label} key={facet.label}>
-                                    {facet.label} ({facet.count})
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          </div>
-                          {hasInboxFilters && (
-                            <button
-                              type="button"
-                              className="inbox-clear-builder"
-                              onClick={() => {
-                                setSearch("");
-                                setPlatform("");
-                                setCategory("");
-                                setTopic("");
-                              }}
-                            >
-                              Clear filters
-                            </button>
-                          )}
-                        </section>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {hasInboxFilters && (
-                  <div
-                    className="inbox-active-filters"
-                    aria-label="Active filters"
-                  >
-                    {platform && (
-                      <button type="button" onClick={() => setPlatform("")}>
-                        Platform: {platform.slice(0, 1).toUpperCase()}
-                        {platform.slice(1)} <X aria-hidden="true" />
-                      </button>
-                    )}
-                    {activeCategory && (
-                      <button type="button" onClick={() => setCategory("")}>
-                        Category: {activeCategory} <X aria-hidden="true" />
-                      </button>
-                    )}
-                    {topic && (
-                      <button type="button" onClick={() => setTopic("")}>
-                        Topic: {topic} <X aria-hidden="true" />
-                      </button>
-                    )}
-                    {search && (
-                      <button type="button" onClick={() => setSearch("")}>
-                        Search: {search} <X aria-hidden="true" />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="inbox-clear-all"
-                      onClick={() => {
-                        setSearch("");
-                        setPlatform("");
-                        setCategory("");
-                        setTopic("");
-                      }}
-                    >
-                      Clear filters
-                    </button>
-                  </div>
-                )}
-                {!loadingInbox && !inboxError && (
-                  <p className="capture-count-context" aria-live="polite">
-                    {captures.length.toLocaleString()} capture
-                    {captures.length === 1 ? "" : "s"} loaded ·{" "}
-                    {selectedSort.label}{" "}
-                    {direction === "asc" ? "ascending" : "descending"}
-                  </p>
-                )}
-                {loadingInbox ? (
-                  <InboxLoadingCards />
-                ) : captures.length > 0 ? (
-                  inboxView === "tiles" ? (
-                    <div className="inbox-tile-grid">
-                      {captures.map((capture) => (
-                        <CaptureCard
-                          capture={capture}
-                          categoryLabel={capture.categoryLabel ?? null}
-                          onOpen={setDetail}
-                          key={capture.id}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <>
-                      <div className="inbox-table-wrap">
-                        <table className="inbox-capture-table">
-                          <caption className="sr-only">
-                            Captures sorted by{" "}
-                            {selectedSort.label.toLowerCase()}. Select a title
-                            to open its details.
-                          </caption>
-                          <thead>
-                            <tr>
-                              {inboxSortOptions.map((option) => (
-                                <th scope="col" key={option.key}>
-                                  <button
-                                    type="button"
-                                    className={
-                                      sort === option.key ? "active" : ""
-                                    }
-                                    onClick={() => applySort(option.key)}
-                                  >
-                                    {option.label}
-                                    <span aria-hidden="true">
-                                      {sort === option.key
-                                        ? direction === "asc"
-                                          ? "↑"
-                                          : "↓"
-                                        : "↕"}
-                                    </span>
-                                  </button>
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {captures.map((capture) => (
-                              <CaptureTableRow
-                                capture={capture}
-                                categoryLabel={capture.categoryLabel ?? null}
-                                onOpen={setDetail}
-                                key={capture.id}
-                              />
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <div
-                        className="inbox-mobile-rows"
-                        aria-label="Capture table rows"
-                      >
-                        {captures.map((capture) => (
-                          <CaptureMobileRow
-                            capture={capture}
-                            categoryLabel={capture.categoryLabel ?? null}
-                            onOpen={setDetail}
-                            key={capture.id}
-                          />
-                        ))}
-                      </div>
-                    </>
-                  )
-                ) : null}
-                {inboxError && (
-                  <div className="pagination-feedback" role="alert">
-                    <span>{inboxError}</span>
-                    <button
-                      type="button"
-                      onClick={() => void loadInboxPage(Boolean(nextCursor))}
-                      disabled={loadingInbox || loadingMore}
-                    >
-                      Retry
-                    </button>
-                  </div>
-                )}
-                {nextCursor && !inboxError && (
-                  <div className="pagination-controls">
-                    <button
-                      type="button"
-                      className="load-more"
-                      onClick={() => void loadInboxPage(true)}
-                      disabled={loadingMore}
-                    >
-                      {loadingMore ? "Loading more…" : "Load more"}
-                    </button>
-                  </div>
-                )}
-                {!loadingInbox && !captures.length && (
-                  <div className="empty">
-                    <h2>
-                      {hasInboxFilters
-                        ? "No captures found"
-                        : "Your inbox is ready"}
-                    </h2>
-                    <p>
-                      {hasInboxFilters
-                        ? "Try another search or clear your filters."
-                        : "Completed captures will appear here."}
-                    </p>
-                    {hasInboxFilters && (
-                      <button
-                        type="button"
-                        className="inbox-empty-clear"
-                        onClick={() => {
-                          setSearch("");
-                          setPlatform("");
-                          setCategory("");
-                          setTopic("");
-                        }}
-                      >
-                        Clear filters
-                      </button>
-                    )}
-                  </div>
-                )}
-              </section>
-            </section>
+        <MobileTopbar
+          menuOpen={mobileMenuOpen}
+          onOpenMenu={() => setMobileMenuOpen(true)}
+          onCapture={openCapture}
+        />
+        <main className="shell" id="main-content">
+          {tab === "inbox" && (
+            <InboxPage refreshToken={inboxRefresh} onOpen={setDetail} />
           )}
           {tab === "activity" && (
             <div className="activity-view">
@@ -1381,158 +935,38 @@ function App() {
           )}
           {tab === "library" && <Library onOpen={setDetail} />}
           {tab === "ask" && <AskAI onOpen={setDetail} />}
-          {tab === "capture" && (
-            <div
-              className="capture-overlay"
-              role="presentation"
-              onClick={() => navigateTo("inbox", "replace")}
-            >
-              <section
-                className="capture-panel"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="capture-title"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  className="capture-close"
-                  aria-label="Close capture"
-                  onClick={() => navigateTo("inbox", "replace")}
-                >
-                  ×
-                </button>
-                <div className="capture-eyebrow">New capture</div>
-                <div className="capture-intro">
-                  <h1 id="capture-title">
-                    {captureSubmitted ? "Post submitted" : "Capture a post"}
-                  </h1>
-                  <p>
-                    {captureSubmitted
-                      ? "Your post is in the processing queue."
-                      : "Paste a post link to save it in your archive."}
-                  </p>
-                </div>
-                {captureSubmitted ? (
-                  <div className="capture-success">
-                    <p role="status">{message}</p>
-                    <button
-                      type="button"
-                      onClick={() => navigateTo("activity", "replace")}
-                    >
-                      View activity
-                    </button>
-                  </div>
-                ) : (
-                  <form onSubmit={submit}>
-                    <label>
-                      Post URL
-                      <input
-                        type="url"
-                        required
-                        value={captureUrl}
-                        onChange={(e) => setCaptureUrl(e.target.value)}
-                        placeholder="https://www.instagram.com/reel/..."
-                        autoFocus
-                      />
-                      <small>
-                        Supports public and connected-account posts.
-                      </small>
-                    </label>
-                    <label>
-                      <span>
-                        Why are you saving it?{" "}
-                        <span className="capture-optional">Optional</span>
-                      </span>
-                      <textarea
-                        value={note}
-                        onChange={(e) => setNote(e.target.value)}
-                        placeholder="Add a note for your future self"
-                      />
-                    </label>
-                    <p className="capture-hint">
-                      We'll show progress in Activity.
-                    </p>
-                    <div className="capture-actions">
-                      <button
-                        type="button"
-                        className="capture-cancel"
-                        onClick={() => navigateTo("inbox", "replace")}
-                      >
-                        Cancel
-                      </button>
-                      <button disabled={submitting}>
-                        {submitting ? "Submitting…" : "Capture post"}
-                      </button>
-                    </div>
-                    {message && (
-                      <p
-                        className={`capture-feedback ${captureError ? "error" : ""}`}
-                        role={captureError ? "alert" : "status"}
-                      >
-                        {message}
-                      </p>
-                    )}
-                  </form>
-                )}
-              </section>
-            </div>
-          )}
           {tab === "settings" && <Settings user={user} onUserChange={setUser} onSignOut={signOut} topic={settingsTopic} onTopicChange={setSettingsTopic} />}
         </main>
+        <MobileTabBar tab={tab} live={liveWork} onNavigate={navigateTo} />
       </section>
-      {mobileMenuOpen && (
-        <div
-          className="app-account-menu-layer"
-          role="presentation"
-          onClick={() => setMobileMenuOpen(false)}
-        >
-          <section
-            className="app-account-menu"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="account-menu-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="app-account-menu-heading">
-              <div>
-                <span className="app-avatar" style={{ background: user?.avatarColor || undefined, color: user?.avatarColor ? "#fff" : undefined }} aria-hidden="true">
-                  {profileInitial}
-                </span>
-                <span>
-                  <strong id="account-menu-title">
-                    {user?.displayName || user?.username || "Personal archive"}
-                  </strong>
-                  <small>{tab === "settings" ? "Account" : "Personal workspace"}</small>
-                </span>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="app-account-menu-item"
-              onClick={() => navigateTo("settings")}
-            >
-              <UserRound aria-hidden="true" />
-              Profile
-            </button>
-            <button
-              type="button"
-              className="app-account-menu-item"
-              onClick={() => navigateTo("settings")}
-            >
-              <SettingsIcon aria-hidden="true" />
-              Settings
-            </button>
-            <button
-              type="button"
-              className="app-account-menu-item account-menu-signout"
-              onClick={() => void signOut()}
-            >
-              <LogOut aria-hidden="true" />
-              Log out
-            </button>
-          </section>
-        </div>
+      {captureOpen && (
+        <CaptureDialog
+          url={captureUrl}
+          note={note}
+          onUrlChange={(value) => {
+            setCaptureUrl(value);
+            if (captureError) setCaptureError(false);
+          }}
+          onNoteChange={setNote}
+          submitting={submitting}
+          submitted={captureSubmitted}
+          message={captureMessage}
+          error={captureError}
+          onSubmit={submit}
+          onClose={closeCapture}
+          onCaptureAnother={() => {
+            setCaptureSubmitted(false);
+            setCaptureMessage("");
+          }}
+          onViewActivity={() => navigateTo("activity", "replace")}
+        />
+      )}
+      {paletteOpen && (
+        <CommandPalette
+          onClose={closePalette}
+          onNavigate={paletteNavigate}
+          onCapture={paletteCapture}
+        />
       )}
       {detail && <Detail id={detail} onClose={() => setDetail(null)} />}
     </div>
