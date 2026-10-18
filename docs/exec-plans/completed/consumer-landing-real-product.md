@@ -1,6 +1,6 @@
 # Ground the consumer landing page in the real product
 
-Status: active
+Status: completed — ready for design review
 Owner: Codex foreman, Opus UI worker, Codex app-evidence worker
 Started: 2026-10-18
 
@@ -31,8 +31,8 @@ Shared brief `landing-refinement-brief.md` defines strict file ownership. Opus o
 - [x] Existing product/setup and Shortcut implementation inspected.
 - [x] Bounded worker assignments launched in existing workspace.
 - [x] Real app evidence captured and verified: unchanged React UI, real temporary Fastify/SQLite, six synthetic captures. Screenshots inspected; zero keys, external requests or page errors. Disposable QA resources removed.
-- [ ] Focused page refinement complete.
-- [ ] Browser acceptance, repository check, checkpoint and PR update.
+- [x] Focused page refinement complete: shared-field hero illustration, actual app section, Get started setup, visible signed Shortcut download and custom-server instructions.
+- [x] Browser acceptance and repository checks passed; checkpoint and existing draft PR update prepared.
 
 ## Decisions
 
@@ -43,6 +43,16 @@ Shared brief `landing-refinement-brief.md` defines strict file ownership. Opus o
 ## Verification
 
 Focused browser review plus `npm run check`, asset provenance and link checks. Recheck only touched behavior after fixes.
+
+Results: `npm run check` passed docs, strict TypeScript, build and all 31 test files / 166 tests. Command snippets passed shell syntax validation without executing installation. Public repository/setup links and signed Shortcut downloads returned HTTP 200 (workers verified both download variants).
+
+Chromium acceptance at 1440px desktop and 375/390px phone widths: Get started arrives below the sticky nav and focuses setup; command copy feedback and denied-clipboard selection fallback pass with a stubbed clipboard; sample-search focus, matching and empty state pass; hero arrow-key tabs pass; all three real app assets load; no page overflow, page errors, failed requests or external runtime requests. Reduced motion shows completed scenes and working setup focus. Actual app previews remain visible after fast and reverse scrolling. Final desktop/mobile visual comparison covered hero, real app/capture, Get started and Shortcut sections; accepted visual character and motion preserved. Evidence wording and saved-state copy were qualified to avoid unsupported guarantees. Screenshot evidence: ignored `output/playwright/refinement-*.png`.
+
+One review-script selector typo in the parent harness (`.product__detail` instead of `.detail-row`) was caught and did not affect product behavior. Corrected capture-section screenshots completed the visual review.
+
+Limits: Safari/Firefox, live Docker installation, real Shortcut import/iPhone capture and AI-provider execution were not exercised. Screenshots prove actual UI rendering against synthetic database records; no real archive content or credentials were used. Published v6 Shortcut still targets Stephen's instance; the page explains that adjacent to download and supplies custom-host generator instructions. No public deployment or app change was made.
+
+Review: local preview `http://127.0.0.1:41006/`; inspect The app, press Get started, then inspect iPhone Shortcut and expand Make one for your server. Full review script: `designs/landing/README.md`. Screenshot provenance: `designs/landing/app-evidence.md`.
 
 ## Risks and recovery
 

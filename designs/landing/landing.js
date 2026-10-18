@@ -102,6 +102,7 @@
   const pauseBtn = $("[data-hero-pause]");
   const heroTabsEl = $("[data-hero-tabs]");
   const ORDER = ["recipe", "workout", "travel"];
+  const KIND = { recipe: "cooking", workout: "fitness", travel: "travel" };
   const GRID_MOTIFS = ["coast", "workout", "pasta", "plant", "recipe", "shoulder", "coffee", "travel", "hinge", "pasta", "coast", "plant"];
   grid.innerHTML = GRID_MOTIFS.map((m) => `<div class="tile">${thumb(m)}</div>`).join("");
   const tiles = $$(".tile", grid);
@@ -115,11 +116,11 @@
     note.querySelector('[data-f="platform"]').textContent = ex.platform;
     note.querySelector('[data-f="title"]').textContent = ex.title;
     note.querySelector('[data-f="quote"]').textContent = ex.quote;
-    const steps = note.querySelector('[data-f="steps"]');
-    steps.replaceChildren(...ex.steps.map((s, i) => { const li = document.createElement("li"); li.textContent = s; li.style.setProperty("--s", i); return li; }));
+    const takeaways = note.querySelector('[data-f="takeaways"]');
+    takeaways.replaceChildren(...ex.takeaways.map((s, i) => { const li = document.createElement("li"); li.textContent = s; li.style.setProperty("--s", i); return li; }));
     const tags = note.querySelector('[data-f="tags"]');
     tags.replaceChildren(...ex.tags.map((t) => { const s = document.createElement("span"); s.textContent = "#" + t.replace(/\s+/g, ""); return s; }));
-    stage.setAttribute("aria-label", `Animation: a saved ${ORDER[hero.idx]} video is shared from a phone to Social Knowledge and unfolds into a note: “${ex.title}” by the example creator ${ex.handle}, with transcript, steps and topics.`);
+    stage.setAttribute("aria-label", `Animation: a saved ${KIND[ORDER[hero.idx]]} video is shared from a phone to Social Knowledge and unfolds into a note: “${ex.title}” by the example creator ${ex.handle}, with transcript, key takeaways and topics.`);
   }
   function setMedia(ex) {
     media.innerHTML = thumb(ex.thumb);
@@ -315,6 +316,9 @@
    * ------------------------------------------------------------------ */
   const threadEl = $(".thread");
   const bundleEl = $(".bundle");
+  /* Real app screenshots settle and their folded corner opens as they scroll in. */
+  const shots = $$("[data-shot]");
+  const fieldsEl = $("[data-fields]");
 
   /* ------------------------------------------------------------------ *
    * Scroll engine: one rAF reader; every scene derives state from progress,
@@ -339,12 +343,16 @@
     const rSteps = stacked ? steps.map((s) => s.getBoundingClientRect()) : null;
     const rThread = threadEl.getBoundingClientRect();
     const rBundle = bundleEl.getBoundingClientRect();
+    const rShots = shots.map((s) => s.getBoundingClientRect());
+    const rFields = fieldsEl.getBoundingClientRect();
     // write
     updateProblem(enterProgress(rProblem, vh));
     if (stacked) rSteps.forEach((r, k) => setStep(k, viewProgress(r, vh, 0.75), 1));
     else updateHowPinned(pinProgress(rHow, vh));
     threadEl.style.setProperty("--d", viewProgress(rThread, vh, 0.85).toFixed(3));
     bundleEl.style.setProperty("--e", clamp((vh * 0.95 - rBundle.top) / (vh * 0.6)).toFixed(3));
+    rShots.forEach((r, k) => shots[k].style.setProperty("--r", clamp((vh * 0.98 - r.top) / (Math.min(r.height, vh) * 0.6)).toFixed(3)));
+    fieldsEl.style.setProperty("--r", viewProgress(rFields, vh, 0.8).toFixed(3));
   }
   const request = () => { if (!ticking) { ticking = true; requestAnimationFrame(frame); } };
 
@@ -355,11 +363,13 @@
       steps.forEach((_, k) => setStep(k, 1, 1));
       threadEl.style.setProperty("--d", "1");
       bundleEl.style.setProperty("--e", "1");
+      shots.forEach((s) => s.style.setProperty("--r", "1"));
+      fieldsEl.style.setProperty("--r", "1");
     }
     request();
   }
   addEventListener("scroll", request, { passive: true });
-  addEventListener("resize", () => { heroControls.place(); exControls.place(); sizeExNote(); request(); });
+  addEventListener("resize", () => { heroControls.place(); request(); });
   stackMQ.addEventListener("change", applyMode);
 
   /* ------------------------------------------------------------------ *
@@ -411,9 +421,9 @@
     return frag;
   }
   function evidenceField(cap, groups) {
-    if (!groups.length) return ["Summary", cap.summary];
+    if (!groups.length) return ["Synopsis", cap.summary];
     const n = (t) => words(t).filter((w) => groups.some((g) => hits(w, g))).length;
-    return n(cap.transcript) >= n(cap.summary) && n(cap.transcript) > 0 ? ["Transcript", cap.transcript] : ["Summary", cap.summary];
+    return n(cap.transcript) >= n(cap.summary) && n(cap.transcript) > 0 ? ["Transcript", cap.transcript] : ["Synopsis", cap.summary];
   }
   function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 
@@ -458,97 +468,67 @@
   clearBtn.addEventListener("click", () => { input.value = ""; renderResults(); input.focus(); });
   chipBtns.forEach((c) => c.addEventListener("click", () => { input.value = c.textContent.trim(); renderResults(); }));
 
-  /* CTA: scroll to the demo and focus the search box */
-  const searchbox = $(".searchbox");
-  $$("[data-try]").forEach((btn) => btn.addEventListener("click", () => {
-    btn.classList.add("is-pressed");
-    setTimeout(() => btn.classList.remove("is-pressed"), 120);
-    const navH = nav.offsetHeight;
-    const y = searchbox.getBoundingClientRect().top + scrollY - navH - 24;
-    const focus = () => { if (document.activeElement !== input) input.focus({ preventScroll: true }); };
-    // Focus immediately so typing works at once; the scroll only moves the view.
-    focus();
-    if (reduced) { scrollTo(0, y); return; }
-    // Bound the smooth scroll: jump most of a long distance, glide the final screen.
+  /* Bounded smooth scroll: jump most of a long distance, glide the final screen. */
+  function glideTo(y, done) {
+    if (reduced) { scrollTo(0, y); done(); return; }
     const gap = y - scrollY, vh = innerHeight;
     if (Math.abs(gap) > vh * 1.2) scrollTo(0, y - Math.sign(gap) * vh * 0.9);
     scrollTo({ top: y, behavior: "smooth" });
-    addEventListener("scrollend", focus, { once: true });
-    setTimeout(focus, 700);
+    addEventListener("scrollend", done, { once: true });
+    setTimeout(done, 700);
+  }
+  const press = (btn) => { btn.classList.add("is-pressed"); setTimeout(() => btn.classList.remove("is-pressed"), 120); };
+
+  /* Secondary CTA: scroll to the optional demo and focus the search box */
+  const searchbox = $(".searchbox");
+  $$("[data-try]").forEach((link) => link.addEventListener("click", (e) => {
+    e.preventDefault();
+    const y = searchbox.getBoundingClientRect().top + scrollY - nav.offsetHeight - 24;
+    const focus = () => { if (document.activeElement !== input) input.focus({ preventScroll: true }); };
+    // Focus immediately so typing works at once; the scroll only moves the view.
+    focus();
+    glideTo(y, focus);
   }));
 
-  /* ------------------------------------------------------------------ *
-   * Examples: fanned videos + unfolding note
-   * ------------------------------------------------------------------ */
-  const exNote = $("[data-ex-note]");
-  const fanCards = $$("[data-fan-card]");
-  fanCards.forEach((c) => { c.innerHTML = thumb(DATA.examples[c.dataset.fanCard].thumb); });
-  function exContent(key) {
-    const ex = DATA.examples[key], d = ex.detail;
-    const frag = document.createDocumentFragment();
-    const L = (node, i) => { node.classList.add("layer"); node.style.setProperty("--i", i); frag.append(node); return node; };
-    const top = L(el("div", "exn__top"), 0);
-    top.append(el("span", "exn__kicker", d.kicker), el("span", "result__ex", "Example"));
-    L(el("h3", "exn__title", ex.title), 0);
-    const src = L(el("p", "exn__source"), 1);
-    const av = el("span", "source__avatar"); av.style.setProperty("--hue", ex.hue);
-    src.append(av, el("span", null, `${ex.handle} · ${ex.platform}`), el("span", "source__link", "Original ↗"));
-    const blocks = L(el("div", "exn__blocks"), 2);
-    d.blocks.forEach((b) => {
-      const wrap = el("div", "exn__block");
-      const ul = el(b.ordered ? "ol" : "ul");
-      b.items.forEach((t) => ul.append(el("li", null, t)));
-      wrap.append(el("h4", null, b.label), ul);
-      blocks.append(wrap);
-    });
-    const evd = L(el("p", "exn__evidence"), 3);
-    evd.append(el("b", null, "From the video"), el("span", null, d.evidence));
-    L(el("p", "exn__foot", d.note), 4);
-    return frag;
-  }
-  let exTimer = 0;
-  function renderEx(key, instant = false) {
-    const order = [key, ...ORDER.filter((k) => k !== key)];
-    fanCards.forEach((c) => { c.dataset.pos = String(order.indexOf(c.dataset.fanCard)); });
-    exNote.setAttribute("aria-labelledby", "ex-tab-" + key);
-    clearTimeout(exTimer);
-    const swap = () => {
-      exNote.replaceChildren(exContent(key));
-      void exNote.offsetWidth;
-      exNote.classList.add("is-open");
+  /* Primary CTA: Get started → setup section, focused for keyboard and screen-reader users */
+  const startEl = $("#start");
+  $$("[data-start]").forEach((link) => link.addEventListener("click", (e) => {
+    e.preventDefault();
+    press(link);
+    const y = startEl.getBoundingClientRect().top + scrollY - nav.offsetHeight + 1;
+    const focus = () => { if (document.activeElement !== startEl) startEl.focus({ preventScroll: true }); };
+    if (location.hash !== "#start") history.replaceState(null, "", "#start");
+    glideTo(y, focus);
+  }));
+
+  /* Copy buttons on setup commands, with a select-to-copy fallback */
+  const copyStatus = $("[data-copy-status]");
+  $$("[data-copy]").forEach((btn) => btn.addEventListener("click", async () => {
+    const code = $("code", btn.closest("[data-cmd]"));
+    const text = code.textContent.trim();
+    const say = (label, msg) => {
+      btn.textContent = label;
+      copyStatus.textContent = msg;
+      clearTimeout(btn._t);
+      btn._t = setTimeout(() => { btn.textContent = "Copy"; }, 1800);
     };
-    if (instant) { exNote.replaceChildren(exContent(key)); return; }
-    exNote.classList.remove("is-open");
-    exTimer = setTimeout(swap, reduced ? 150 : 260);
-  }
-  // Fixed height = tallest example at the current width, so switching never shifts the page.
-  function sizeExNote() {
-    const probe = exNote.cloneNode(false);
-    probe.removeAttribute("id");
-    Object.assign(probe.style, { position: "absolute", visibility: "hidden", left: "-9999px", width: exNote.offsetWidth + "px", minHeight: "0" });
-    probe.classList.add("is-open");
-    document.body.append(probe);
-    let max = 0;
-    ORDER.forEach((k) => { probe.replaceChildren(exContent(k)); max = Math.max(max, probe.offsetHeight); });
-    probe.remove();
-    exNote.style.minHeight = max + "px";
-  }
-  const exControls = makeTabs($("[data-ex-tabs]"), (key) => renderEx(key));
-  fanCards.forEach((c) => c.addEventListener("click", () => { exControls.select(c.dataset.fanCard, { user: true }); }));
+    try {
+      await navigator.clipboard.writeText(text);
+      say("Copied", "Command copied.");
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents(code);
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      say("Selected", "Copy isn’t available here. The command is selected: press Command-C or Control-C.");
+    }
+  }));
 
   /* ------------------------------------------------------------------ *
    * Boot
    * ------------------------------------------------------------------ */
-  renderEx("recipe", true);
-  // First unfold happens when the example section scrolls into view.
-  const exIO = new IntersectionObserver(([e]) => {
-    if (e.isIntersecting) { exNote.classList.add("is-open"); exIO.disconnect(); }
-  }, { threshold: 0.35 });
-  exIO.observe(exNote);
   renderResults();
   applyMode();
-  sizeExNote();
   startHero();
-  document.fonts && document.fonts.ready.then(() => { heroControls.place(); exControls.place(); sizeExNote(); });
+  document.fonts && document.fonts.ready.then(() => { heroControls.place(); });
   reduceMQ.addEventListener("change", (e) => { reduced = e.matches; applyMode(); startHero(); });
 })();

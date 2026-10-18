@@ -1,6 +1,7 @@
 /* Synthetic demo content. Every handle, caption and transcript here is invented. */
 window.SK_DATA = {
-  /* Hero + examples section. `tile` is the index of the post in the phone's Saved grid. */
+  /* Hero illustration. Every example unfolds into the same general note (no per-topic templates).
+     `tile` is the index of the post in the phone's Saved grid. */
   examples: {
     recipe: {
       tile: 4,
@@ -10,17 +11,8 @@ window.SK_DATA = {
       platform: "Instagram",
       title: "Crispy gochujang chickpeas, one pan",
       quote: "“Roast them until they rattle in the pan, then toss with gochujang and honey.”",
-      steps: ["Roast chickpeas, 220°C", "Whisk gochujang + honey", "Toss, then top with scallions"],
-      tags: ["dinner", "vegetarian", "one-pan"],
-      detail: {
-        kicker: "Recipe",
-        blocks: [
-          { label: "Ingredients", items: ["1 can chickpeas, dried well", "1 tbsp gochujang", "1 tsp honey", "Scallions, sesame, rice"] },
-          { label: "Steps", ordered: true, items: ["Roast at 220°C until they rattle", "Whisk gochujang, honey, splash of oil", "Toss hot chickpeas in the glaze", "Serve over rice, top with scallions"] }
-        ],
-        evidence: "“…that’s when they’re crispy — don’t take them out before they rattle.”",
-        note: "Translated from Korean · original kept"
-      }
+      takeaways: ["They’re crispy once they rattle in the pan", "Glaze them while they’re still hot", "Works over rice for a quick dinner"],
+      tags: ["dinner", "vegetarian", "one-pan"]
     },
     workout: {
       tile: 1,
@@ -30,17 +22,8 @@ window.SK_DATA = {
       platform: "Instagram",
       title: "10-minute lower-back warm-up",
       quote: "“Cat-cow for ten slow breaths, then bird-dog — three each side, no rushing.”",
-      steps: ["Cat-cow · 10 breaths", "Bird-dog · 3 each side", "Glute bridge · 2 × 10"],
-      tags: ["mobility", "lower back", "morning"],
-      detail: {
-        kicker: "Workout",
-        blocks: [
-          { label: "Sets", items: ["Cat-cow · 10 slow breaths", "Bird-dog · 3 each side, 5s hold", "Glute bridge · 2 × 10", "Child’s pose · 30s"] },
-          { label: "Cues", items: ["Move with your breath, not the clock", "Keep hips level on bird-dog", "Squeeze glutes at the top of the bridge"] }
-        ],
-        evidence: "“…if your hips tip on the bird-dog, shorten the reach.”",
-        note: "Topics: mobility · lower back"
-      }
+      takeaways: ["Slow, breath-led moves loosen a stiff back", "Keep your hips level on bird-dog", "Ten minutes is enough most mornings"],
+      tags: ["mobility", "lower back", "morning"]
     },
     travel: {
       tile: 7,
@@ -50,17 +33,8 @@ window.SK_DATA = {
       platform: "Facebook",
       title: "Quiet onsen town 2h from Tokyo",
       quote: "“Go midweek, stay at a small ryokan, and book the room with the private bath.”",
-      steps: ["Go midweek, skip the crowds", "Small ryokan, private bath", "Sunset walk along the river"],
-      tags: ["japan", "onsen", "weekend"],
-      detail: {
-        kicker: "Travel",
-        blocks: [
-          { label: "Places", items: ["The riverside footbath", "A family-run ryokan with a valley view", "Morning market by the station"] },
-          { label: "Tips", items: ["Travel midweek for quiet baths", "Ask for a room with a private bath", "Bring cash for small shops"] }
-        ],
-        evidence: "“…by Wednesday the whole town is basically yours.”",
-        note: "Places and tips pulled from the video"
-      }
+      takeaways: ["Midweek is far quieter than weekends", "Ask for a room with a private bath", "Bring cash for the small shops"],
+      tags: ["japan", "onsen", "weekend"]
     }
   },
 

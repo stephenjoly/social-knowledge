@@ -19,10 +19,11 @@
       </a>
       <nav class="nav__links" aria-label="Page sections">
         <a href="#how">How it works</a>
-        <a href="#examples">Examples</a>
+        <a href="#app">The app</a>
+        <a href="#shortcut">iPhone Shortcut</a>
         <a href="#receipts">Privacy</a>
       </nav>
-      <button class="btn btn--primary btn--small" type="button" data-try>Try the search</button>
+      <a class="btn btn--primary btn--small" href="#start" data-start>Get started</a>
     </div>
   </header>
 
@@ -34,13 +35,14 @@
         <h1 id="hero-title" class="hero__title">You saved it<br>for a reason.</h1>
         <p class="hero__lede">Social Knowledge turns the Instagram and Facebook videos you share into a private library you can search, read and actually use — with the creator and original link always attached.</p>
         <div class="hero__actions">
-          <button class="btn btn--primary" type="button" data-try>Try the search</button>
-          <a class="link-arrow" href="#how">See how it works <span aria-hidden="true">↓</span></a>
+          <a class="btn btn--primary" href="#start" data-start>Get started</a>
+          <a class="link-arrow" href="#try" data-try>Explore a sample library <span aria-hidden="true">↓</span></a>
         </div>
+        <p class="hero__meta">Self-hosted <span aria-hidden="true">·</span> Bring your own AI key <span aria-hidden="true">·</span> iPhone Shortcut included</p>
       </div>
 
       <div class="hero__stage-wrap">
-        <div class="stage" data-hero-stage role="img" aria-label="Animation: a saved recipe video is shared from a phone to Social Knowledge and unfolds into a note with its creator, transcript, summary, steps and topics.">
+        <div class="stage" data-hero-stage role="img" aria-label="Animation: a saved cooking video is shared from a phone to Social Knowledge and unfolds into a note with its creator, synopsis, transcript, key takeaways and topics.">
           <div class="phone" data-phone aria-hidden="true">
             <div class="phone__notch"></div>
             <div class="phone__bar"><span>9:41</span><span class="phone__icons"></span></div>
@@ -75,18 +77,21 @@
                 <span class="transcript__wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
                 <p data-f="quote"></p>
               </div>
-              <ul class="layer checklist" style="--i:3" data-f="steps"></ul>
+              <div class="layer takeaways" style="--i:3">
+                <p class="takeaways__label">Key takeaways</p>
+                <ul data-f="takeaways"></ul>
+              </div>
               <p class="layer tags" style="--i:4" data-f="tags"></p>
             </div>
-            <span class="note__example">Example</span>
+            <span class="note__example">Illustration</span>
           </article>
           <div class="flyer" data-flyer aria-hidden="true"></div>
         </div>
 
         <div class="hero__controls">
-          <div class="seg" role="tablist" aria-label="Choose an example" data-hero-tabs>
-            <button role="tab" type="button" data-example="recipe" aria-selected="true">Recipe</button>
-            <button role="tab" type="button" data-example="workout" aria-selected="false" tabindex="-1">Workout</button>
+          <div class="seg" role="tablist" aria-label="Choose a sample save" data-hero-tabs>
+            <button role="tab" type="button" data-example="recipe" aria-selected="true">Cooking</button>
+            <button role="tab" type="button" data-example="workout" aria-selected="false" tabindex="-1">Fitness</button>
             <button role="tab" type="button" data-example="travel" aria-selected="false" tabindex="-1">Travel</button>
             <span class="seg__pill" aria-hidden="true"></span>
           </div>
@@ -212,12 +217,64 @@
       </div>
     </section>
 
-    <!-- 4. TRY IT -->
+    <!-- 4. THE ACTUAL APP -->
+    <section class="product" id="app" aria-labelledby="app-title">
+      <header class="section-head">
+        <p class="eyebrow">The actual app</p>
+        <h2 id="app-title" class="h2">Everything lands in one private Inbox.</h2>
+        <p class="lede">Every save gets the same careful treatment, whatever it’s about: a readable write-up, the words from the video, and a link back to the creator.</p>
+      </header>
+
+      <figure class="shot shot--inbox" data-shot>
+        <div class="shot__frame">
+          <span class="shot__fold" aria-hidden="true"></span>
+          <div class="shot__bar" aria-hidden="true"><i></i><i></i><i></i><span>Inbox</span></div>
+          <div class="shot__crop" style="--ar: 1440 / 640; --cx: 0; --cy: 0; --cw: 1">
+            <img src="assets/app-inbox.png" width="1440" height="900" loading="lazy" decoding="async"
+              alt="Social Knowledge Inbox: a sidebar with Inbox, Activity, Knowledge base and Ask; a search field, filters, sort and a Tiles/Table switch; and capture cards showing platform, creator, date, title, synopsis, category and topic.">
+          </div>
+        </div>
+        <figcaption class="shot__cap">
+          <span class="shot__label">Actual app · sample data</span>
+          <span>Search titles, notes or creators. Filter by platform, category or topic. Switch between tiles and a table.</span>
+          <a href="assets/app-inbox.png" target="_blank" rel="noopener">Full size ↗</a>
+        </figcaption>
+      </figure>
+
+      <div class="detail-row">
+        <div class="detail-row__copy">
+          <h3 class="h3">Open any save to get the useful part.</h3>
+          <ul class="fields" data-fields>
+            <li style="--k:0"><strong>Synopsis &amp; bottom line</strong> What it’s about and why it’s worth keeping.</li>
+            <li style="--k:1"><strong>Key takeaways</strong> The points worth remembering, plus any actions or recommendations.</li>
+            <li style="--k:2"><strong>Evidence</strong> Supporting quotes from the transcript, caption or frames.</li>
+            <li style="--k:3"><strong>Transcript &amp; translation</strong> The original words, with a translation if you turn it on.</li>
+            <li style="--k:4"><strong>Source</strong> Creator, caption, selected comments and the original post.</li>
+          </ul>
+          <p class="aside"><span class="aside__mark" aria-hidden="true">?</span> <span>Then <strong>Ask</strong> a question across everything you’ve saved. Answers cite the saves they came from.</span></p>
+        </div>
+        <figure class="shot shot--capture" data-shot>
+          <div class="shot__frame">
+            <span class="shot__fold" aria-hidden="true"></span>
+            <div class="shot__crop" style="--ar: 760 / 840; --cx: .4618; --cy: 0; --cw: .5278">
+              <img src="assets/app-capture.png" width="1440" height="1100" loading="lazy" decoding="async"
+                alt="An opened capture, “A small creative habit that lasts” from Instagram, showing its synopsis, Bottom line, Key takeaways, Actions and recommendations, Evidence quoting the transcript, and the Transcript.">
+            </div>
+          </div>
+          <figcaption class="shot__cap">
+            <span class="shot__label">Actual app · sample data</span>
+            <a href="assets/app-capture.png" target="_blank" rel="noopener">Full size ↗</a>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- 5. OPTIONAL SAMPLE SEARCH -->
     <section class="try" id="try" aria-labelledby="try-title">
       <div class="try__intro">
-        <p class="eyebrow">Try it</p>
-        <h2 id="try-title" class="h2">Search a sample library.</h2>
-        <p class="lede">Nine invented saves. Type the way you’d remember them — the search runs right here on this page, and nothing is sent anywhere.</p>
+        <p class="eyebrow">Optional demo</p>
+        <h2 id="try-title" class="h2">Explore a sample library.</h2>
+        <p class="lede">Nine invented saves. Type the way you’d remember them. This little demo runs right here on the page, and nothing is sent anywhere.</p>
         <div class="chips" data-chips>
           <button type="button" class="chip-btn">that chickpea thing</button>
           <button type="button" class="chip-btn">hotel with the onsen</button>
@@ -236,38 +293,14 @@
       </div>
     </section>
 
-    <!-- 5. EXAMPLES -->
-    <section class="examples" id="examples" aria-labelledby="examples-title">
-      <header class="section-head">
-        <p class="eyebrow">Everyday examples</p>
-        <h2 id="examples-title" class="h2">One save. Something you can use.</h2>
-      </header>
-      <div class="ex">
-        <div class="ex__side">
-          <div class="seg seg--light" role="tablist" aria-label="Example type" data-ex-tabs>
-            <button role="tab" type="button" id="ex-tab-recipe" data-example="recipe" aria-selected="true" aria-controls="ex-panel">Recipe</button>
-            <button role="tab" type="button" id="ex-tab-workout" data-example="workout" aria-selected="false" aria-controls="ex-panel" tabindex="-1">Workout</button>
-            <button role="tab" type="button" id="ex-tab-travel" data-example="travel" aria-selected="false" aria-controls="ex-panel" tabindex="-1">Travel</button>
-            <span class="seg__pill" aria-hidden="true"></span>
-          </div>
-          <div class="fan" data-fan aria-hidden="true">
-            <div class="fan__card" data-fan-card="travel"></div>
-            <div class="fan__card" data-fan-card="workout"></div>
-            <div class="fan__card" data-fan-card="recipe"></div>
-          </div>
-        </div>
-        <article class="ex__note" id="ex-panel" role="tabpanel" aria-labelledby="ex-tab-recipe" data-ex-note tabindex="0"></article>
-      </div>
-    </section>
-
     <!-- 6. RECEIPTS / PRIVACY -->
     <section class="receipts scene" id="receipts" data-scene="receipts" aria-labelledby="receipts-title">
       <div class="receipts__copy">
         <p class="eyebrow">Privacy &amp; sources</p>
         <h2 id="receipts-title" class="h2">Every note keeps its receipts.</h2>
         <ul class="facts">
-          <li><strong>Private to you.</strong> Your library is private to your account.</li>
-          <li><strong>Your AI, your keys.</strong> You choose and connect the AI provider. Your keys are stored encrypted.</li>
+          <li><strong>Private to you.</strong> It runs on your server, and every library is private to its account.</li>
+          <li><strong>Your AI, your keys.</strong> You choose and connect the AI provider. Your keys are tested, then stored encrypted.</li>
           <li><strong>Download everything.</strong> Notes, transcripts and media, in a format that opens in Obsidian.</li>
           <li><strong>Honest about support.</strong> Instagram and Facebook are fully supported. Links from other platforms are kept as bookmarks only.</li>
         </ul>
@@ -275,11 +308,11 @@
       <div class="thread" aria-hidden="true">
         <span class="thread__line"><i></i></span>
         <div class="tnode" style="--n:0">
-          <span class="tnode__kind">Summary</span>
+          <span class="tnode__kind">Evidence</span>
           <p>Roast the chickpeas <mark>until they rattle</mark>, then glaze with gochujang and honey.</p>
         </div>
         <div class="tnode" style="--n:1">
-          <span class="tnode__kind">Transcript · 0:42</span>
+          <span class="tnode__kind">Transcript</span>
           <p>“…keep them in the oven <mark>until they rattle in the pan</mark>, that’s when they’re crispy…”</p>
         </div>
         <div class="tnode tnode--src" style="--n:2">
@@ -311,20 +344,146 @@
       </div>
     </section>
 
-    <!-- 8. CLOSING -->
+    <!-- 8. GET STARTED -->
+    <section class="start" id="start" aria-labelledby="start-title" tabindex="-1">
+      <header class="section-head start__head">
+        <p class="eyebrow">Get started</p>
+        <h2 id="start-title" class="h2">Run it on your own server.</h2>
+        <p class="lede">Social Knowledge is self-hosted today. You run it on a computer or server you control and connect your own AI provider. There’s no hosted sign-up yet.</p>
+      </header>
+
+      <div class="start__grid">
+        <aside class="needs" aria-labelledby="needs-title">
+          <h3 id="needs-title">Before you start</h3>
+          <ul>
+            <li><strong>Docker with Compose</strong> on a computer or server you control.</li>
+            <li><strong>Git</strong> to download the code.</li>
+            <li><strong>An OpenAI API key</strong> for transcription. It can also do the analysis, or pick Cerebras for that.</li>
+            <li><strong>An iPhone with Shortcuts</strong> for one-tap saving. Optional: you can also paste links in the browser.</li>
+          </ul>
+          <p class="needs__note">AI usage is billed by your provider to your own account with them.</p>
+        </aside>
+
+        <ol class="setup">
+          <li class="setup__step">
+            <h3><span class="setup__n" aria-hidden="true">1</span> Download and configure</h3>
+            <div class="cmd" data-cmd>
+              <pre><code>git clone https://github.com/stephenjoly/social-knowledge.git
+cd social-knowledge
+cp .env.example .env
+mkdir -p data vault media</code></pre>
+              <button type="button" class="cmd__copy" data-copy>Copy</button>
+            </div>
+            <p>In <code>.env</code>, set <code>API_TOKEN</code> to a long random value, set <code>DATA_DIR=/data</code>, <code>VAULT_DIR=/vault</code> and <code>MEDIA_DIR=/media</code>, and set <code>APP_URL=http://localhost:8787</code> for this first local start. Change <code>APP_URL</code> to your real HTTPS address when you open access to other devices. Never commit this file.</p>
+          </li>
+          <li class="setup__step">
+            <h3><span class="setup__n" aria-hidden="true">2</span> Start it</h3>
+            <div class="cmd" data-cmd>
+              <pre><code>docker compose up --build -d</code></pre>
+              <button type="button" class="cmd__copy" data-copy>Copy</button>
+            </div>
+            <p>It opens at <code>http://localhost:8787</code> and listens only on this machine by default.</p>
+          </li>
+          <li class="setup__step">
+            <h3><span class="setup__n" aria-hidden="true">3</span> Claim your administrator account</h3>
+            <p>Create the first administrator straight away. Keep the app off the public internet until you have: the first person to register becomes the admin. Invite others later from Settings.</p>
+          </li>
+          <li class="setup__step">
+            <h3><span class="setup__n" aria-hidden="true">4</span> Connect your AI</h3>
+            <p>Onboarding asks for your provider keys. Saving videos needs OpenAI for transcription, plus OpenAI or Cerebras for analysis. Ask only needs the analysis provider. Each key is tested, then stored encrypted.</p>
+          </li>
+          <li class="setup__step">
+            <h3><span class="setup__n" aria-hidden="true">5</span> Add the iPhone Shortcut</h3>
+            <p>Create a capture-only key and install the Shortcut. <a href="#shortcut">Shortcut setup ↓</a></p>
+          </li>
+        </ol>
+      </div>
+      <p class="cmd__status visually-hidden" data-copy-status aria-live="polite"></p>
+      <p class="start__more">
+        <a class="link-arrow" href="https://github.com/stephenjoly/social-knowledge#safe-first-test" target="_blank" rel="noopener">Full setup guide on GitHub <span aria-hidden="true">↗</span></a>
+        <a class="link-arrow" href="https://github.com/stephenjoly/social-knowledge" target="_blank" rel="noopener">View the code <span aria-hidden="true">↗</span></a>
+      </p>
+    </section>
+
+    <!-- 9. APPLE SHORTCUT -->
+    <section class="shortcut" id="shortcut" aria-labelledby="shortcut-title">
+      <div class="shortcut__copy">
+        <p class="eyebrow">iPhone Shortcut</p>
+        <h2 id="shortcut-title" class="h2">Save from your iPhone in one tap.</h2>
+        <p class="lede">Share a Reel to the Social Knowledge Shortcut. It confirms the link was saved, then checks for about a minute for the finished capture.</p>
+
+        <div class="dl">
+          <div class="dl__actions">
+            <a class="btn btn--primary" href="https://raw.githubusercontent.com/stephenjoly/social-knowledge/e3c7c00b9ba53a24a699add68efb8698c21d68d9/shortcuts/Save-to-Social-Knowledge-Completion-v6.shortcut" rel="noopener">
+              <span class="dl__icon" aria-hidden="true"></span>Download iPhone Shortcut
+            </a>
+            <a class="dl__alt" href="https://raw.githubusercontent.com/stephenjoly/social-knowledge/e3c7c00b9ba53a24a699add68efb8698c21d68d9/shortcuts/Save-to-Social-Knowledge-Receipt-v6.shortcut" rel="noopener">Receipt-only version</a>
+          </div>
+          <p class="dl__meta">Version 6 · signed · contains no key. You add your own in Shortcuts.</p>
+          <div class="caveat" role="note">
+            <p><strong>Heads-up:</strong> this signed file currently sends links to <code>social-knowledge.stephenjoly.net</code>. Running your own server? Generate a copy that points at your address instead.</p>
+            <details>
+              <summary>Make one for your server</summary>
+              <p>On a Mac, from your checkout. Replace <code>your-server.example</code> with your server’s HTTPS address first.</p>
+              <div class="cmd" data-cmd>
+                <pre><code>python3 scripts/build-shortcut.py --endpoint "https://your-server.example/api/v1/jobs" --output /tmp/save.shortcut
+shortcuts sign --mode anyone --input /tmp/save.shortcut --output /tmp/save-signed.shortcut</code></pre>
+                <button type="button" class="cmd__copy" data-copy>Copy</button>
+              </div>
+              <p><a href="https://github.com/stephenjoly/social-knowledge#apple-shortcut-contract" target="_blank" rel="noopener">Full Shortcut instructions ↗</a></p>
+            </details>
+          </div>
+        </div>
+
+        <ol class="sc-steps">
+          <li><strong>Create a Shortcut key.</strong> In your app, open Settings → API keys and choose Create Shortcut key. It can send links and check on them, but can’t search or export your library.</li>
+          <li><strong>Install.</strong> Open the download in Shortcuts and paste your key when asked. Leave out “Bearer”.</li>
+          <li><strong>Share a Reel.</strong> Tap Share and choose Save-to-Social-Knowledge-Completion-v6.</li>
+        </ol>
+        <p class="sc-note">Connect your AI first. Without it, the link is still kept and marked so you can retry once AI is set up.</p>
+      </div>
+
+      <div class="shortcut__art">
+        <figure class="shot shot--shortcut" data-shot>
+          <div class="shot__frame">
+            <span class="shot__fold" aria-hidden="true"></span>
+            <div class="shot__crop" style="--ar: 712 / 560; --cx: .3333; --cy: .4791; --cw: .4944">
+              <img src="assets/app-shortcut.png" width="1440" height="1100" loading="lazy" decoding="async"
+                alt="Settings, API keys: the “Save reels from your iPhone” card with a Create Shortcut key button, a Download iPhone Shortcut button, a Receipt-only version link and three setup steps.">
+            </div>
+          </div>
+          <figcaption class="shot__cap">
+            <span class="shot__label">Actual app · sample data</span>
+            <a href="assets/app-shortcut.png" target="_blank" rel="noopener">Full size ↗</a>
+          </figcaption>
+        </figure>
+        <div class="states" aria-label="What the Shortcut tells you">
+          <div class="state">
+            <span class="receipt__tick" aria-hidden="true">✓</span>
+            <div><strong>Link received</strong><span>Your link is safely kept.</span></div>
+          </div>
+          <div class="state state--done">
+            <span class="receipt__tick" aria-hidden="true">✓</span>
+            <div><strong>Saved to your library</strong><span>Shown if capture finishes during checking. Longer captures continue in Activity.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10. CLOSING -->
     <section class="closing" aria-labelledby="closing-title">
       <div class="closing__fold" aria-hidden="true"></div>
       <h2 id="closing-title" class="closing__title">Keep what you save.</h2>
       <p class="lede">Share the post. Get the useful part back, whenever you need it.</p>
       <div class="hero__actions hero__actions--center">
-        <button class="btn btn--marigold" type="button" data-try>Try the search</button>
-        <a class="link-arrow link-arrow--light" href="#how">See how it works <span aria-hidden="true">↑</span></a>
+        <a class="btn btn--marigold" href="#start" data-start>Get started</a>
+        <a class="link-arrow link-arrow--light" href="#try" data-try>Explore a sample library <span aria-hidden="true">↑</span></a>
       </div>
     </section>
   </main>
 
   <footer class="foot">
-    <p>Concept mockup. Every creator, post, caption and result on this page is an invented example.</p>
+    <p>Design preview. Illustrated posts and the sample library are invented; app screenshots use sample data.</p>
   </footer>
 
   <script src="data.js"></script>
