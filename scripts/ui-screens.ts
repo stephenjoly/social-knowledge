@@ -1,6 +1,7 @@
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { chromium, type Page } from "playwright";
 import { buildApp } from "../src/app.js";
 import { JobStore } from "../src/db.js";
@@ -69,6 +70,9 @@ const screens: Screen[] = [
     open: async (page) => {
       await page.context().clearCookies();
       await page.goto(base);
+      await page.getByLabel("Username").fill(fixtureAccount.username);
+      await page.getByLabel("Password", { exact: true }).fill("design-12chr");
+      await page.getByLabel("Password", { exact: true }).focus();
     },
   },
   { id: "02", name: "inbox", open: async (page) => void (await page.goto(base)) },
@@ -122,7 +126,7 @@ const screens: Screen[] = [
     open: async (page) => {
       await page.goto(`${base}/?tab=ask`);
       await page
-        .getByRole("button", { name: /Where should I eat in Lisbon/ })
+        .getByRole("button", { name: /Lisbon food recommendations/ })
         .first()
         .click();
     },
@@ -161,26 +165,55 @@ config.appUrl = base;
 await mkdir(path.join(root, "data"), { recursive: true });
 const store = new JobStore(config.databasePath);
 const user = await seedUiFixture(store, config);
+// A verified analysis selection so Ask can show the thinking level it runs with.
+store.saveAiProviderConnection(user.id, "openai", "fixture-not-a-key", "sk-…7Q2c");
+store.saveAiTaskSelections(user.id, {
+  transcriptionProvider: "openai",
+  transcriptionModel: config.transcriptionModel,
+  analysisProvider: "openai",
+  analysisModel: "gpt-5-mini",
+  analysisThinkingLevel: "medium",
+});
 
-const conversation = store.createConversation(user.id, "New conversation");
+// Older conversations for Ask's recent list, aged so their labels read as a weekday and a date.
+const daysSinceTuesday = (new Date().getDay() + 5) % 7 || 7;
+const earlierConversations = [
+  ["Zone 2 vs. HIIT, from my saves", daysSinceTuesday],
+  ["Gift ideas from cooking reels", 9],
+] as const;
+const agedConversations = new Database(config.databasePath);
+for (const [title, daysAgo] of earlierConversations) {
+  const older = store.createConversation(user.id, title);
+  store.addConversationMessage(user.id, older.id, "user", title);
+  agedConversations
+    .prepare("UPDATE conversations SET updated_at=? WHERE id=?")
+    .run(new Date(Date.now() - daysAgo * 86_400_000).toISOString(), older.id);
+}
+agedConversations.close();
+
+const conversation = store.createConversation(user.id, "Lisbon food recommendations");
 store.addConversationMessage(
   user.id,
   conversation.id,
   "user",
   "Where should I eat in Lisbon, based on what I've saved?",
 );
-const lisbon = store
-  .listCaptures({ userId: user.id, limit: 50 })
-  .captures.filter((capture) => capture.title.toLowerCase().includes("lisbo"));
+const lisbonCaptures = store.listCaptures({ userId: user.id, limit: 50 }).captures;
+const lisbon = ["lisbonfoodie", "eatlisboa"].map(
+  (creator) => lisbonCaptures.find((capture) => capture.creator === creator)!,
+);
 store.addConversationMessage(
   user.id,
   conversation.id,
   "assistant",
   [
-    "Your saves point to two places worth planning around.",
+    "Your saves point to three places worth planning around, plus one to avoid at peak times.",
     "",
-    "- Manteigaria, Chiado. Go before 10am for warm pastel de nata. [1]",
-    "- Taberna da Rua das Flores. No bookings, so arrive at 7pm. [2]",
+    "- Manteigaria, Chiado. Go before 10am for warm pastel de nata; locals rate it above Belém. [1]",
+    "- Taberna da Rua das Flores. Small plates, no bookings. Arrive at 7pm to avoid an hour's wait. [2]",
+    "- Campo de Ourique market. A calmer alternative to Time Out Market, especially at lunch. [2]",
+    "",
+    "If you only have one morning, pair Manteigaria with a walk down to the river; both bakery posts mention it as the best start to the day.",
   ].join("\n"),
   lisbon.slice(0, 2).map((capture, index) => ({
     id: capture.id,
@@ -209,7 +242,10 @@ await mkdir(outDir, { recursive: true });
 await page.goto(base);
 await page.getByLabel("Username").fill(fixtureAccount.username);
 await page.getByLabel("Password").fill(fixtureAccount.password);
-await page.getByRole("button", { name: "Continue" }).click();
+await Promise.all([
+  page.waitForResponse((response) => response.url().endsWith("/api/auth/login") && response.ok()),
+  page.getByRole("button", { name: "Continue" }).click(),
+]);
 await page.waitForSelector(".app-frame, .app-sidebar, main", { timeout: 15_000 });
 const storageState = await context.storageState();
 

@@ -76,106 +76,101 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Ask", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Ask AI" })).toBeVisible();
-  await page.getByRole("button", { name: "＋ New conversation" }).click();
   await expect(
-    page.locator(".conversation-sidebar button.selected"),
+    page.getByRole("heading", { name: "Ask what you've saved" }),
   ).toBeVisible();
-  await expect(page.locator(".ask-empty")).toBeVisible();
+  await expect(
+    page.getByRole("group", { name: "Suggested questions" }).getByRole("button"),
+  ).toHaveCount(4);
   await page
-    .getByRole("button", {
-      name: "What Lisbon restaurants have I saved?",
-      exact: true,
-    })
-    .click();
-  await expect(page.locator(".chat-composer .stop-answer")).toBeVisible();
+    .getByLabel("Ask your archive")
+    .fill("What Lisbon restaurants have I saved?");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
   await expect(
-    page.locator(".chat-message.assistant .message-content").last(),
+    page.locator(".ask-message.assistant .ask-answer").last(),
   ).not.toContainText("Searching your archive", { timeout: 60000 });
-  await expect(
-    page.locator(".chat-message.assistant .answer-sources button").first(),
-  ).toBeVisible({ timeout: 60000 });
-  const inlineCaptureLink = page
-    .locator(".chat-message.assistant .inline-capture-link")
+  await expect(page.locator(".ask-sources .ask-source-open").first()).toBeVisible(
+    { timeout: 60000 },
+  );
+  const inlineCitation = page
+    .locator(".ask-message.assistant .ask-cite")
     .first();
-  await expect(inlineCaptureLink).toBeVisible();
-  await expect(inlineCaptureLink.locator("svg")).toBeVisible();
+  await expect(inlineCitation).toBeVisible();
   await expect(
-    page.locator(".chat-message.assistant .message-content"),
+    page.locator(".ask-message.assistant .ask-answer-body"),
   ).toContainText(/Lisbon|restaurant/i);
-  await inlineCaptureLink.click();
+  await expect(
+    page.locator(".ask-sources .ask-source-link").first(),
+  ).toHaveAttribute("href", /^https?:\/\//);
+  await inlineCitation.click();
   await expect(note).toBeVisible();
   await note.getByRole("button", { name: "Back to Ask", exact: true }).click();
   await page.reload();
   await page.getByRole("button", { name: "Ask", exact: true }).click();
+  await page.locator(".ask-recent-row").first().click();
   await expect(
-    page.locator(".chat-message.assistant .answer-sources button").first(),
+    page.locator(".ask-sources .ask-source-open").first(),
   ).toBeVisible();
-  await page
-    .locator(".chat-message.assistant .answer-sources button")
-    .first()
-    .click();
+  await page.locator(".ask-sources .ask-source-open").first().click();
   await expect(note).toBeVisible();
   await note.getByRole("button", { name: "Back to Ask", exact: true }).click();
 
-  await page.getByRole("button", { name: "＋ New conversation" }).click();
+  await page.getByRole("button", { name: "New chat" }).click();
   await expect(
-    page.locator(".conversation-sidebar button.selected"),
+    page.getByRole("heading", { name: "Ask what you've saved" }),
   ).toBeVisible();
-  await expect(page.locator(".ask-empty")).toBeVisible();
   await page.getByLabel("Ask your archive").fill("__smoke_stream__");
   await page.getByRole("button", { name: "Send" }).click();
   const streamedAnswer = page
-    .locator(".chat-message.assistant .message-content")
+    .locator(".ask-message.assistant .ask-answer")
     .last();
-  await expect(page.locator(".chat-composer .stop-answer")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
   await expect(streamedAnswer).toContainText("The first part of the answer", {
     timeout: 10000,
   });
-  await expect(page.locator(".chat-composer .stop-answer")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
   await expect(streamedAnswer).toContainText(
     "arrives before the answer is complete.",
     { timeout: 10000 },
   );
-  await expect(page.locator(".chat-composer .stop-answer")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "＋ New conversation" }).click();
+  await page.getByRole("button", { name: "New chat" }).click();
   await expect(
-    page.locator(".conversation-sidebar button.selected"),
+    page.getByRole("heading", { name: "Ask what you've saved" }),
   ).toBeVisible();
-  await expect(page.locator(".ask-empty")).toBeVisible();
   await page.getByLabel("Ask your archive").fill("__smoke_slow__");
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByRole("button", { name: "Stop" }).click();
-  await expect(page.locator(".chat-message.assistant.cancelled")).toBeVisible({
+  await expect(page.locator(".ask-message.assistant.cancelled")).toBeVisible({
     timeout: 10000,
   });
   const cancelledRetry = page
-    .locator(".chat-message.assistant.cancelled")
+    .locator(".ask-message.assistant.cancelled")
     .getByRole("button", { name: "Retry" });
   await expect(cancelledRetry).toBeEnabled({ timeout: 10000 });
   await cancelledRetry.click();
   await expect(
-    page.locator(".chat-message.assistant.complete").last(),
+    page.locator(".ask-message.assistant.complete").last(),
   ).toBeVisible({ timeout: 10000 });
 
-  await page.getByRole("button", { name: "＋ New conversation" }).click();
+  await page.getByRole("button", { name: "New chat" }).click();
   await expect(
-    page.locator(".conversation-sidebar button.selected"),
+    page.getByRole("heading", { name: "Ask what you've saved" }),
   ).toBeVisible();
-  await expect(page.locator(".ask-empty")).toBeVisible();
   await page.getByLabel("Ask your archive").fill("__smoke_failure__");
   await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.locator(".chat-message.assistant.failed")).toBeVisible({
+  await expect(page.locator(".ask-message.assistant.failed")).toBeVisible({
     timeout: 10000,
   });
   const failedRetry = page
-    .locator(".chat-message.assistant.failed")
+    .locator(".ask-message.assistant.failed")
     .getByRole("button", { name: "Retry" });
   await expect(failedRetry).toBeEnabled({ timeout: 10000 });
   await failedRetry.click();
   await expect(
-    page.locator(".chat-message.assistant.complete").last(),
+    page.locator(".ask-message.assistant.complete").last(),
   ).toBeVisible({ timeout: 10000 });
 
   await page.getByRole("button", { name: /activity/i }).click();
