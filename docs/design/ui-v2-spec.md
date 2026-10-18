@@ -213,7 +213,9 @@ These are the only places the implementation may differ from the exports.
 1. **Monospace face.** The drawings render logs and the MCP URL in JetBrains Mono. Ship the
    system monospace stack instead; adding a font file is not justified.
 2. **No account deletion.** Screen 10 shows a danger zone. There is no deletion endpoint, so
-   omit the section entirely rather than ship a dead button.
+   drop that section rather than ship a dead button. Keep today's "Your archive" card in its
+   place, restyled to v2 — it is a working route into Data & export and removing it would be a
+   regression.
 3. **No source-language toggle.** Screen 14 shows `Detect source language`. Preferences only
    persist `defaultLanguage` and `translateForeign`; ship those two rows only.
 4. **Recommendation markers are decorative.** Screen 07 draws checkboxes beside
