@@ -145,8 +145,34 @@ main.shell:has(> .sk-settings) {
   gap: 12px;
 }
 
+/* The design tool rounds every text box to whole pixels, so single-line
+   boxes use the rounded height of the font's natural line. */
+.st-kicker {
+  line-height: 13px;
+}
+
+.st-title {
+  line-height: 31px;
+}
+
+.st-description {
+  line-height: 20px;
+}
+
 .st-section .ui-section-heading-title {
-  line-height: 1.21;
+  line-height: 18px;
+}
+
+.st-section .ui-section-heading-description {
+  line-height: 18px;
+}
+
+.sk-settings .ui-card-row-title {
+  line-height: 16px;
+}
+
+.sk-settings .ui-card-row-description {
+  line-height: 18px;
 }
 
 .st-card .ui-card-row-title label {
