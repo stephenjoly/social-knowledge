@@ -34,22 +34,32 @@ const base = `http://127.0.0.1:${port}`;
 
 type Screen = { id: string; name: string; open: (page: Page) => Promise<void> };
 
-// Accepts the redesigned label first and the pre-redesign label as a fallback so
-// the harness keeps working while screens are migrated one at a time.
+// Opens a topic through the `?topic=` deep link that Settings reads on mount, then
+// falls back to clicking the settings navigation labels (the shell's sidebar, or
+// the pre-redesign in-page list) if the page heading did not change.
 const settingsTopic =
-  (...labels: string[]) =>
+  (topic: string, title: string, ...labels: string[]) =>
   async (page: Page) => {
-    await page.goto(`${base}/?tab=settings`);
-    for (const label of labels) {
+    await page.goto(`${base}/?tab=settings&topic=${topic}`);
+    const heading = page.getByRole("heading", { level: 1, name: title, exact: true });
+    try {
+      await heading.waitFor({ timeout: 5_000 });
+      return;
+    } catch {
+      // fall through to the navigation labels
+    }
+    for (const label of [title, ...labels]) {
       const option = page
         .getByRole("button", { name: label, exact: true })
+        .or(page.getByRole("link", { name: label, exact: true }))
         .first();
       if (await option.count()) {
         await option.click();
+        await heading.waitFor({ timeout: 5_000 });
         return;
       }
     }
-    throw new Error(`no settings topic matched: ${labels.join(", ")}`);
+    throw new Error(`no settings topic matched: ${[title, ...labels].join(", ")}`);
   };
 
 const screens: Screen[] = [
@@ -117,19 +127,31 @@ const screens: Screen[] = [
         .click();
     },
   },
-  { id: "10", name: "settings-my-account", open: settingsTopic("My account") },
+  { id: "10", name: "settings-my-account", open: settingsTopic("account", "My account") },
   {
     id: "11",
     name: "settings-ai-models",
-    open: settingsTopic("AI & models", "AI"),
+    open: async (page) => {
+      await settingsTopic("ai", "AI & models", "AI")(page);
+      // The export shows an unsaved model change, so draw the save bar.
+      await page.getByLabel("Analysis model").selectOption("gpt-5");
+    },
   },
-  { id: "12", name: "settings-connections", open: settingsTopic("Connections") },
-  { id: "13", name: "settings-api-keys", open: settingsTopic("API keys") },
-  { id: "14", name: "settings-data-export", open: settingsTopic("Data & export") },
+  {
+    id: "12",
+    name: "settings-connections",
+    open: settingsTopic("connections", "Connections"),
+  },
+  { id: "13", name: "settings-api-keys", open: settingsTopic("api", "API keys") },
+  {
+    id: "14",
+    name: "settings-data-export",
+    open: settingsTopic("data", "Data & export"),
+  },
   {
     id: "15",
     name: "settings-people-access",
-    open: settingsTopic("People & access"),
+    open: settingsTopic("people", "People & access"),
   },
 ];
 

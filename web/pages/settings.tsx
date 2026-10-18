@@ -1,20 +1,52 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import {
+  Activity,
+  Archive,
+  ArrowRight,
+  AudioLines,
   Bot,
-  ChevronRight,
-  Database,
-  DatabaseBackup,
+  Brain,
+  Code,
+  Copy,
+  Cpu,
+  Download,
+  FileArchive,
+  Info,
   KeyRound,
-  Link2,
-  ShieldCheck,
-  Settings as SettingsIcon,
-  UserRound,
-  UsersRound,
-  X,
+  MessageCircle,
+  Plus,
+  Sparkles,
+  Upload,
   type LucideIcon,
 } from "lucide-react";
+import {
+  ActionButton,
+  CardRow,
+  IconBox,
+  Input,
+  Select,
+  StatusPill,
+  Toggle,
+  cx,
+  type StatusTone,
+} from "../components/ui/primitives";
 import { MyAccount, PeopleAccess, type AccountUser } from "../account-settings";
 import { ShortcutSetup } from "../shortcut-setup";
+import {
+  DisclosureRow,
+  FacebookIcon,
+  Feedback,
+  InstagramIcon,
+  SaveBar,
+  SettingsDialog,
+  SettingsPageHeader,
+  SettingsSection,
+  formatDateTime,
+  formatLongDate,
+  formatRelative,
+  formatShortDate,
+  formatUntil,
+} from "../settings-ui";
 import type {
   LibraryExport,
   OAuthConnection,
@@ -38,7 +70,135 @@ import {
   transcriptionOptions,
   analysisOptions,
 } from "../shared/format";
-import { PlatformIcon } from "../components/platform";
+
+const settingsTopics: SettingsTopic[] = [
+  "overview",
+  "ai",
+  "connections",
+  "api",
+  "data",
+  "account",
+  "people",
+  "all",
+];
+
+type ContentTopic = "account" | "ai" | "connections" | "api" | "data" | "people";
+
+const languages = [
+  "English",
+  "French",
+  "Portuguese",
+  "Spanish",
+  "German",
+  "Italian",
+  "Dutch",
+];
+
+const providerLooks: Record<
+  AiProvider["id"],
+  { icon: LucideIcon; background: string; color: string; summary: string }
+> = {
+  openai: {
+    icon: Sparkles,
+    background: "#18181b",
+    color: "#ffffff",
+    summary: "Transcription and analysis",
+  },
+  cerebras: {
+    icon: Cpu,
+    background: "#fdeee3",
+    color: "#c2410c",
+    summary: "Fast analysis models",
+  },
+};
+
+const providerDot: Record<AiProvider["id"], string> = {
+  openai: "#18181b",
+  cerebras: "#c2410c",
+};
+
+const assistantLooks: Array<{
+  match: RegExp;
+  icon: LucideIcon;
+  background: string;
+  color: string;
+}> = [
+  { match: /claude/i, icon: Bot, background: "#f6ede4", color: "#b45f2a" },
+  {
+    match: /chatgpt|openai|codex/i,
+    icon: MessageCircle,
+    background: "#e9f3ee",
+    color: "#10735a",
+  },
+];
+
+const platformOrder: PlatformConnection["platform"][] = [
+  "instagram",
+  "facebook",
+];
+
+const platformLooks: Record<
+  PlatformConnection["platform"],
+  { label: string; icon: LucideIcon; background: string; color: string }
+> = {
+  instagram: {
+    label: "Instagram",
+    icon: InstagramIcon,
+    background: "#fdecf1",
+    color: "#c13584",
+  },
+  facebook: {
+    label: "Facebook",
+    icon: FacebookIcon,
+    background: "#e8effd",
+    color: "#1877f2",
+  },
+};
+
+function maskKeyHint(hint: string) {
+  const tail = hint.split("…").pop();
+  return hint.includes("…") && tail ? `••••${tail}` : hint;
+}
+
+const capitalize = (value: string) =>
+  value.charAt(0).toUpperCase() + value.slice(1);
+
+function describeAiChanges(
+  saved: AiDraftSelections,
+  draft: AiDraftSelections,
+  providers: AiProvider[],
+) {
+  const providerName = (selection: AiSelection | null) =>
+    selection
+      ? (providers.find((item) => item.id === selection.provider)?.name ??
+        selection.provider)
+      : "not assigned";
+  const changes: string[] = [];
+  for (const task of ["transcription", "analysis"] as const) {
+    const before = saved[task];
+    const after = draft[task];
+    const label = task === "transcription" ? "Transcription" : "Analysis";
+    if (before?.provider !== after?.provider)
+      changes.push(
+        `${label} provider changed from ${providerName(before)} to ${providerName(after)}`,
+      );
+    else if (before?.model !== after?.model)
+      changes.push(
+        `${label} model changed from ${before?.model ?? "none"} to ${after?.model ?? "none"}`,
+      );
+    else if (task === "analysis") {
+      const was = (before as AiAnalysisSelection | null)?.thinkingLevel ?? null;
+      const now = (after as AiAnalysisSelection | null)?.thinkingLevel ?? null;
+      if (was !== now)
+        changes.push(
+          `Analysis thinking changed from ${was ?? "default"} to ${now ?? "default"}`,
+        );
+    }
+  }
+  return changes.length === 1
+    ? changes[0]!
+    : `${changes.length} task model changes are not saved yet`;
+}
 
 function taskOptionFor(provider: AiProvider, model: string) {
   return analysisOptions(provider).find((option) => option.model === model) ?? null;
@@ -303,6 +463,7 @@ export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: 
         `${platform === "instagram" ? "Instagram" : "Facebook"} connected. New captures will use this login when needed.`,
       );
       await load();
+      return true;
     } catch (error) {
       const code =
         error instanceof Error
@@ -313,6 +474,7 @@ export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: 
           ? `That file did not contain ${platform} cookies. Export cookies while signed in and try again.`
           : "The cookie file could not be saved. Use a Netscape-format cookies.txt export.",
       );
+      return false;
     }
   }
   function invalidateTests(tasks: AiTestTask[]) {
@@ -554,61 +716,49 @@ export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: 
       setVerifyingProvider(false);
     }
   }
-  const topics: Array<{
-    id: SettingsTopic;
-    label: string;
-    description: string;
-    icon: LucideIcon;
-  }> = [
-    {
-      id: "overview",
-      label: "Overview",
-      description: "A clear view of your setup.",
-      icon: SettingsIcon,
-    },
-    {
-      id: "ai",
-      label: "AI",
-      description: "Providers and task models.",
-      icon: Bot,
-    },
-    {
-      id: "connections",
-      label: "Connections",
-      description: "Sources and social sessions.",
-      icon: Link2,
-    },
-    {
-      id: "api",
-      label: "API keys",
-      description: "Integration access.",
-      icon: KeyRound,
-    },
-    {
-      id: "data",
-      label: "Data & export",
-      description: "Language and portable archives.",
-      icon: Database,
-    },
-    {
-      id: "account",
-      label: "My account",
-      description: "Your profile, sign-in details, and account preferences.",
-      icon: UserRound,
-    },
-    ...(user?.role === "admin" ? [{
-      id: "people" as const,
-      label: "People & access",
-      description: "Manage who can sign in and what they can administer.",
-      icon: UsersRound,
-    }] : []),
-  ];
-  const connectedPlatforms = platformConnections.filter(
-    (connection) => connection.connected,
-  );
-  const openAi = aiState?.providers.find(
-    (provider) => provider.id === "openai",
-  );
+  const [keyDialogOpen, setKeyDialogOpen] = useState(false);
+  const [cookiePlatform, setCookiePlatform] = useState<
+    PlatformConnection["platform"] | null
+  >(null);
+  const cookieInput = useRef<HTMLInputElement>(null);
+  const [assistantMessage, setAssistantMessage] = useState("");
+  const [savingPreferences, setSavingPreferences] = useState(false);
+  const [preferenceError, setPreferenceError] = useState(false);
+  const view: ContentTopic =
+    topic === "overview" ||
+    topic === "all" ||
+    (topic === "people" && user?.role !== "admin")
+      ? "account"
+      : topic;
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const requested = url.searchParams.get("topic");
+    if (requested === null) return;
+    url.searchParams.delete("topic");
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+    if ((settingsTopics as string[]).includes(requested)) {
+      deepLinked.current = true;
+      setTopic(requested as SettingsTopic);
+    }
+  }, []);
+  const previousView = useRef(view);
+  useEffect(() => {
+    if (previousView.current === view) return;
+    previousView.current = view;
+    if (deepLinked.current) {
+      deepLinked.current = false;
+      return;
+    }
+    const frame = window.requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>(".settings-topic-heading")?.focus(),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [view]);
   const configuredAiProviders = aiState?.providers ?? [];
   const dialogProvider = aiState?.providers.find(
     (provider) => provider.id === selectedAiProvider,
@@ -621,1217 +771,642 @@ export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: 
     aiState && !sameAiSelections(currentAiSelections, aiState.selections),
   );
   const aiTestBlocked = aiSettingsDirty || savingAiSelections;
-  const activeTopic = topics.find((item) => item.id === topic);
-  const showTopic = (value: SettingsTopic) =>
-    topic === value || topic === "all";
-  const selectTopic = (value: SettingsTopic) => {
-    setTopic(value);
-    window.requestAnimationFrame(() =>
-      document.querySelector<HTMLElement>(".settings-heading")?.focus(),
-    );
+  const exportPending = libraryExports.some((item) => item.status === "pending");
+  const cookieConnection = platformConnections.find(
+    (connection) => connection.platform === cookiePlatform,
+  );
+  async function savePreferences(next: {
+    defaultLanguage: string;
+    translateForeign: boolean;
+  }) {
+    const previous = { defaultLanguage, translateForeign };
+    setDefaultLanguage(next.defaultLanguage);
+    setTranslateForeign(next.translateForeign);
+    setSavingPreferences(true);
+    setPreferenceMessage("");
+    try {
+      const result = await api<{
+        preferences: { defaultLanguage: string; translateForeign: boolean };
+      }>("/api/v1/preferences", {
+        method: "PATCH",
+        body: JSON.stringify(next),
+      });
+      setDefaultLanguage(result.preferences.defaultLanguage);
+      setTranslateForeign(result.preferences.translateForeign);
+      setPreferenceError(false);
+      setPreferenceMessage("Language preferences saved.");
+    } catch {
+      setDefaultLanguage(previous.defaultLanguage);
+      setTranslateForeign(previous.translateForeign);
+      setPreferenceError(true);
+      setPreferenceMessage("Language preferences could not be saved. Try again.");
+    } finally {
+      setSavingPreferences(false);
+    }
+  }
+  async function startExport() {
+    setBackupMessage("Preparing your backup…");
+    try {
+      await api("/api/v1/library-exports", { method: "POST" });
+      await load();
+    } catch (error) {
+      setBackupMessage(
+        error instanceof Error ? error.message : "Backup could not start.",
+      );
+    }
+  }
+  async function revokeKey(key: ApiKey) {
+    try {
+      await api(`/api/v1/api-keys/${key.id}`, { method: "DELETE" });
+      await load();
+      if (createdKeyId === key.id) {
+        setToken("");
+        setCreatedKeyId(null);
+      }
+      setMessage(`${key.name} was revoked.`);
+    } catch {
+      setMessage(`${key.name} could not be revoked. Try again.`);
+    }
+  }
+  async function revokeAssistant(connection: OAuthConnection) {
+    try {
+      await api(`/api/v1/oauth/connections/${connection.clientId}`, {
+        method: "DELETE",
+      });
+      setAssistantMessage(`${connection.name} can no longer search your archive.`);
+      await load();
+    } catch {
+      setAssistantMessage("That AI connection could not be revoked. Try again.");
+    }
+  }
+  async function disconnectPlatform(platform: PlatformConnection["platform"]) {
+    const label = platformLooks[platform].label;
+    try {
+      await api(`/api/v1/platform-connections/${platform}`, {
+        method: "DELETE",
+      });
+      setPlatformMessage(`${label} disconnected.`);
+      setCookiePlatform(null);
+      await load();
+    } catch {
+      setPlatformMessage(`${label} could not be disconnected. Try again.`);
+    }
+  }
+  const closeKeyDialog = () => {
+    setKeyDialogOpen(false);
+    setToken("");
+    setCreatedKeyId(null);
+    setMessage("");
   };
+  const stateCard = loading ? (
+    <div className="ui-card st-state" role="status" aria-live="polite" aria-busy="true">
+      <span className="st-spinner" aria-hidden="true" />
+      <div>
+        <strong>Loading settings</strong>
+        <p>Getting your private workspace ready.</p>
+      </div>
+    </div>
+  ) : loadError ? (
+    <div className="ui-card st-state" role="alert">
+      <div>
+        <strong>Settings unavailable</strong>
+        <p>{loadError}</p>
+      </div>
+      <ActionButton onClick={() => void load(true)}>Try again</ActionButton>
+    </div>
+  ) : null;
+  const workspaceCrumb = "SETTINGS  /  WORKSPACE";
   return (
-    <div className={`settings settings-workspace${topic === "account" || topic === "people" ? " account-settings-workspace" : ""}`}>
-      <header className="settings-heading" tabIndex={-1}>
-        <div>
-          <p className="settings-breadcrumb">
-            {topic === "people"
-              ? "ADMINISTRATION  /  PEOPLE & ACCESS"
-              : topic === "overview"
-              ? "SETTINGS"
-              : `SETTINGS  /  ${activeTopic?.label ?? "ALL TOPICS"}`}
-          </p>
-          <h1>
-            {topic === "overview"
-              ? "Settings"
-              : (activeTopic?.label ?? "All settings")}
-          </h1>
-          <p>
-            {topic === "overview"
-              ? "Manage your sources, AI, access, and archive."
-              : (activeTopic?.description ??
-                "Review every part of your workspace setup.")}
-          </p>
-        </div>
-        {topic !== "overview" && topic !== "ai" && topic !== "account" && topic !== "people" && (
-          <button
-            className="settings-back"
-            type="button"
-            onClick={() => selectTopic("overview")}
-          >
-            Back to overview
-          </button>
+    <div className="sk-settings settings-workspace">
+      <div className="st-column">
+        {view === "account" && user && (
+          <MyAccount
+            user={user}
+            onUserChange={onUserChange}
+            onSignOut={onSignOut}
+            onOpenData={() => setTopic("data")}
+          />
         )}
-      </header>
-      <div className="settings-layout">
-        <nav className="settings-topic-sidebar" aria-label="Settings topics">
-          <span className="settings-topic-label">Settings</span>
-          {topics.filter(({ id }) => id !== "people").map(({ id, label, icon: Icon }) => (
-            <button
-              className={topic === id ? "active" : ""}
-              type="button"
-              aria-current={topic === id ? "page" : undefined}
-              onClick={() => selectTopic(id)}
-              key={id}
-            >
-              <Icon aria-hidden="true" />
-              <span>{label}</span>
-            </button>
-          ))}
-          {user?.role === "admin" && <><span className="settings-topic-label administration-label">Administration</span>{topics.filter(({ id }) => id === "people").map(({ id, label, icon: Icon }) => <button className={topic === id ? "active" : ""} type="button" aria-current={topic === id ? "page" : undefined} onClick={() => selectTopic(id)} key={id}><Icon aria-hidden="true" /><span>{label}</span></button>)}</>}
-        </nav>
-        <div className="settings-panels">
-          <nav className="settings-mobile-topics" aria-label="Settings topics">
-            <button
-              type="button"
-              className={topic === "overview" ? "active" : ""}
-              onClick={() => selectTopic("overview")}
-            >
-              Overview
-            </button>
-            <button
-              type="button"
-              className={topic === "ai" ? "active" : ""}
-              onClick={() => selectTopic("ai")}
-            >
-              AI
-            </button>
-            <label>
-              <span className="sr-only">More settings topics</span>
-              <select
-                aria-label="More settings topics"
-                value={topic === "overview" || topic === "ai" ? "" : topic}
-                onChange={(event) =>
-                  selectTopic(event.target.value as SettingsTopic)
-                }
-              >
-                <option value="">All topics</option>
-                <option value="connections">Connections</option>
-                <option value="api">API keys</option>
-                <option value="data">Data & export</option>
-                <option value="account">My account</option>
-                {user?.role === "admin" && <option value="people">People &amp; access</option>}
-                <option value="all">View all settings</option>
-              </select>
-            </label>
-          </nav>
-          {loading ? (
-            <section
-              className="settings-loading"
-              aria-live="polite"
-              aria-busy="true"
-            >
-              <span className="settings-loading-mark" aria-hidden="true" />
-              <div>
-                <strong>Loading settings</strong>
-                <p>Getting your private workspace ready.</p>
-              </div>
-            </section>
-          ) : loadError ? (
-            <section className="settings-load-error" role="alert">
-              <strong>Settings unavailable</strong>
-              <p>{loadError}</p>
-              <button type="button" onClick={() => void load(true)}>
-                Try again
-              </button>
-            </section>
-          ) : (
-            <>
-              {topic === "overview" && (
-                <section
-                  className="settings-overview"
-                  aria-labelledby="settings-essentials-heading"
+        {view === "people" && user && <PeopleAccess currentUser={user} />}
+        {view === "ai" && (
+          <>
+            <SettingsPageHeader
+              crumb={workspaceCrumb}
+              title="AI & models"
+              description="Choose who transcribes your saved videos and who analyses them. Keys are encrypted on your server and never shown again."
+              action={
+                <ActionButton
+                  icon={Activity}
+                  onClick={openTestDialog}
+                  disabled={savingAiSelections || !aiState}
                 >
-                  <div className="settings-overview-heading">
-                    <div>
-                      <p className="settings-section-kicker">ESSENTIALS</p>
-                      <h2 id="settings-essentials-heading">
-                        Start where it matters
-                      </h2>
-                    </div>
-                    {!openAi?.connected && (
-                      <button
-                        className="settings-quick-action"
-                        type="button"
-                        onClick={() => {
-                          setSelectedAiProvider("openai");
-                          selectTopic("ai");
-                        }}
+                  Test connection
+                </ActionButton>
+              }
+            />
+            {stateCard ?? (
+              <>
+                <SettingsSection
+                  title="Providers"
+                  description="Credentials available to transcription and analysis."
+                >
+                  {configuredAiProviders.map((provider) => {
+                    const look = providerLooks[provider.id];
+                    const attention =
+                      !provider.connected &&
+                      provider.status === "needs_attention";
+                    return (
+                      <CardRow
+                        className="st-provider-row"
+                        key={provider.id}
+                        leading={
+                          <IconBox
+                            icon={look.icon}
+                            background={look.background}
+                            color={look.color}
+                          />
+                        }
+                        title={provider.name}
+                        description={
+                          provider.connected && provider.keyHint
+                            ? `API key ${maskKeyHint(provider.keyHint)}${provider.verifiedAt ? ` · added ${formatLongDate(provider.verifiedAt)}` : ""}`
+                            : attention
+                              ? `${look.summary} · the saved key stopped working`
+                              : `${look.summary} · no key added`
+                        }
                       >
-                        Connect OpenAI
-                      </button>
-                    )}
-                  </div>
-                  <div className="settings-overview-list">
-                    {[
-                      {
-                        id: "connections" as const,
-                        icon: Link2,
-                        title: "Connections",
-                        detail: "Connect sources and see what is syncing.",
-                        status: `${connectedPlatforms.length} connected`,
-                      },
-                      {
-                        id: "ai" as const,
-                        icon: Bot,
-                        title: "AI",
-                        detail:
-                          "Choose providers for transcription and analysis.",
-                        status: aiState?.readiness.capture
-                          ? "Ready"
-                          : "Needs setup",
-                      },
-                      {
-                        id: "api" as const,
-                        icon: KeyRound,
-                        title: "API keys",
-                        detail: "Create and manage access for integrations.",
-                        status: keys.length
-                          ? `${keys.length} active`
-                          : "No keys",
-                      },
-                      {
-                        id: "data" as const,
-                        icon: DatabaseBackup,
-                        title: "Full archive export",
-                        detail:
-                          "Download your complete archive in a portable format.",
-                        status: libraryExports.some(
-                          (item) => item.status === "pending",
-                        )
-                          ? "Preparing"
-                          : "Available",
-                      },
-                    ].map(({ id, icon: Icon, title, detail, status }) => (
-                      <button
-                        className="settings-overview-row"
-                        type="button"
-                        onClick={() => selectTopic(id)}
-                        key={id}
-                      >
-                        <span
-                          className="settings-overview-icon"
-                          aria-hidden="true"
+                        <StatusPill
+                          tone={
+                            provider.connected ? "ok" : attention ? "warn" : "off"
+                          }
                         >
-                          <Icon />
-                        </span>
-                        <span className="settings-overview-copy">
-                          <strong>{title}</strong>
-                          <small>{detail}</small>
-                        </span>
-                        <span className="settings-overview-status">
-                          {status}
-                        </span>
-                        <ChevronRight aria-hidden="true" />
-                      </button>
-                    ))}
-                  </div>
-                  <div className="settings-account-summary">
-                    <div>
-                      <span
-                        className="settings-overview-icon"
-                        aria-hidden="true"
+                          {provider.connected
+                            ? "Connected"
+                            : attention
+                              ? "Needs attention"
+                              : "Not connected"}
+                        </StatusPill>
+                        <ActionButton
+                          icon={provider.connected ? undefined : Plus}
+                          onClick={() => openProviderDialog(provider.id)}
+                        >
+                          {provider.connected ? "Change key" : "Connect"}
+                        </ActionButton>
+                      </CardRow>
+                    );
+                  })}
+                </SettingsSection>
+                <SettingsSection
+                  title="Task models"
+                  description="Each step can use a different connected provider."
+                  after={
+                    !providerDialogOpen && (
+                      <Feedback error={providerMessageKind === "error"}>
+                        {providerMessage}
+                      </Feedback>
+                    )
+                  }
+                >
+                  {(["transcription", "analysis"] as const).map((task) => {
+                    const label =
+                      task === "transcription" ? "Transcription" : "Analysis";
+                    const selection = currentAiSelections[task];
+                    const providers = configuredAiProviders.filter(
+                      (provider) =>
+                        provider.connected && provider.capabilities[task],
+                    );
+                    const selectedProvider = providers.find(
+                      (provider) => provider.id === selection?.provider,
+                    );
+                    const modelOptions = selectedProvider
+                      ? task === "transcription"
+                        ? transcriptionOptions(selectedProvider)
+                        : analysisOptions(selectedProvider)
+                      : [];
+                    const selectedModel = selection?.model ?? "";
+                    const analysisOption =
+                      task === "analysis" && selectedProvider && selectedModel
+                        ? taskOptionFor(selectedProvider, selectedModel)
+                        : null;
+                    const currentThinkingLevel =
+                      task === "analysis"
+                        ? ((selection as AiAnalysisSelection | null)
+                            ?.thinkingLevel ?? null)
+                        : null;
+                    const busy = savingAiSelections || verifyingProvider;
+                    const updateSelection = (
+                      providerId: AiSelection["provider"] | null,
+                      model: string | null,
+                      thinkingLevel: AiThinkingLevel | null = null,
+                    ) => {
+                      if (!providerId || !model) {
+                        updateTaskDraft(task, null);
+                        return;
+                      }
+                      if (task === "transcription") {
+                        updateTaskDraft(task, { provider: providerId, model });
+                        return;
+                      }
+                      updateTaskDraft(task, {
+                        provider: providerId,
+                        model,
+                        thinkingLevel,
+                      });
+                    };
+                    return (
+                      <CardRow
+                        className="st-task-row"
+                        key={task}
+                        leading={
+                          <IconBox
+                            icon={task === "transcription" ? AudioLines : Brain}
+                          />
+                        }
+                        title={label}
+                        description={
+                          task === "transcription" ? (
+                            <>
+                              Audio and video{" "}
+                              <ArrowRight
+                                aria-label="to"
+                                className="st-inline-arrow"
+                                size={12}
+                              />{" "}
+                              searchable text
+                            </>
+                          ) : (
+                            "Summaries, topics, and Ask"
+                          )
+                        }
                       >
-                        <ShieldCheck />
-                      </span>
-                      <span>
-                        <strong>Account</strong>
-                        <small>
-                          Your profile and sign-in security.
-                        </small>
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => selectTopic("account")}
-                    >
-                      Manage account <ChevronRight aria-hidden="true" />
-                    </button>
-                  </div>
-                </section>
-              )}
-              {showTopic("ai") && (
-                <section className="settings-card ai-provider-settings">
-                  <div className="ai-provider-heading">
-                    <div className="settings-card-heading">
-                      <h2>Provider connections</h2>
-                      <p className="settings-help">
-                        Credentials available to transcription and analysis.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="ai-provider-list">
-                      {configuredAiProviders.map((provider) => {
-                        return (
-                          <article className="ai-provider" key={provider.id}>
-                            <div className="ai-provider-summary">
-                              <div>
-                                <strong>{provider.name}</strong>
-                              </div>
-                              <small>
-                                {provider.connected && provider.keyHint
-                                  ? `API key ${provider.keyHint}`
-                                  : "Optional · No credential added"}
-                              </small>
-                            </div>
-                            <span
-                              className={`connection-state ${provider.connected ? "connected" : ""}`}
-                            >
-                              {provider.connected ? "Connected" : "Not connected"}
-                            </span>
-                            <div className="ai-provider-actions">
-                              <button
-                                type="button"
-                                className="secondary-button"
-                                onClick={() => openProviderDialog(provider.id)}
-                              >
-                                {provider.connected ? "Change key" : "Connect"}
-                              </button>
-                            </div>
-                          </article>
-                        );
-                      })}
-                  </div>
-                  <div className="ai-assignment-heading">
-                    <div>
-                      <h3>Task models</h3>
-                      <p className="settings-help">
-                        Choose which connected provider handles each step.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="ai-task-list">
-                    <div className="ai-task-table-heading" aria-hidden="true">
-                      <span>Task</span>
-                      <span>Provider</span>
-                      <span>Model</span>
-                      <span>Thinking</span>
-                    </div>
-                    {(["transcription", "analysis"] as const).map((task) => {
-                      const selection = currentAiSelections[task];
-                      const providers = (aiState?.providers ?? []).filter(
-                        (provider) =>
-                          provider.connected &&
-                          provider.capabilities[task],
-                      );
-                      const selectedProvider = providers.find(
-                        (provider) => provider.id === selection?.provider,
-                      );
-                      const modelOptions = selectedProvider
-                        ? task === "transcription"
-                          ? transcriptionOptions(selectedProvider)
-                          : analysisOptions(selectedProvider)
-                        : [];
-                      const selectedModel = selection?.model ?? "";
-                      const analysisOption =
-                        task === "analysis" && selectedProvider && selectedModel
-                          ? taskOptionFor(selectedProvider, selectedModel)
-                          : null;
-                      const currentThinkingLevel =
-                        task === "analysis"
-                          ? (selection as AiAnalysisSelection | null)
-                              ?.thinkingLevel ?? null
-                          : null;
-                      const updateSelection = (
-                        providerId: AiSelection["provider"] | null,
-                        model: string | null,
-                        thinkingLevel: AiThinkingLevel | null = null,
-                      ) => {
-                        if (!providerId || !model) {
-                          updateTaskDraft(task, null);
-                          return;
-                        }
-                        if (task === "transcription") {
-                          updateTaskDraft(task, {
-                            provider: providerId,
-                            model,
-                          });
-                          return;
-                        }
-                        updateTaskDraft(task, {
-                          provider: providerId,
-                          model,
-                          thinkingLevel,
-                        });
-                      };
-                      return (
-                        <article className="ai-task" key={task}>
-                          <div>
-                            <h3>
-                              {task === "transcription"
-                                ? "Transcription"
-                                : "Analysis"}
-                            </h3>
-                            <p>
-                              {task === "transcription"
-                                ? "Audio and video → searchable text"
-                                : "Shared with Ask."}
-                            </p>
-                          </div>
-                          <div className="ai-task-controls">
-                            <label>
-                              Provider
-                              <select
-                                value={selection?.provider ?? ""}
-                                disabled={savingAiSelections || verifyingProvider}
-                                onChange={(event) => {
-                                  const providerId = event.target
-                                    .value as AiSelection["provider"];
-                                  const provider = providers.find(
-                                    (item) => item.id === providerId,
-                                  );
-                                  const model = provider
-                                    ? task === "transcription"
-                                      ? transcriptionOptions(provider)[0]?.model
-                                      : analysisOptions(provider)[0]?.model
-                                    : null;
-                                  updateSelection(provider?.id ?? null, model ?? null);
-                                }}
-                              >
-                                <option value="">Not assigned</option>
-                                {providers.map((provider) => (
-                                  <option key={provider.id} value={provider.id}>
-                                    {provider.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label>
-                              Model
-                              <select
-                                value={selectedModel}
-                                disabled={
-                                  savingAiSelections ||
-                                  verifyingProvider ||
-                                  !selectedProvider
-                                }
-                                onChange={(event) =>
-                                  updateSelection(
-                                    selectedProvider?.id ?? null,
-                                    event.target.value || null,
-                                  )
-                                }
-                              >
-                                <option value="">Choose a model</option>
-                                {modelOptions.map((option) => (
-                                  <option key={option.model} value={option.model}>
-                                    {option.model}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            {task === "transcription" ? (
-                              <span className="ai-thinking-unavailable">
-                                Not applicable
-                              </span>
-                            ) : analysisOption?.thinkingLevels.length ? (
-                              <>
-                              <span className="ai-thinking-mobile-label" aria-hidden="true">Thinking</span>
-                              <div
-                                className="ai-thinking-options"
-                                role="group"
-                                aria-label="Thinking level"
-                              >
-                                <button
-                                  type="button"
-                                  className={
-                                    currentThinkingLevel === null ? "active" : ""
-                                  }
-                                  aria-pressed={currentThinkingLevel === null}
-                                  disabled={savingAiSelections || verifyingProvider}
-                                  onClick={() =>
-                                    updateSelection(
-                                      selectedProvider?.id ?? null,
-                                      selectedModel || null,
-                                      null,
-                                    )
-                                  }
-                                >
-                                  Default
-                                </button>
-                                {analysisOption.thinkingLevels.map((level) => (
-                                  <button
-                                    type="button"
-                                    key={level}
-                                    className={
-                                      currentThinkingLevel === level ? "active" : ""
-                                    }
-                                    aria-pressed={currentThinkingLevel === level}
-                                    disabled={savingAiSelections || verifyingProvider}
-                                    onClick={() =>
-                                      updateSelection(
-                                        selectedProvider?.id ?? null,
-                                        selectedModel || null,
-                                        level,
-                                      )
-                                    }
-                                  >
-                                    {level}
-                                  </button>
-                                ))}
-                              </div>
-                              </>
-                            ) : (
-                              <span className="ai-thinking-unavailable">
-                                Not applicable
-                              </span>
+                        <div className="st-row-controls">
+                          <Select
+                            aria-label={`${label} provider`}
+                            className={cx(
+                              "st-control-130",
+                              !selectedProvider && "st-select-empty",
                             )}
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                  <div className="ai-settings-footer">
-                    <p>Changes apply to new captures. Existing results stay as saved.</p>
-                    <div>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={openTestDialog}
-                        disabled={savingAiSelections}
-                      >
-                        Test connection
-                      </button>
-                      <button
-                        type="button"
-                        className="primary-button"
-                        onClick={() => void saveAiSelections()}
-                        disabled={
-                          !aiSettingsDirty ||
-                          savingAiSelections ||
-                          verifyingProvider ||
-                          Boolean(testingTask)
-                        }
-                      >
-                        {savingAiSelections ? "Saving…" : "Save changes"}
-                      </button>
-                    </div>
-                  </div>
-                  {testDialogOpen && (
-                    <div
-                      className="ai-provider-dialog-layer ai-test-dialog-layer"
-                      role="presentation"
-                      onMouseDown={(event) => {
-                        if (!testingTask && event.target === event.currentTarget)
-                          closeTestDialog();
-                      }}
-                    >
-                      <section
-                        className="ai-provider-dialog ai-test-dialog"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="test-dialog-title"
-                        aria-describedby="test-dialog-description"
-                        ref={testDialogPanel}
-                        tabIndex={-1}
-                        onKeyDown={(event) => {
-                          if (event.key === "Escape" && !testingTask) {
-                            closeTestDialog();
-                            return;
-                          }
-                          if (event.key !== "Tab") return;
-                          const focusable = Array.from(
-                            event.currentTarget.querySelectorAll<HTMLElement>(
-                              "button:not([disabled]), input:not([disabled]), select:not([disabled])",
-                            ),
-                          );
-                          if (!focusable.length) return;
-                          const first = focusable[0]!;
-                          const last = focusable[focusable.length - 1]!;
-                          if (
-                            event.shiftKey &&
-                            (document.activeElement === first ||
-                              document.activeElement === event.currentTarget)
-                          ) {
-                            event.preventDefault();
-                            last.focus();
-                          } else if (
-                            !event.shiftKey &&
-                            (document.activeElement === last ||
-                              document.activeElement === event.currentTarget)
-                          ) {
-                            event.preventDefault();
-                            first.focus();
-                          }
-                        }}
-                      >
-                        <header>
-                          <div>
-                            <h3 id="test-dialog-title">Test connection</h3>
-                            <p id="test-dialog-description" className="settings-help">
-                              Run a small request for each saved task. Usage charges may apply.
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            aria-label="Close connection tests"
-                            disabled={Boolean(testingTask)}
-                            onClick={closeTestDialog}
+                            dotColor={
+                              selectedProvider
+                                ? providerDot[selectedProvider.id]
+                                : undefined
+                            }
+                            value={selection?.provider ?? ""}
+                            disabled={busy}
+                            onChange={(event) => {
+                              const provider = providers.find(
+                                (item) => item.id === event.target.value,
+                              );
+                              const model = provider
+                                ? task === "transcription"
+                                  ? transcriptionOptions(provider)[0]?.model
+                                  : analysisOptions(provider)[0]?.model
+                                : null;
+                              updateSelection(provider?.id ?? null, model ?? null);
+                            }}
                           >
-                            <X aria-hidden="true" />
-                          </button>
-                        </header>
-                        {aiTestBlocked && (
-                          <p className="ai-test-save-first" role="status">
-                            {savingAiSelections
-                              ? "Saving settings before tests can run…"
-                              : "Save changes before testing a connection."}
-                          </p>
-                        )}
-                  <div className="ai-test-heading">
-                    <div>
-                      <h4>Diagnostic checks</h4>
-                    </div>
-                  </div>
-                  <p className="settings-help ai-test-intro">
-                    Check each saved task with a small provider request. Usage
-                    charges may apply. These checks test your AI connection;
-                    they do not run a full capture.
-                  </p>
-                  <div className="ai-test-list">
-                    {(["transcription", "analysis", "ask"] as const).map((task) => {
-                      const state = testStates[task];
-                      const isTranscription = task === "transcription";
-                      const label =
-                        task === "analysis"
-                          ? "Analysis"
-                          : task === "ask"
-                            ? "Ask"
-                            : "Transcription";
-                      const selection = isTranscription
-                        ? aiState?.selections.transcription
-                        : aiState?.selections.analysis;
-                      return (
-                        <article className="ai-test-row" key={task}>
-                          <div>
-                            <h4>{label}</h4>
-                            <p>
-                              {isTranscription
-                                ? "Uses only the audio file you select here."
-                                : task === "analysis"
-                                  ? "Tests analysis with sample text."
-                                  : "Tests a sample question without accessing your archive."}
-                            </p>
-                            {isTranscription && (
-                              <label className="ai-test-file">
-                                <span>Short audio file · 1 MB max</span>
-                                <input
-                                  type="file"
-                                  accept="audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,.mp3,.m4a,.mp4,.ogg,.wav,.webm"
-                                  onChange={(event) => {
-                                    setTestAudioFile(event.target.files?.[0] ?? null);
-                                    invalidateTests(["transcription"]);
-                                  }}
-                                />
-                              </label>
+                            <option value="">Not assigned</option>
+                            {providers.map((provider) => (
+                              <option key={provider.id} value={provider.id}>
+                                {provider.name}
+                              </option>
+                            ))}
+                          </Select>
+                          <Select
+                            aria-label={`${label} model`}
+                            className={cx(
+                              task === "transcription"
+                                ? "st-control-200"
+                                : "st-control-110",
+                              !selectedModel && "st-select-empty",
                             )}
-                          </div>
-                          <div className="ai-test-action">
-                            <button
-                              type="button"
-                              className="secondary-button"
-                              disabled={
-                                Boolean(testingTask) ||
-                                aiTestBlocked ||
-                                !selection ||
-                                (isTranscription && !testAudioFile)
-                              }
-                              onClick={() => void runAiTest(task)}
-                            >
-                              {testingTask === task
-                                ? `Testing ${label.toLowerCase()}…`
-                                : `Test ${label.toLowerCase()}`}
-                            </button>
-                            <p
-                              className={`ai-test-status ${state.status === "complete" && !state.result?.ok ? "error" : ""}`}
-                              role={
-                                state.status === "complete" && !state.result?.ok
-                                  ? "alert"
-                                  : "status"
-                              }
-                              aria-live="polite"
-                            >
-                              {state.status === "pending"
-                                ? "Testing saved selection…"
-                                : state.status === "stale"
-                                  ? "Settings changed. Test result discarded; test again."
-                                  : state.result
-                                    ? state.result.ok
-                                      ? `Passed in ${formatPreciseDuration(state.result.durationMs)} · ${formatAiTestSelection(state.result)}`
-                                      : state.result.code === "timeout"
-                                        ? `Timed out — inconclusive after ${formatPreciseDuration(state.result.durationMs)}`
-                                      : `Failed in ${formatPreciseDuration(state.result.durationMs)}`
-                                    : "Not tested"}
-                            </p>
-                            {state.status === "complete" && state.result && !state.result.ok && (
-                              <p className="ai-test-guidance" role="alert">
-                                {aiTestGuidance(state.result.code)}
-                              </p>
-                            )}
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                      </section>
-                    </div>
-                  )}
-                  {providerMessage && !providerDialogOpen && (
-                    <p
-                      className={`action-feedback ${providerMessageKind === "error" ? "error" : ""}`}
-                      role={providerMessageKind === "error" ? "alert" : "status"}
-                      aria-live="polite"
-                    >
-                      {providerMessage}
-                    </p>
-                  )}
-                  {providerDialogOpen && (
-                    <div
-                      className="ai-provider-dialog-layer"
-                      role="presentation"
-                      onMouseDown={(event) => {
-                        if (
-                          !verifyingProvider &&
-                          event.target === event.currentTarget
-                        )
-                          closeProviderDialog();
-                      }}
-                    >
-                      <section
-                        className="ai-provider-dialog"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="provider-dialog-title"
-                        onKeyDown={(event) => {
-                          if (event.key === "Escape") {
-                            if (!verifyingProvider) closeProviderDialog();
-                            return;
-                          }
-                          if (event.key !== "Tab") return;
-                          const focusable = Array.from(
-                            event.currentTarget.querySelectorAll<HTMLElement>(
-                              "button:not([disabled]), input:not([disabled]), select:not([disabled])",
-                            ),
-                          );
-                          if (!focusable.length) return;
-                          const first = focusable[0]!;
-                          const last = focusable[focusable.length - 1]!;
-                          if (event.shiftKey && document.activeElement === first) {
-                            event.preventDefault();
-                            last.focus();
-                          } else if (!event.shiftKey && document.activeElement === last) {
-                            event.preventDefault();
-                            first.focus();
-                          }
-                        }}
-                      >
-                        <header>
-                          <div>
-                            <span className="settings-section-kicker">
-                              PROVIDER SETTINGS
-                            </span>
-                            <h3 id="provider-dialog-title">
-                              {dialogProvider?.connected
-                                ? "Manage provider"
-                                : "Connect provider"}
-                            </h3>
-                          </div>
-                          <button
-                            type="button"
-                            aria-label="Close provider settings"
-                            disabled={verifyingProvider}
-                            onClick={closeProviderDialog}
+                            value={selectedModel}
+                            disabled={busy || !selectedProvider}
+                            onChange={(event) => {
+                              const model = event.target.value || null;
+                              const keepsThinking =
+                                selectedProvider && model && currentThinkingLevel
+                                  ? taskOptionFor(
+                                      selectedProvider,
+                                      model,
+                                    )?.thinkingLevels.includes(currentThinkingLevel)
+                                  : false;
+                              updateSelection(
+                                selectedProvider?.id ?? null,
+                                model,
+                                keepsThinking ? currentThinkingLevel : null,
+                              );
+                            }}
                           >
-                            <X aria-hidden="true" />
-                          </button>
-                        </header>
-                        <form onSubmit={(event) => void submitProviderConfiguration(event)}>
-                          <label>
-                            Provider
-                            <select
-                              value={selectedAiProvider}
-                              disabled={verifyingProvider}
-                              autoFocus={Boolean(
-                                dialogProvider?.connected && !replaceProviderKey,
-                              )}
+                            <option value="">Choose a model</option>
+                            {modelOptions.map((option) => (
+                              <option key={option.model} value={option.model}>
+                                {option.model}
+                              </option>
+                            ))}
+                          </Select>
+                          {task === "analysis" &&
+                          analysisOption?.thinkingLevels.length ? (
+                            <Select
+                              aria-label="Analysis thinking level"
+                              className="st-control-172"
+                              value={currentThinkingLevel ?? ""}
+                              disabled={busy}
                               onChange={(event) =>
-                                applyProviderDraft(
-                                  event.target.value as AiSelection["provider"],
+                                updateSelection(
+                                  selectedProvider?.id ?? null,
+                                  selectedModel || null,
+                                  (event.target.value ||
+                                    null) as AiThinkingLevel | null,
                                 )
                               }
                             >
-                              <option value="openai">OpenAI</option>
-                              <option value="cerebras">Cerebras</option>
-                            </select>
-                          </label>
-                          {(!dialogProvider?.connected || replaceProviderKey) ? (
-                            <label>
-                              {dialogProvider?.name ?? "Provider"} API key
-                              <input
-                                type="password"
-                                value={providerApiKey}
-                                onChange={(event) => setProviderApiKey(event.target.value)}
-                                autoComplete="off"
-                                required
-                                autoFocus
-                                placeholder="Paste API key"
-                              />
-                            </label>
-                          ) : (
-                            <div className="ai-provider-key-state">
-                              <span>{dialogProvider?.keyHint} · connected</span>
-                              <button
-                                type="button"
-                                disabled={verifyingProvider}
-                                onClick={() => setReplaceProviderKey(true)}
-                              >
-                                Replace API key
-                              </button>
-                            </div>
-                          )}
-                          <p className="settings-help">
-                            This only verifies and saves the API key. Choose models
-                            and thinking level in Task models.
-                          </p>
-                          {providerMessage && (
-                            <p
-                              className={`action-feedback ${providerMessageKind === "error" ? "error" : ""}`}
-                              role={providerMessageKind === "error" ? "alert" : "status"}
-                              aria-live="polite"
-                            >
-                              {providerMessage}
-                            </p>
-                          )}
-                          <div className="ai-provider-dialog-actions">
-                            <button
-                              type="button"
-                              onClick={closeProviderDialog}
-                              disabled={verifyingProvider}
-                            >
-                              Cancel
-                            </button>
-                            {dialogProvider?.connected && (
-                              <button
-                                type="button"
-                                className="danger-button"
-                                disabled={verifyingProvider}
-                                onClick={() =>
-                                  void disconnectAiProvider(dialogProvider.id)
-                                }
-                              >
-                                Disconnect
-                              </button>
-                            )}
-                            <button disabled={verifyingProvider}>
-                              {verifyingProvider
-                                ? "Connecting…"
-                                : dialogProvider?.connected && !replaceProviderKey
-                                  ? "Done"
-                                  : "Connect provider"}
-                            </button>
-                          </div>
-                        </form>
-                      </section>
-                    </div>
-                  )}
-                </section>
-              )}
-              {showTopic("connections") && (
-                <section className="settings-card settings-connections-card">
-                  <h2>Facebook and Instagram</h2>
-                  <p className="settings-help">
-                    Connect your logged-in browser session so private or
-                    login-protected posts can be captured. Export a
-                    Netscape-format <code>cookies.txt</code> while signed in,
-                    then upload it here. Passwords are never requested or
-                    stored.
-                  </p>
-                  <div className="platform-connections">
-                    {platformConnections.map((connection) => {
-                      const label =
-                        connection.platform === "instagram"
-                          ? "Instagram"
-                          : "Facebook";
-                      return (
-                        <article key={connection.platform}>
-                          <div className="platform-connection-heading">
-                            <PlatformIcon
-                              url={`https://www.${connection.platform}.com`}
-                            />
-                            <div>
-                              <strong>{label}</strong>
-                              <span
-                                className={`connection-state ${connection.status}`}
-                              >
-                                {connection.status === "connected"
-                                  ? "Connected"
-                                  : connection.status === "needs_attention"
-                                    ? "Reconnect needed"
-                                    : "Not connected"}
-                              </span>
-                            </div>
-                          </div>
-                          <p>
-                            {connection.lastUsedAt
-                              ? `Last worked ${new Date(connection.lastUsedAt).toLocaleString()}`
-                              : connection.connected
-                                ? `${connection.cookieCount} platform cookies stored securely`
-                                : "Anonymous downloads will still be attempted."}
-                          </p>
-                          <div className="platform-connection-actions">
-                            <label className="button-like">
-                              {connection.connected
-                                ? "Replace cookies"
-                                : "Upload cookies"}
-                              <input
-                                type="file"
-                                accept=".txt,text/plain"
-                                onChange={async (event) => {
-                                  const file = event.target.files?.[0];
-                                  if (file)
-                                    await uploadPlatformCookies(
-                                      connection.platform,
-                                      file,
-                                    );
-                                  event.target.value = "";
-                                }}
-                              />
-                            </label>
-                            {connection.connected && (
-                              <button
-                                className="secondary-button"
-                                onClick={async () => {
-                                  try {
-                                    await api(
-                                      `/api/v1/platform-connections/${connection.platform}`,
-                                      { method: "DELETE" },
-                                    );
-                                    setPlatformMessage(
-                                      `${label} disconnected.`,
-                                    );
-                                    await load();
-                                  } catch {
-                                    setPlatformMessage(
-                                      `${label} could not be disconnected. Try again.`,
-                                    );
-                                  }
-                                }}
-                              >
-                                Disconnect
-                              </button>
-                            )}
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                  {platformMessage && (
-                    <p className="action-feedback" role="status">
-                      {platformMessage}
-                    </p>
-                  )}
-                  <details className="api-examples cookie-help">
-                    <summary>How to export browser cookies</summary>
-                    <p>
-                      Use a trusted cookies.txt exporter in your desktop browser
-                      while logged into the selected platform. Social Knowledge
-                      discards every cookie that does not belong to that
-                      platform before encrypting the connection.
-                    </p>
-                  </details>
-                </section>
-              )}
-              {showTopic("api") && (
-                <section className="settings-card settings-agent-connections-card">
-                  <h2>AI Connections</h2>
-                  <p className="settings-help">
-                    Connect ChatGPT, Codex, or another MCP client with read-only
-                    access to your saved archive.
-                  </p>
-                  <label>
-                    MCP server
-                    <input readOnly value={mcpUrl} />
-                  </label>
-                  <details className="api-examples">
-                    <summary>Codex configuration</summary>
-                    <p>
-                      Store your account key in{" "}
-                      <code>SOCIAL_KNOWLEDGE_API_KEY</code>, then add:
-                    </p>
-                    <pre>{`[mcp_servers.social_knowledge]\nurl = "${mcpUrl}"\nbearer_token_env_var = "SOCIAL_KNOWLEDGE_API_KEY"`}</pre>
-                  </details>
-                  <div className="key-list">
-                    {connections.map((connection) => (
-                      <article key={connection.clientId}>
-                        <div>
-                          <strong>{connection.name}</strong>
-                          <small>
-                            Read-only · connected{" "}
-                            {new Date(
-                              connection.authorizedAt,
-                            ).toLocaleDateString()}{" "}
-                            ·{" "}
-                            {connection.lastUsedAt
-                              ? `last used ${new Date(connection.lastUsedAt).toLocaleDateString()}`
-                              : "never used"}
-                          </small>
+                              <option value="">Thinking: Default</option>
+                              {analysisOption.thinkingLevels.map((level) => (
+                                <option key={level} value={level}>
+                                  Thinking: {capitalize(level)}
+                                </option>
+                              ))}
+                            </Select>
+                          ) : null}
                         </div>
-                        <button
-                          onClick={async () => {
-                            try {
-                              await api(
-                                `/api/v1/oauth/connections/${connection.clientId}`,
-                                { method: "DELETE" },
-                              );
-                              await load();
-                            } catch {
-                              setMessage(
-                                "That AI connection could not be revoked. Try again.",
-                              );
-                            }
-                          }}
-                        >
-                          Revoke
-                        </button>
-                      </article>
-                    ))}
-                    {!connections.length && (
-                      <p>No OAuth applications connected yet.</p>
+                      </CardRow>
+                    );
+                  })}
+                </SettingsSection>
+                {aiSettingsDirty && aiState && (
+                  <SaveBar
+                    message={describeAiChanges(
+                      aiState.selections,
+                      currentAiSelections,
+                      configuredAiProviders,
                     )}
-                  </div>
-                  {message && !token && (
-                    <p className="action-feedback" role="status">
-                      {message}
-                    </p>
-                  )}
-                </section>
-              )}
-              {showTopic("data") && (
-                <section className="settings-card settings-export-card">
-                  <h2>Export library</h2>
-                  <p className="settings-help">
-                    Create a portable backup containing all of your capture
-                    metadata, transcripts, comments, Markdown notes, images,
-                    audio, and videos. Account credentials and server
-                    configuration are excluded.
-                  </p>
-                  <button
-                    disabled={libraryExports.some(
-                      (item) => item.status === "pending",
-                    )}
-                    onClick={async () => {
-                      setBackupMessage("Preparing your backup…");
-                      try {
-                        await api("/api/v1/library-exports", {
-                          method: "POST",
-                        });
-                        await load();
-                      } catch (error) {
-                        setBackupMessage(
-                          error instanceof Error
-                            ? error.message
-                            : "Backup could not start.",
-                        );
-                      }
+                    saving={savingAiSelections}
+                    saveDisabled={verifyingProvider || Boolean(testingTask)}
+                    onDiscard={() => {
+                      setDraftSelections(aiState.selections);
+                      setProviderMessage("");
                     }}
-                  >
-                    {libraryExports.some((item) => item.status === "pending")
-                      ? "Preparing backup…"
-                      : "Create full backup"}
-                  </button>
-                  {backupMessage && (
-                    <p className="action-feedback">{backupMessage}</p>
-                  )}
-                  <div className="key-list">
-                    {libraryExports.map((item) => (
-                      <article key={item.id}>
-                        <div>
-                          <strong>
-                            {item.status === "complete"
-                              ? `Backup ready · ${item.recordCount ?? 0} captures`
-                              : item.status === "pending"
-                                ? "Preparing backup"
-                                : "Backup failed"}
-                          </strong>
-                          <small>
-                            Created {new Date(item.createdAt).toLocaleString()}{" "}
-                            · expires{" "}
-                            {new Date(item.expiresAt).toLocaleString()}
-                          </small>
-                        </div>
-                        {item.status === "complete" && (
-                          <a
-                            className="backup-download"
-                            href={`/api/v1/library-exports/${item.id}/download`}
-                          >
-                            Download
-                          </a>
+                    onSave={() => void saveAiSelections()}
+                  />
+                )}
+              </>
+            )}
+          </>
+        )}
+        {view === "connections" && (
+          <>
+            <SettingsPageHeader
+              crumb={workspaceCrumb}
+              title="Connections"
+              description="Sources Social Knowledge saves from, and assistants allowed to search your archive."
+            />
+            {stateCard ?? (
+              <>
+                <SettingsSection
+                  title="Social sessions"
+                  description="Instagram and Facebook need a signed-in browser session to fetch posts. Cookies are encrypted and never shown again."
+                  after={!cookiePlatform && <Feedback>{platformMessage}</Feedback>}
+                >
+                  {[...platformConnections]
+                    .sort(
+                      (a, b) =>
+                        platformOrder.indexOf(a.platform) -
+                        platformOrder.indexOf(b.platform),
+                    )
+                    .map((connection) => {
+                    const look = platformLooks[connection.platform];
+                    const attention = connection.status === "needs_attention";
+                    return (
+                      <CardRow
+                        key={connection.platform}
+                        className={cx(
+                          "st-platform-row",
+                          attention && "st-row-attention",
                         )}
-                      </article>
-                    ))}
-                  </div>
-                  <p className="settings-help">
-                    Backups contain private content and are available for 24
-                    hours. Store downloaded archives somewhere secure.
-                  </p>
-                </section>
-              )}
-              {showTopic("data") && (
-                <section className="settings-card settings-language-card">
-                  <h2>Language</h2>
-                  <p className="settings-help">
-                    New captures use these preferences. Original transcripts are
-                    always preserved.
-                  </p>
-                  <form
-                    className="settings-language-form"
-                    onSubmit={async (event) => {
-                      event.preventDefault();
-                      try {
-                        const result = await api<{
-                          preferences: {
-                            defaultLanguage: string;
-                            translateForeign: boolean;
-                          };
-                        }>("/api/v1/preferences", {
-                          method: "PATCH",
-                          body: JSON.stringify({
-                            defaultLanguage,
-                            translateForeign,
-                          }),
-                        });
-                        setDefaultLanguage(result.preferences.defaultLanguage);
-                        setTranslateForeign(
-                          result.preferences.translateForeign,
-                        );
-                        setPreferenceMessage("Language preferences saved.");
-                      } catch {
-                        setPreferenceMessage(
-                          "Language preferences could not be saved. Try again.",
-                        );
-                      }
-                    }}
-                  >
-                    <label>
-                      Default language
-                      <select
-                        value={defaultLanguage}
-                        onChange={(event) =>
-                          setDefaultLanguage(event.target.value)
+                        leading={
+                          <IconBox
+                            icon={look.icon}
+                            background={look.background}
+                            color={look.color}
+                          />
+                        }
+                        title={look.label}
+                        description={
+                          attention
+                            ? `Session expired${connection.updatedAt ? ` on ${formatShortDate(connection.updatedAt)}` : ""} · new ${look.label} captures will fail until you reconnect`
+                            : connection.connected
+                              ? `Session verified ${connection.lastValidatedAt ? formatRelative(connection.lastValidatedAt) : "recently"} · usually lasts about a month`
+                              : "No session · public posts are still attempted without one"
                         }
                       >
-                        {[
-                          "English",
-                          "French",
-                          "Portuguese",
-                          "Spanish",
-                          "German",
-                          "Italian",
-                          "Dutch",
-                        ].map((language) => (
-                          <option key={language}>{language}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="toggle-label">
-                      <input
-                        type="checkbox"
-                        checked={translateForeign}
-                        onChange={(event) =>
-                          setTranslateForeign(event.target.checked)
-                        }
-                      />
-                      Translate foreign-language clips into my default language
-                    </label>
-                    <button>Save language settings</button>
-                  </form>
-                  {preferenceMessage && (
-                    <p className="action-feedback">{preferenceMessage}</p>
-                  )}
-                </section>
-              )}
-              {showTopic("api") && (
-                <section className="settings-card settings-api-keys-card">
-                  <h2>API keys</h2>
-                  <ShortcutSetup onCreated={() => load()} keyIds={keys.map((key) => key.id)} />
-                  <p className="settings-help">
-                    General API keys can submit captures and read, search, and
-                    export your knowledge through the Agent API. It cannot
-                    manage your account or settings.
-                  </p>
-                  <form className="settings-key-form" onSubmit={create}>
-                    <label>
-                      Key name
-                      <input
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        required
-                      />
-                    </label>
-                    <button>Create API key</button>
-                  </form>
-                  {token && (
-                    <div className="token-box">
-                      <strong>{message}</strong>
-                      <code>{token}</code>
-                      <button
-                        onClick={async () => {
-                          await navigator.clipboard.writeText(token);
-                          setMessage("Copied to clipboard.");
-                        }}
-                      >
-                        Copy key
-                      </button>
-                    </div>
-                  )}
-                  {message && !token && (
-                    <p className="action-feedback" role="status">
-                      {message}
-                    </p>
-                  )}
-                  <div className="key-list">
-                    {keys.map((key) => (
-                      <article key={key.id}>
-                        <div>
-                          <strong>{key.name}</strong>
-                          <small>
-                            {key.scope === "capture" ? "Capture only" : "Capture and knowledge access"} · {key.prefix}… · created{" "}
-                            {new Date(key.createdAt).toLocaleDateString()} ·{" "}
-                            {key.lastUsedAt
-                              ? `last used ${new Date(key.lastUsedAt).toLocaleDateString()}`
-                              : "never used"}
-                          </small>
-                        </div>
-                        <button
-                          onClick={async () => {
-                            try {
-                              await api(`/api/v1/api-keys/${key.id}`, {
-                                method: "DELETE",
-                              });
-                              await load();
-                              if (createdKeyId === key.id) {
-                                setToken("");
-                                setCreatedKeyId(null);
-                              }
-                              setMessage(`${key.name} was revoked.`);
-                            } catch {
-                              setMessage(
-                                `${key.name} could not be revoked. Try again.`,
-                              );
-                            }
+                        <StatusPill
+                          tone={
+                            attention
+                              ? "warn"
+                              : connection.connected
+                                ? "ok"
+                                : "off"
+                          }
+                        >
+                          {attention
+                            ? "Needs attention"
+                            : connection.connected
+                              ? "Connected"
+                              : "Not connected"}
+                        </StatusPill>
+                        <ActionButton
+                          variant={attention ? "primary" : "default"}
+                          icon={connection.connected || attention ? undefined : Upload}
+                          onClick={() => {
+                            setPlatformMessage("");
+                            setCookiePlatform(connection.platform);
                           }}
                         >
+                          {attention
+                            ? "Reconnect"
+                            : connection.connected
+                              ? "Replace cookies"
+                              : "Connect"}
+                        </ActionButton>
+                      </CardRow>
+                    );
+                  })}
+                  <DisclosureRow
+                    icon={Info}
+                    title="How to export browser cookies"
+                    description="Step-by-step for Safari, Chrome, and Firefox."
+                    last
+                  >
+                    <ol className="st-steps">
+                      <li>
+                        Sign in to Instagram or Facebook in a desktop browser.
+                      </li>
+                      <li>
+                        <strong>Chrome or Firefox:</strong> use a trusted
+                        cookies.txt exporter extension to save the cookies for
+                        that site in Netscape format.
+                      </li>
+                      <li>
+                        <strong>Safari:</strong> Safari cannot export
+                        cookies.txt files. Sign in with Chrome or Firefox for
+                        this step instead.
+                      </li>
+                      <li>
+                        Upload the file here. Social Knowledge discards every
+                        cookie that does not belong to that platform before
+                        encrypting the connection. Passwords are never
+                        requested or stored.
+                      </li>
+                    </ol>
+                  </DisclosureRow>
+                </SettingsSection>
+                <SettingsSection
+                  title="Connected assistants"
+                  description="AI assistants that can search your archive over MCP. Revoking takes effect immediately."
+                  after={<Feedback>{assistantMessage}</Feedback>}
+                >
+                  {connections.map((connection) => {
+                    const look = assistantLooks.find((item) =>
+                      item.match.test(connection.name),
+                    );
+                    return (
+                      <CardRow
+                        key={connection.clientId}
+                        className="st-assistant-row"
+                        leading={
+                          <IconBox
+                            icon={look?.icon ?? Bot}
+                            background={look?.background}
+                            color={look?.color}
+                          />
+                        }
+                        title={connection.name}
+                        description={`Connected ${formatShortDate(connection.authorizedAt)} · ${connection.lastUsedAt ? `last searched ${formatRelative(connection.lastUsedAt)}` : "not used yet"}`}
+                      >
+                        <ActionButton
+                          variant="danger"
+                          onClick={() => void revokeAssistant(connection)}
+                        >
                           Revoke
-                        </button>
-                      </article>
+                        </ActionButton>
+                      </CardRow>
+                    );
+                  })}
+                  {!connections.length && (
+                    <p className="st-empty-row">
+                      No assistants connected yet.
+                    </p>
+                  )}
+                  <CardRow
+                    leading={
+                      <IconBox icon={Plus} size={28} className="st-icon-muted" />
+                    }
+                    title="Connect another assistant"
+                    description="Paste this address into any MCP-compatible app"
+                    last
+                  >
+                    <Input
+                      className="st-control-250 st-mono"
+                      readOnly
+                      value={mcpUrl}
+                      aria-label="MCP server address"
+                      onFocus={(event) => event.currentTarget.select()}
+                    />
+                    <ActionButton
+                      icon={Copy}
+                      onClick={() =>
+                        void navigator.clipboard.writeText(mcpUrl).then(
+                          () => setAssistantMessage("MCP address copied."),
+                          () =>
+                            setAssistantMessage(
+                              "Clipboard access is unavailable. Select the address and copy it.",
+                            ),
+                        )
+                      }
+                    >
+                      Copy
+                    </ActionButton>
+                  </CardRow>
+                </SettingsSection>
+              </>
+            )}
+          </>
+        )}
+        {view === "api" && (
+          <>
+            <SettingsPageHeader
+              crumb={workspaceCrumb}
+              title="API keys"
+              description="Keys let the iPhone Shortcut and your own scripts save posts. A new key is shown once, so copy it somewhere safe."
+              action={
+                <ActionButton
+                  variant="primary"
+                  icon={Plus}
+                  onClick={() => {
+                    setToken("");
+                    setMessage("");
+                    setName("");
+                    setKeyDialogOpen(true);
+                  }}
+                >
+                  Create API key
+                </ActionButton>
+              }
+            />
+            {stateCard ?? (
+              <>
+                <SettingsSection
+                  title="Active keys"
+                  description="Revoke any key you no longer recognise. Revoking stops it working immediately."
+                  after={!keyDialogOpen && <Feedback>{message}</Feedback>}
+                >
+                  <div className="st-rows st-key-list">
+                    {keys.map((key) => (
+                      <CardRow
+                        key={key.id}
+                        leading={<IconBox icon={KeyRound} />}
+                        title={key.name}
+                        description={`${key.prefix}•••• · ${key.scope === "capture" ? "Capture only · " : ""}created ${formatShortDate(key.createdAt)} · ${key.lastUsedAt ? `last used ${formatRelative(key.lastUsedAt)}` : "never used"}`}
+                      >
+                        {!key.lastUsedAt && (
+                          <StatusPill tone="off">Unused</StatusPill>
+                        )}
+                        <ActionButton
+                          variant="danger"
+                          onClick={() => void revokeKey(key)}
+                        >
+                          Revoke
+                        </ActionButton>
+                      </CardRow>
                     ))}
-                    {!keys.length && <p>No account API keys yet.</p>}
+                    {!keys.length && (
+                      <p className="st-empty-row">
+                        No API keys yet. Create one for a script, or set up the
+                        iPhone Shortcut below.
+                      </p>
+                    )}
                   </div>
-                  <details className="api-examples">
-                    <summary>Agent API examples</summary>
+                </SettingsSection>
+                <SettingsSection
+                  title="Save from your iPhone"
+                  description="Share any Instagram or Facebook post to Social Knowledge straight from the share sheet."
+                >
+                  <ShortcutSetup
+                    onCreated={() => load()}
+                    keyIds={keys.map((key) => key.id)}
+                  />
+                  <DisclosureRow
+                    icon={Code}
+                    title="Agent API examples"
+                    description="Request formats for scripts and automations"
+                    last
+                  >
                     <p>
-                      Replace <code>$SOCIAL_KNOWLEDGE_API_KEY</code> with an
-                      account key.
+                      General keys can submit captures and read, search, and
+                      export your knowledge. They cannot manage your account
+                      or settings. Replace{" "}
+                      <code>$SOCIAL_KNOWLEDGE_API_KEY</code> with a key.
                     </p>
                     <pre>{`curl -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
   "${window.location.origin}/api/v1/knowledge/search?q=lisbon%20restaurants"
@@ -1843,21 +1418,468 @@ curl -X POST -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
   -H "Content-Type: application/json" -d '{"include":["transcript","comments"]}' \\
   "${window.location.origin}/api/v1/knowledge/exports"`}</pre>
                     <p>
+                      Codex and other MCP clients can use the same key. Store
+                      it in <code>SOCIAL_KNOWLEDGE_API_KEY</code>, then add:
+                    </p>
+                    <pre>{`[mcp_servers.social_knowledge]\nurl = "${mcpUrl}"\nbearer_token_env_var = "SOCIAL_KNOWLEDGE_API_KEY"`}</pre>
+                    <p>
                       <a href="/openapi.json" target="_blank" rel="noreferrer">
                         OpenAPI 3.1 specification ↗
                       </a>
                     </p>
-                  </details>
-                </section>
-              )}
-              {showTopic("account") && (
-                user && <MyAccount user={user} onUserChange={onUserChange} onSignOut={onSignOut} onOpenData={() => selectTopic("data")} />
-              )}
-              {showTopic("people") && user?.role === "admin" && <PeopleAccess currentUser={user} onMyAccount={() => selectTopic("account")} />}
-            </>
-          )}
-        </div>
+                  </DisclosureRow>
+                </SettingsSection>
+              </>
+            )}
+          </>
+        )}
+        {view === "data" && (
+          <>
+            <SettingsPageHeader
+              crumb={workspaceCrumb}
+              title="Data & export"
+              description="How notes are written, and a portable copy of everything you've saved."
+            />
+            {stateCard ?? (
+              <>
+                <SettingsSection
+                  title="Language"
+                  description="Applies to new captures. Existing notes keep their language."
+                  after={
+                    <Feedback error={preferenceError}>{preferenceMessage}</Feedback>
+                  }
+                >
+                  <CardRow
+                    title={<label htmlFor="note-language">Note language</label>}
+                    description="Summaries, takeaways, and topics are written in this language."
+                  >
+                    <Select
+                      id="note-language"
+                      className="st-control-180"
+                      value={defaultLanguage}
+                      disabled={savingPreferences}
+                      onChange={(event) =>
+                        void savePreferences({
+                          defaultLanguage: event.target.value,
+                          translateForeign,
+                        })
+                      }
+                    >
+                      {(languages.includes(defaultLanguage)
+                        ? languages
+                        : [defaultLanguage, ...languages]
+                      ).map((language) => (
+                        <option key={language}>{language}</option>
+                      ))}
+                    </Select>
+                  </CardRow>
+                  <CardRow
+                    title={
+                      <span id="translate-transcripts-label">
+                        Translate transcripts
+                      </span>
+                    }
+                    description="Keep the original transcript and add a translation when a post is in another language."
+                    last
+                  >
+                    <Toggle
+                      aria-labelledby="translate-transcripts-label"
+                      checked={translateForeign}
+                      disabled={savingPreferences}
+                      onCheckedChange={(checked) =>
+                        void savePreferences({
+                          defaultLanguage,
+                          translateForeign: checked,
+                        })
+                      }
+                    />
+                  </CardRow>
+                </SettingsSection>
+                <SettingsSection
+                  title="Export your archive"
+                  description="Yours to keep. Exports include source links so every note stays attributed."
+                  after={<Feedback>{backupMessage}</Feedback>}
+                >
+                  <CardRow
+                    leading={<IconBox icon={Archive} tone="green" />}
+                    title="Full archive"
+                    description="Markdown notes, metadata, transcripts, comments, and media · credentials excluded"
+                  >
+                    <ActionButton
+                      variant="primary"
+                      icon={Download}
+                      disabled={exportPending}
+                      onClick={() => void startExport()}
+                    >
+                      {exportPending ? "Preparing archive…" : "Export archive"}
+                    </ActionButton>
+                  </CardRow>
+                  {libraryExports.map((item) => {
+                    const expired =
+                      new Date(item.expiresAt).getTime() <= Date.now();
+                    const tone: StatusTone | null =
+                      item.status === "pending"
+                        ? "off"
+                        : item.status === "failed"
+                          ? "warn"
+                          : null;
+                    return (
+                      <CardRow
+                        key={item.id}
+                        className="st-export-row"
+                        leading={<IconBox icon={FileArchive} size={28} />}
+                        title={formatDateTime(item.createdAt)}
+                        description={
+                          item.status === "complete"
+                            ? `${item.recordCount ?? 0} captures · ${expired ? "expired" : `ready · expires ${formatUntil(item.expiresAt)}`}`
+                            : item.status === "pending"
+                              ? "Preparing your archive. This can take a few minutes."
+                              : "This export could not be completed. Try again."
+                        }
+                      >
+                        {tone && (
+                          <StatusPill tone={tone}>
+                            {item.status === "pending" ? "Preparing" : "Failed"}
+                          </StatusPill>
+                        )}
+                        {item.status === "complete" && !expired && (
+                          <a
+                            className="ui-btn ui-btn-default"
+                            href={`/api/v1/library-exports/${item.id}/download`}
+                          >
+                            <Download
+                              className="ui-btn-icon"
+                              size={14}
+                              aria-hidden="true"
+                            />
+                            <span>Download</span>
+                          </a>
+                        )}
+                      </CardRow>
+                    );
+                  })}
+                </SettingsSection>
+              </>
+            )}
+          </>
+        )}
       </div>
+      {testDialogOpen && (
+        <SettingsDialog
+          className="ai-test-dialog"
+          title="Test connection"
+          description="Run a small request for each saved task. Usage charges may apply. These checks test your AI connection; they do not run a full capture."
+          closeLabel="Close connection tests"
+          closeDisabled={Boolean(testingTask)}
+          onClose={closeTestDialog}
+        >
+          {aiTestBlocked && (
+            <p className="st-dialog-warning" role="status">
+              {savingAiSelections
+                ? "Saving settings before tests can run…"
+                : "Save changes before testing a connection."}
+            </p>
+          )}
+          <div className="st-test-list">
+            {(["transcription", "analysis", "ask"] as const).map((task) => {
+              const state = testStates[task];
+              const isTranscription = task === "transcription";
+              const label =
+                task === "analysis"
+                  ? "Analysis"
+                  : task === "ask"
+                    ? "Ask"
+                    : "Transcription";
+              const selection = isTranscription
+                ? aiState?.selections.transcription
+                : aiState?.selections.analysis;
+              const failed = state.status === "complete" && !state.result?.ok;
+              return (
+                <article className="ai-test-row" key={task}>
+                  <div className="st-test-copy">
+                    <h3>{label}</h3>
+                    <p>
+                      {isTranscription
+                        ? "Uses only the audio file you select here."
+                        : task === "analysis"
+                          ? "Tests analysis with sample text."
+                          : "Tests a sample question without accessing your archive."}
+                    </p>
+                    {isTranscription && (
+                      <label className="st-file">
+                        <span>Short audio file · 1 MB max</span>
+                        <input
+                          type="file"
+                          accept="audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,.mp3,.m4a,.mp4,.ogg,.wav,.webm"
+                          onChange={(event) => {
+                            setTestAudioFile(event.target.files?.[0] ?? null);
+                            invalidateTests(["transcription"]);
+                          }}
+                        />
+                      </label>
+                    )}
+                    <p
+                      className={cx("st-test-status", failed && "st-test-status-error")}
+                      role={failed ? "alert" : "status"}
+                      aria-live="polite"
+                    >
+                      {state.status === "pending"
+                        ? "Testing saved selection…"
+                        : state.status === "stale"
+                          ? "Settings changed. Test result discarded; test again."
+                          : state.result
+                            ? state.result.ok
+                              ? `Passed in ${formatPreciseDuration(state.result.durationMs)} · ${formatAiTestSelection(state.result)}`
+                              : state.result.code === "timeout"
+                                ? `Timed out — inconclusive after ${formatPreciseDuration(state.result.durationMs)}`
+                                : `Failed in ${formatPreciseDuration(state.result.durationMs)}`
+                            : "Not tested"}
+                    </p>
+                    {failed && state.result && (
+                      <p className="st-test-guidance" role="alert">
+                        {aiTestGuidance(state.result.code)}
+                      </p>
+                    )}
+                  </div>
+                  <ActionButton
+                    disabled={
+                      Boolean(testingTask) ||
+                      aiTestBlocked ||
+                      !selection ||
+                      (isTranscription && !testAudioFile)
+                    }
+                    onClick={() => void runAiTest(task)}
+                  >
+                    {testingTask === task
+                      ? `Testing ${label.toLowerCase()}…`
+                      : `Test ${label.toLowerCase()}`}
+                  </ActionButton>
+                </article>
+              );
+            })}
+          </div>
+        </SettingsDialog>
+      )}
+      {providerDialogOpen && (
+        <SettingsDialog
+          title={dialogProvider?.connected ? "Manage provider" : "Connect provider"}
+          description="This only verifies and saves the API key. Choose models and thinking level in Task models."
+          closeLabel="Close provider settings"
+          closeDisabled={verifyingProvider}
+          onClose={closeProviderDialog}
+          footer={
+            <>
+              {dialogProvider?.connected && (
+                <ActionButton
+                  variant="danger"
+                  disabled={verifyingProvider}
+                  onClick={() => void disconnectAiProvider(dialogProvider.id)}
+                >
+                  Disconnect
+                </ActionButton>
+              )}
+              <span className="st-spacer" />
+              <ActionButton
+                variant="ghost"
+                onClick={closeProviderDialog}
+                disabled={verifyingProvider}
+              >
+                Cancel
+              </ActionButton>
+              <ActionButton
+                variant="primary"
+                type="submit"
+                form="provider-form"
+                disabled={verifyingProvider}
+              >
+                {verifyingProvider
+                  ? "Connecting…"
+                  : dialogProvider?.connected && !replaceProviderKey
+                    ? "Done"
+                    : "Connect provider"}
+              </ActionButton>
+            </>
+          }
+        >
+          <form
+            id="provider-form"
+            className="st-dialog-form"
+            onSubmit={(event) => void submitProviderConfiguration(event)}
+          >
+            <div className="st-field">
+              <label htmlFor="provider-select">Provider</label>
+              <Select
+                id="provider-select"
+                value={selectedAiProvider}
+                disabled={verifyingProvider}
+                autoFocus={Boolean(dialogProvider?.connected && !replaceProviderKey)}
+                onChange={(event) =>
+                  applyProviderDraft(event.target.value as AiSelection["provider"])
+                }
+              >
+                <option value="openai">OpenAI</option>
+                <option value="cerebras">Cerebras</option>
+              </Select>
+            </div>
+            {!dialogProvider?.connected || replaceProviderKey ? (
+              <div className="st-field">
+                <label htmlFor="provider-api-key">
+                  {dialogProvider?.name ?? "Provider"} API key
+                </label>
+                <Input
+                  id="provider-api-key"
+                  type="password"
+                  value={providerApiKey}
+                  onChange={(event) => setProviderApiKey(event.target.value)}
+                  autoComplete="off"
+                  required
+                  autoFocus
+                  placeholder="Paste API key"
+                />
+              </div>
+            ) : (
+              <div className="st-key-state">
+                <span>
+                  {dialogProvider?.keyHint ? maskKeyHint(dialogProvider.keyHint) : ""} · connected
+                </span>
+                <ActionButton
+                  disabled={verifyingProvider}
+                  onClick={() => setReplaceProviderKey(true)}
+                >
+                  Replace API key
+                </ActionButton>
+              </div>
+            )}
+            {providerMessage && (
+              <Feedback error={providerMessageKind === "error"}>
+                {providerMessage}
+              </Feedback>
+            )}
+          </form>
+        </SettingsDialog>
+      )}
+      {keyDialogOpen && (
+        <SettingsDialog
+          title="Create API key"
+          description={
+            token
+              ? "Copy this key now. It will not be shown again."
+              : "General keys can submit captures and read, search, and export your knowledge through the Agent API. They cannot manage your account or settings."
+          }
+          onClose={closeKeyDialog}
+          footer={
+            token ? (
+              <ActionButton variant="primary" onClick={closeKeyDialog}>
+                Done
+              </ActionButton>
+            ) : (
+              <>
+                <ActionButton variant="ghost" onClick={closeKeyDialog}>
+                  Cancel
+                </ActionButton>
+                <ActionButton variant="primary" type="submit" form="api-key-form">
+                  Create key
+                </ActionButton>
+              </>
+            )
+          }
+        >
+          {token ? (
+            <div className="st-field">
+              <label htmlFor="new-api-key">New API key</label>
+              <div className="st-inline-controls">
+                <Input
+                  id="new-api-key"
+                  className="st-grow st-mono"
+                  readOnly
+                  value={token}
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <ActionButton
+                  icon={Copy}
+                  onClick={() =>
+                    void navigator.clipboard.writeText(token).then(
+                      () => setMessage("Copied to clipboard."),
+                      () => setMessage("Select the key and copy it."),
+                    )
+                  }
+                >
+                  Copy key
+                </ActionButton>
+              </div>
+              <Feedback>{message}</Feedback>
+            </div>
+          ) : (
+            <form id="api-key-form" className="st-dialog-form" onSubmit={create}>
+              <div className="st-field">
+                <label htmlFor="api-key-name">Key name</label>
+                <Input
+                  id="api-key-name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="What will use this key?"
+                  maxLength={60}
+                  required
+                  autoFocus
+                />
+              </div>
+              {message && <Feedback error>{message}</Feedback>}
+            </form>
+          )}
+        </SettingsDialog>
+      )}
+      {cookiePlatform && (
+        <SettingsDialog
+          title={`${cookieConnection?.connected ? "Replace" : "Connect"} ${platformLooks[cookiePlatform].label} session`}
+          description="Upload a Netscape-format cookies.txt exported while signed in. Passwords are never requested or stored, and cookies for other sites are discarded before encryption."
+          onClose={() => setCookiePlatform(null)}
+          footer={
+            <>
+              {(cookieConnection?.connected ||
+                cookieConnection?.status === "needs_attention") && (
+                <ActionButton
+                  variant="danger"
+                  onClick={() => void disconnectPlatform(cookiePlatform)}
+                >
+                  Disconnect
+                </ActionButton>
+              )}
+              <span className="st-spacer" />
+              <ActionButton variant="ghost" onClick={() => setCookiePlatform(null)}>
+                Cancel
+              </ActionButton>
+              <ActionButton
+                variant="primary"
+                icon={Upload}
+                onClick={() => cookieInput.current?.click()}
+              >
+                Choose cookies.txt
+              </ActionButton>
+            </>
+          }
+        >
+          <input
+            ref={cookieInput}
+            className="sr-only"
+            type="file"
+            accept=".txt,text/plain"
+            aria-label={`${platformLooks[cookiePlatform].label} cookies file`}
+            tabIndex={-1}
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file && (await uploadPlatformCookies(cookiePlatform, file)))
+                setCookiePlatform(null);
+            }}
+          />
+          <p className="st-dialog-note">
+            {cookieConnection?.connected
+              ? `${cookieConnection.cookieCount} ${platformLooks[cookiePlatform].label} cookies are stored encrypted. A new file replaces them.`
+              : "Without a session, Social Knowledge still tries public downloads."}
+          </p>
+          <Feedback>{platformMessage}</Feedback>
+        </SettingsDialog>
+      )}
     </div>
   );
 }

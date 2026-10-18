@@ -415,5 +415,125 @@ export async function seedUiFixture(store: JobStore, config: AppConfig) {
 
   store.createKnowledgeExport(user.id, true, true, "full");
 
+  await seedSettingsFixture(store, user.id);
+
   return user;
+}
+
+const isoAgo = (minutes: number) =>
+  new Date(Date.now() - minutes * 60_000).toISOString();
+const isoAhead = (minutes: number) =>
+  new Date(Date.now() + minutes * 60_000).toISOString();
+
+/**
+ * Settings state drawn in screens 10–15: a connected OpenAI key, an expired
+ * Facebook session, two more members, open invitations, and used keys. Every
+ * credential is a placeholder that no provider would accept.
+ */
+async function seedSettingsFixture(store: JobStore, ownerId: string) {
+  const db = store.database;
+
+  store.saveAiProviderConnection(
+    ownerId,
+    "openai",
+    "fixture-not-a-real-ciphertext",
+    "sk-fx…a91F",
+  );
+  db.prepare(
+    "UPDATE ai_provider_connections SET verified_at=?,updated_at=? WHERE user_id=? AND provider='openai'",
+  ).run(isoAgo(36 * 24 * 60), isoAgo(36 * 24 * 60), ownerId);
+  store.saveAiTaskSelections(ownerId, {
+    transcriptionProvider: "openai",
+    transcriptionModel: "gpt-4o-transcribe",
+    analysisProvider: "openai",
+    analysisModel: "gpt-5-mini",
+    analysisThinkingLevel: "medium",
+  });
+
+  store.savePlatformConnection(ownerId, "instagram", "fixture-not-a-real-ciphertext", 14);
+  db.prepare(
+    "UPDATE platform_connections SET last_validated_at=?,last_used_at=? WHERE user_id=? AND platform='instagram'",
+  ).run(isoAgo(3 * 24 * 60), isoAgo(5 * 60), ownerId);
+  store.savePlatformConnection(ownerId, "facebook", "fixture-not-a-real-ciphertext", 9);
+  store.markPlatformConnectionAttention(ownerId, "facebook", "platform_session_expired");
+  db.prepare(
+    "UPDATE platform_connections SET updated_at=? WHERE user_id=? AND platform='facebook'",
+  ).run(isoAgo(4 * 24 * 60), ownerId);
+
+  const ownerJoined = isoAgo(220 * 24 * 60);
+  db.prepare("UPDATE users SET created_at=? WHERE id=?").run(ownerJoined, ownerId);
+  const members = [
+    { username: "maya", displayName: "Maya Chen", colour: "#4f6fa8", joinedDaysAgo: 120 },
+    { username: "joao", displayName: "João Ribeiro", colour: "#c08a3e", joinedDaysAgo: 45 },
+  ];
+  for (const member of members) {
+    const created = store.createUser(
+      member.username,
+      await hash(`fixture-${member.username}-password`),
+      "member",
+    );
+    store.updateProfile(created.id, {
+      displayName: member.displayName,
+      avatarColor: member.colour,
+    });
+    db.prepare("UPDATE users SET created_at=? WHERE id=?").run(
+      isoAgo(member.joinedDaysAgo * 24 * 60),
+      created.id,
+    );
+  }
+  store.createInvitation({
+    createdByUserId: ownerId,
+    role: "member",
+    tokenHash: "fixture-member-invitation",
+    expiresAt: isoAhead(20 * 60),
+  });
+  store.createInvitation({
+    createdByUserId: ownerId,
+    role: "admin",
+    tokenHash: "fixture-admin-invitation",
+    expiresAt: isoAhead(3 * 60),
+  });
+  db.prepare("UPDATE invitations SET created_at=? WHERE token_hash=?").run(
+    isoAgo(21 * 60),
+    "fixture-admin-invitation",
+  );
+  db.prepare("UPDATE invitations SET created_at=? WHERE token_hash=?").run(
+    isoAgo(4 * 60),
+    "fixture-member-invitation",
+  );
+
+  store.createApiKey(ownerId, "Old laptop", await hash("fixture-laptop-key"), "sk_live_0f3d");
+  const keyTimes: Record<string, [number, number | null]> = {
+    "iPhone Shortcut": [27 * 24 * 60, 2 * 60],
+    "Obsidian sync script": [76 * 24 * 60, 12 * 24 * 60],
+    "Old laptop": [139 * 24 * 60, null],
+  };
+  for (const [name, [createdAgo, usedAgo]] of Object.entries(keyTimes))
+    db.prepare(
+      "UPDATE api_keys SET created_at=?,last_used_at=? WHERE user_id=? AND name=?",
+    ).run(isoAgo(createdAgo), usedAgo === null ? null : isoAgo(usedAgo), ownerId, name);
+
+  const pending = store.listKnowledgeExports(ownerId, "full") as Array<{ id: string }>;
+  const older = store.createKnowledgeExport(ownerId, true, true, "full");
+  const backups: Array<[string, number, number]> = [
+    ...pending.map((item): [string, number, number] => [item.id, 2 * 60, 8]),
+    [older.id, 19 * 60, 8],
+  ];
+  for (const [id, createdAgo, captureCount] of backups) {
+    store.completeKnowledgeExport(ownerId, id, "fixture-not-a-real-archive.zip", captureCount);
+    db.prepare("UPDATE knowledge_exports SET created_at=?,expires_at=? WHERE id=?").run(
+      isoAgo(createdAgo),
+      isoAhead(24 * 60 - createdAgo),
+      id,
+    );
+  }
+
+  const oauthTimes: Record<string, [number, number]> = {
+    "11111111-1111-4111-8111-111111111111": [16 * 24 * 60, 2 * 60],
+    "22222222-2222-4222-8222-222222222222": [30 * 24 * 60, 26 * 60],
+  };
+  for (const [clientId, [authorizedAgo, usedAgo]] of Object.entries(oauthTimes))
+    db.prepare(
+      "UPDATE oauth_grants SET authorized_at=?,last_used_at=? WHERE user_id=? AND client_id=?",
+    ).run(isoAgo(authorizedAgo), isoAgo(usedAgo), ownerId, clientId);
 }

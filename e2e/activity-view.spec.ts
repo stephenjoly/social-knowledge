@@ -200,7 +200,7 @@ test("Activity inspects safe logs, complete failure counts, and compact account 
   await page.locator(".app-account-menu-layer").click({ position: { x: 500, y: 300 } });
   await expect(accountMenu).toHaveCount(0);
   await page.locator(".app-profile-settings").click();
-  await expect(page.getByRole("heading", { name: "Settings" }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "My account" })).toBeVisible();
   await page.getByRole("button", { name: "Back to archive" }).click();
   await page.getByRole("button", { name: "Activity", exact: true }).click();
   await page.setViewportSize({ width: 900, height: 900 });

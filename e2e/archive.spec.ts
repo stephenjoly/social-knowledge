@@ -209,16 +209,18 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await page
     .getByRole("button", { name: "Data & export", exact: true })
     .click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Data & export" }),
+  ).toBeVisible();
   const languageSelect = page.getByRole("combobox", {
-    name: "Default language",
+    name: "Note language",
   });
   await expect(languageSelect).toBeVisible();
   const originalLanguage = await languageSelect.inputValue();
   await languageSelect.selectOption("French");
-  await page.getByRole("button", { name: "Save language settings" }).click();
   await expect(page.getByText("Language preferences saved.")).toBeVisible();
   await languageSelect.selectOption(originalLanguage);
-  await page.getByRole("button", { name: "Save language settings" }).click();
+  await expect(languageSelect).toHaveValue(originalLanguage);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page
