@@ -29,68 +29,50 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await page.getByRole("button", { name: "Close filters" }).click();
   await page.getByRole("button", { name: "Clear filters" }).click();
   await page.locator(".capture-card").first().click();
-  await expect(page.locator(".drawer video")).toBeVisible();
+  const note = page.locator(".capture-note");
+  await expect(note.locator(".note-media")).toBeVisible();
   await expect(
-    page.locator(".drawer").getByRole("heading", { name: "Key takeaways" }),
+    note.getByRole("link", { name: /^Open original post on / }),
+  ).toHaveAttribute("href", /^https:\/\//);
+  await expect(
+    note.getByRole("heading", { name: "Key takeaways" }),
   ).toBeVisible();
-  await expect(page.locator(".drawer .takeaways li").first()).toBeVisible();
-  await page.locator(".close").click();
+  await expect(note.locator(".note-takeaways li").first()).toBeVisible();
+  await note.getByRole("button", { name: "Back to Inbox", exact: true }).click();
+  await expect(note).toHaveCount(0);
 
   await page
     .getByRole("button", { name: "Knowledge base", exact: true })
     .click();
-  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  const knowledge = page.locator(".kb-page");
   await expect(
-    page.locator(".markdown").getByRole("heading", { name: "Map of content" }),
+    page.getByRole("heading", { level: 1, name: "Knowledge base" }),
   ).toBeVisible();
+  await knowledge.getByRole("button", { name: "Travel", exact: true }).click();
   await expect(
-    page.locator(".markdown").getByRole("button", { name: "Travel" }),
+    page.getByRole("heading", { level: 1, name: "Travel" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Export archive" }).click();
+  await expect(knowledge).not.toContainText("node_id:");
+  await expect(knowledge).not.toContainText("node_type:");
+  await expect(knowledge).not.toContainText("generated:");
+  const topics = page.getByRole("group", { name: "Topics" });
+  await topics.getByRole("button", { name: /^Portugal \d+$/ }).click();
+  await topics.getByRole("button", { name: /^Lisbon \d+$/ }).click();
+  await topics.getByRole("button", { name: /^Restaurants \d+$/ }).click();
   await expect(
-    page.getByRole("dialog", { name: "Download your archive" }),
+    page.getByRole("heading", { level: 1, name: "Restaurants" }),
   ).toBeVisible();
+  await knowledge.locator(".kb-capture-row").first().click();
+  await expect(note).not.toContainText("source_url:");
+  await expect(note).not.toContainText("source_id:");
   await expect(
-    page.getByRole("dialog").getByText("Markdown notes and capture metadata"),
+    note.getByRole("link", { name: /^Open original post on / }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await expect(
-    page.getByRole("button", { name: "Expand Travel" }),
-  ).toBeVisible();
-  await expect(
-    page.locator(".library-tree button", { hasText: "Lisbon" }),
-  ).toHaveCount(0);
-  await page.getByRole("button", { name: "Expand Travel" }).click();
-  await page.getByRole("button", { name: "Expand Portugal" }).click();
-  await page.getByRole("button", { name: "Expand Lisbon" }).click();
-  await page
-    .locator(".library-tree button", { hasText: "Travel" })
-    .first()
+  await note
+    .getByRole("button", { name: "Back to Knowledge base", exact: true })
     .click();
   await expect(
-    page.locator(".markdown").getByRole("heading", { name: "Travel" }),
-  ).toBeVisible();
-  await expect(page.locator(".markdown")).not.toContainText("node_id:");
-  await expect(page.locator(".markdown")).not.toContainText("node_type:");
-  await expect(page.locator(".markdown")).not.toContainText("generated:");
-  await page
-    .locator(".library-tree button", { hasText: "Lisbon" })
-    .first()
-    .click();
-  await page
-    .locator(".library-tree button", { hasText: "Restaurants" })
-    .filter({ hasText: "2" })
-    .first()
-    .click();
-  const captureLink = page.locator(".markdown .markdown-link").first();
-  await expect(captureLink).toBeVisible();
-  await captureLink.click();
-  await expect(page.locator(".markdown")).not.toContainText("source_url:");
-  await expect(page.locator(".markdown")).not.toContainText("source_id:");
-  await expect(
-    page
-      .locator(".library-toolbar")
-      .getByRole("button", { name: "Open capture" }),
+    page.getByRole("heading", { level: 1, name: "Restaurants" }),
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Ask", exact: true }).click();
@@ -122,8 +104,8 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
     page.locator(".chat-message.assistant .message-content"),
   ).toContainText(/Lisbon|restaurant/i);
   await inlineCaptureLink.click();
-  await expect(page.locator(".drawer")).toBeVisible();
-  await page.locator(".close").click();
+  await expect(note).toBeVisible();
+  await note.getByRole("button", { name: "Back to Ask", exact: true }).click();
   await page.reload();
   await page.getByRole("button", { name: "Ask", exact: true }).click();
   await expect(
@@ -133,8 +115,8 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
     .locator(".chat-message.assistant .answer-sources button")
     .first()
     .click();
-  await expect(page.locator(".drawer")).toBeVisible();
-  await page.locator(".close").click();
+  await expect(note).toBeVisible();
+  await note.getByRole("button", { name: "Back to Ask", exact: true }).click();
 
   await page.getByRole("button", { name: "＋ New conversation" }).click();
   await expect(
@@ -224,18 +206,13 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await page
     .getByRole("button", { name: "Knowledge base", exact: true })
     .click();
-  await expect(page.locator(".library-layout")).toBeVisible();
   await expect(
-    page.getByRole("tab", { name: "Browse tree", selected: true }),
+    page.getByRole("heading", { level: 1, name: "Knowledge base" }),
   ).toBeVisible();
-  await page
-    .locator(".library-tree")
-    .getByRole("button", { name: "Home" })
-    .click();
+  await knowledge.getByRole("button", { name: "Travel", exact: true }).click();
   await expect(
-    page.getByRole("tab", { name: "Reading pane", selected: true }),
+    page.getByRole("heading", { level: 1, name: "Travel" }),
   ).toBeVisible();
-  await expect(page.getByLabel("Reading pane")).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(

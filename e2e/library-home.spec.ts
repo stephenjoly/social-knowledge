@@ -101,83 +101,89 @@ test("shows a useful library home and opens category, topic, and capture", async
     .getByRole("button", { name: "Knowledge base", exact: true })
     .click();
 
-  const readingPane = page.locator(".markdown");
-  const back = page.getByRole("button", { name: "Back in knowledge base", exact: true });
-  const forward = page.getByRole("button", { name: "Forward in knowledge base", exact: true });
-  await expect(back).toBeDisabled();
-  await expect(forward).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Capture a post", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Move capture", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Travel 0", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Unclassified 0", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Expand all", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Strength Training 1", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Collapse all", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Strength Training 1", exact: true })).toBeHidden();
-  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
-  await expect(readingPane).toContainText("Browse 1 saved capture");
-  await expect(
-    readingPane.getByRole("heading", { name: "Map of content" }),
-  ).toBeVisible();
+  const home = page.locator(".kb-home");
+  const homeHeading = page.getByRole("heading", { level: 1, name: "Knowledge base" });
+  await expect(homeHeading).toBeVisible();
+  const category = home.getByRole("button", { name: "Health & Wellness", exact: true });
+  await expect(category).toBeVisible();
+  await expect(home.locator(".kb-category-card")).toHaveCount(1);
+  await expect(home.locator(".kb-category-card")).toContainText("1 capture · 1 topic");
+  await expect(home.getByRole("button", { name: "Strength Training", exact: true })).toBeVisible();
+  await expect(home.getByText(/need(s)? a home/)).toHaveCount(0);
+  await expect(home.locator(".kb-recent-row")).toHaveCount(1);
+  await expect(home.locator(".kb-recent-row")).toContainText("Strength training fixture");
+  await expect(home.locator(".kb-recent-row")).toContainText("Health & Wellness / Strength Training");
+
+  const search = page.getByRole("searchbox", { name: "Search categories and topics" });
+  await search.fill("strength");
+  await expect(category).toBeVisible();
+  await search.fill("no such topic");
+  await expect(home.getByText("No categories or topics match your search.")).toBeVisible();
+  await search.fill("");
   await page.screenshot({ path: "test-results/library-content-map-desktop.png", fullPage: true });
+
   // A failed load must not replace the current page or enter its history.
   await page.route("**/api/v1/library/nodes/*", (route) => route.fulfill({ status: 503, body: "{}" }), { times: 1 });
-  await readingPane.getByRole("button", { name: "Strength Training", exact: true }).click();
+  await category.click();
   await expect(page.getByRole("alert")).toContainText("This page could not be loaded");
-  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
-  await expect(back).toBeDisabled();
+  await expect(homeHeading).toBeVisible();
 
-  await readingPane
-    .getByRole("button", { name: "Health & Wellness" })
-    .click();
-  await expect(
-    readingPane.getByRole("heading", { name: "Health & Wellness" }),
-  ).toBeVisible();
-
-  await expect(readingPane.getByRole("heading", { name: "Browse by insight", exact: true })).toBeVisible();
-  await expect(readingPane.getByRole("button", { name: "Strength training fixture", exact: true })).toBeVisible();
-  await readingPane.getByRole("button", { name: "A fixture can be opened from a topic.", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Capture note", exact: true })).toBeVisible();
-  await back.click();
-  await expect(readingPane.getByRole("heading", { name: "Health & Wellness", exact: true })).toBeVisible();
-
-  await page
-    .getByRole("button", { name: "Expand Health & Wellness" })
-    .click();
-  await page
-    .getByRole("button", { name: "Strength Training 1" })
-    .click();
-  await expect(
-    readingPane.getByRole("heading", { name: "Strength Training" }),
-  ).toBeVisible();
-  await readingPane
-    .getByRole("button", { name: "Strength training fixture" })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Capture note" }),
-  ).toBeVisible();
-  await expect(
-    readingPane.getByRole("heading", { name: "Strength training fixture" }),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open capture", exact: true })).toBeVisible();
-  await page.screenshot({ path: "test-results/library-note-navigation.png", fullPage: true });
-  await back.click();
-  await expect(page.getByRole("heading", { name: "Strength Training", exact: true }).first()).toBeVisible();
-  await forward.click();
-  await expect(page.getByRole("heading", { name: "Capture note", exact: true })).toBeVisible();
-  await back.click();
-  await back.click();
-  await expect(page.getByRole("heading", { name: "Health & Wellness", exact: true }).first()).toBeVisible();
-  await back.click();
-  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
-  await expect(back).toBeDisabled();
-  await readingPane.getByRole("button", { name: "Strength Training", exact: true }).click();
+  await category.click();
+  const back = page.getByRole("button", { name: "Back in knowledge base", exact: true });
+  const forward = page.getByRole("button", { name: "Forward in knowledge base", exact: true });
+  await expect(page.getByRole("heading", { level: 1, name: "Health & Wellness" })).toBeVisible();
+  await expect(back).toBeEnabled();
   await expect(forward).toBeDisabled();
+  await expect(page.getByRole("heading", { name: "Browse by insight", exact: true })).toBeVisible();
+  await expect(page.locator(".kb-insight")).toContainText("A fixture can be opened from a topic.");
+  await expect(page.locator(".kb-capture-row")).toContainText("Strength training fixture");
+  await expect(page.getByRole("link", { name: "Ask about Health & Wellness" })).toHaveAttribute(
+    "href",
+    /^\/\?tab=ask&q=/,
+  );
+
+  await page
+    .getByRole("group", { name: "Topics" })
+    .getByRole("button", { name: "Strength Training 1", exact: true })
+    .click();
+  await expect(page.getByRole("heading", { level: 1, name: "Strength Training" })).toBeVisible();
   await back.click();
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await expect(page.getByRole("heading", { level: 1, name: "Health & Wellness" })).toBeVisible();
   await forward.click();
-  await expect(readingPane.getByRole("heading", { name: "Strength Training", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Strength Training" })).toBeVisible();
+  await expect(forward).toBeDisabled();
+
+  await page.locator(".kb-insight-source").first().click();
+  const note = page.locator(".capture-note");
+  await expect(note.getByRole("heading", { level: 1, name: "Strength training fixture" })).toBeVisible();
+  await expect(note.getByRole("link", { name: "Open original post on Instagram" })).toHaveAttribute(
+    "href",
+    "https://www.instagram.com/reel/library-fixture/",
+  );
+  await expect(note.getByRole("heading", { name: "Key takeaways" })).toBeVisible();
+  await expect(note).not.toContainText("library-home-fixture.md");
+  await page.screenshot({ path: "test-results/library-note-navigation.png", fullPage: true });
+  await note.getByRole("button", { name: "Back to Knowledge base", exact: true }).click();
+  await expect(note).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1, name: "Strength Training" })).toBeVisible();
+
+  await page.locator(".kb-capture-row").first().click();
+  await expect(note).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(note).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1, name: "Strength Training" })).toBeVisible();
+
+  await page
+    .getByRole("navigation", { name: "Knowledge base location" })
+    .getByRole("button", { name: "Knowledge base", exact: true })
+    .click();
+  await expect(homeHeading).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(homeHeading).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({ path: "test-results/library-content-map-mobile.png", fullPage: true });
+  await home.locator(".kb-recent-row").click();
+  await expect(note).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
