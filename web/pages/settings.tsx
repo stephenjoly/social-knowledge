@@ -120,8 +120,7 @@ function matchesCurrentTestSelection(
     (result.selection as AiAnalysisSelection).thinkingLevel;
 }
 
-export function Settings({ user, onUserChange, onSignOut }: { user: AccountUser | null; onUserChange: (user: AccountUser) => void; onSignOut: () => Promise<void> }) {
-  const [topic, setTopic] = useState<SettingsTopic>("overview");
+export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: setTopic }: { user: AccountUser | null; onUserChange: (user: AccountUser) => void; onSignOut: () => Promise<void>; topic: SettingsTopic; onTopicChange: (topic: SettingsTopic) => void }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [keys, setKeys] = useState<ApiKey[]>([]);

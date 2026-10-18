@@ -33,6 +33,7 @@ import type {
   InboxView,
   InboxSortKey,
   AppTab,
+  SettingsTopic,
 } from "./shared/types";
 import { api } from "./shared/api";
 import { platformFor, formatPreciseDuration } from "./shared/format";
@@ -289,6 +290,7 @@ function App() {
     return token;
   });
   const [tab, setTab] = useState<AppTab>(tabFromLocation);
+  const [settingsTopic, setSettingsTopic] = useState<SettingsTopic>("overview");
   const highlightedJob = new URLSearchParams(window.location.search).get("job");
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [activityJobs, setActivityJobs] = useState<ActivityJob[]>([]);
@@ -1476,7 +1478,7 @@ function App() {
               </section>
             </div>
           )}
-          {tab === "settings" && <Settings user={user} onUserChange={setUser} onSignOut={signOut} />}
+          {tab === "settings" && <Settings user={user} onUserChange={setUser} onSignOut={signOut} topic={settingsTopic} onTopicChange={setSettingsTopic} />}
         </main>
       </section>
       {mobileMenuOpen && (
