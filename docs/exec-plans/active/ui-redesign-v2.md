@@ -123,9 +123,12 @@ same region concurrently.
 - Removed the already-merged extraction and token worktrees/branches after
   checking ancestry and removing only their dependency symlinks. The five page
   worktrees remain until final acceptance.
-- A one-shot Paseo heartbeat resumes this task at 22:31 UTC on 2026-10-18, after
-  the visual worker's provider reset. PR #50 stays draft until all acceptance
-  criteria, including live preview screenshots, are met.
+- The owner requested a ChatGPT-backed replacement worker. Cancelled the
+  scheduled Claude retry and launched visible Codex GPT-6.1-Sol worker
+  `01e97b98-0835-4c33-808a-0a1a9e03e679` in the existing workspace for live build
+  identity and functional verification. Host delegation policy still reserves
+  visual/layout work for Claude, so exact-fidelity acceptance remains pending.
+  PR #50 stays draft until all acceptance criteria are met.
 
 ## Verification
 
