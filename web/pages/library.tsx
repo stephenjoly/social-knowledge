@@ -481,7 +481,7 @@ export function Library({ onOpen }: { onOpen: (id: string) => void }) {
         </div>
       </div>
       {children.length > 0 ? (
-        <div className="kb-subtopics" aria-label="Topics">
+        <div className="kb-subtopics" role="group" aria-label="Topics">
           <Chip selected className="kb-subtopic">All {allCaptures.length}</Chip>
           {children.map((child) => (
             <button

@@ -165,7 +165,13 @@ export function Detail({
 
   const backLabel = backLabels[from] ?? "Inbox";
   const backButton = (
-    <button type="button" className="note-back" ref={backRef} onClick={onClose}>
+    <button
+      type="button"
+      className="note-back"
+      ref={backRef}
+      aria-label={`Back to ${backLabel}`}
+      onClick={onClose}
+    >
       <ArrowLeft aria-hidden="true" />
       <span>{backLabel}</span>
     </button>

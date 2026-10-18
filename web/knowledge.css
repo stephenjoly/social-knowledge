@@ -18,6 +18,15 @@
   display: none !important;
 }
 
+/* The shell's transparent topbar overlaps the page header; only its controls take clicks. */
+.app-workspace:has(.kb-page, .capture-note) .app-topbar {
+  pointer-events: none;
+}
+
+.app-workspace:has(.kb-page, .capture-note) .app-topbar > * {
+  pointer-events: auto;
+}
+
 .kb-page,
 .capture-note {
   box-sizing: border-box;
