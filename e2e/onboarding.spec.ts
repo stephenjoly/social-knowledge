@@ -157,7 +157,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   ).toBeVisible();
   await invitedPage.getByRole("button", { name: "Ask", exact: true }).click();
   await expect(
-    invitedPage.getByRole("heading", { name: "Ask AI" }),
+    invitedPage.getByRole("heading", { name: "Ask what you've saved" }),
   ).toBeVisible();
   await invitedPage
     .getByRole("button", { name: "Settings", exact: true })
