@@ -1,0 +1,120 @@
+/*
+ * Dashboard UI v2 design tokens. Values are the binding ones from
+ * docs/design/ui-v2-spec.md; this file only declares variables.
+ */
+:root {
+  /* Text and icon colours, from strongest to most inert. */
+  --ink: #18181b;
+  --ink-soft: #3f3f46;
+  --muted: #71717a;
+  --muted-strong: #52525b;
+  --placeholder: #a1a1aa;
+  --faint: #d4d4d8;
+
+  /* Surfaces, fills, and the lines that separate them. */
+  --canvas: #fafafa;
+  --surface: #ffffff;
+  --subtle: #f4f4f5;
+  --border: #e4e4e7;
+  --hairline: #f0f0f1;
+
+  /* Brand accent for primary actions and the brand mark. */
+  --accent: #26322b;
+  --accent-hover: #18231d;
+
+  /* Live, success, and focus state. */
+  --green: #3f7a55;
+  --green-ink: #2f5d40;
+  --green-tint: #e8f0ea;
+  --avatar: #3f6b52;
+
+  /* Sidebar processing card. */
+  --process-bg: #f6f8f6;
+  --process-border: #e1e8e3;
+  --process-track: #dfe6e1;
+
+  /* Warning state: dots, icons, pills, rows, and panels that need attention. */
+  --amber: #d9a441;
+  --amber-icon: #b7791f;
+  --amber-ink: #8a5a12;
+  --amber-tint: #fbf1df;
+  --amber-row: #fffcf6;
+  --amber-panel: #fffbf3;
+  --amber-border: #f1e2c4;
+
+  /* Destructive actions. */
+  --danger: #9f3f34;
+  --danger-border: #efd3cf;
+
+  /*
+   * Type families. Monospace is the system stack (approved deviation 1);
+   * it is reserved for logs and the MCP URL.
+   */
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Font weights used by the type roles. */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /*
+   * Type sizes by role, in rem so they follow the reader's browser setting
+   * (px values at the default 16px). Roles that match a step of the shared
+   * scale in typography.css reuse it.
+   */
+  --type-inbox-title: 1.875rem; /* 30px */
+  --type-page-title: 1.75rem; /* 28px */
+  --type-note-title: 1.6875rem; /* 27px */
+  --type-settings-title: 1.625rem; /* 26px */
+  --type-sidebar-title: 1.125rem; /* 18px */
+  --type-section-heading: 0.9375rem; /* 15px */
+  --type-card-heading: var(--text-secondary, 0.875rem); /* 14px */
+  --type-body: var(--text-secondary, 0.875rem); /* 14px */
+  --type-page-description: var(--text-secondary, 0.875rem); /* 14px */
+  --type-nav: 0.84375rem; /* 13.5px */
+  --type-row-title: 0.84375rem; /* 13.5px */
+  --type-control: 0.8125rem; /* 13px */
+  --type-row-help: 0.78125rem; /* 12.5px */
+  --type-metadata: var(--text-caption, 0.75rem); /* 12px */
+  --type-caption: 0.71875rem; /* 11.5px */
+  --type-rail-label: 0.6875rem; /* 11px */
+  --type-kicker: 0.65625rem; /* 10.5px */
+  --type-group-label: 0.65625rem; /* 10.5px */
+  --type-keycap: 0.65625rem; /* 10.5px */
+
+  /* Letter spacing by role. Headings tighten; uppercase labels open up. */
+  --tracking-page-title: -0.8px;
+  --tracking-note-title: -0.8px;
+  --tracking-settings-title: -0.7px;
+  --tracking-sidebar-title: -0.5px;
+  --tracking-brand: -0.4px;
+  --tracking-section-heading: -0.2px;
+  --tracking-kicker: 1.4px;
+  --tracking-group-label: 1px;
+  --tracking-rail-label: 0.8px;
+
+  /* Line heights by role. */
+  --leading-note-title: 1.2;
+  --leading-body: 1.6;
+  --leading-page-description: 1.45;
+  --leading-row-help: 1.4;
+
+  /* Corner radii, from keycaps up to fully rounded pills. */
+  --radius-keycap: 4px;
+  --radius-badge-sm: 5px;
+  --radius-badge: 6px;
+  --radius-control: 7px;
+  --radius-icon-box: 8px;
+  --radius-card: 10px;
+  --radius-bubble: 12px;
+  --radius-dialog: 14px;
+  --radius-pill: 999px;
+
+  /* The only four shadows in the design. Nothing else casts one. */
+  --shadow-primary-button: 0 1px 2px #18231d33;
+  --shadow-floating: 0 8px 24px #18181b0d;
+  --shadow-dialog: 0 24px 60px #18181b40;
+  --shadow-toggle-knob: 0 1px 2px #0000002e;
+}
