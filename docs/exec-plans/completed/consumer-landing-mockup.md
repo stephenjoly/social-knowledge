@@ -1,6 +1,6 @@
 # Consumer landing mockup
 
-Status: active
+Status: completed — design prototype ready for review
 Owner: Codex foreman; Claude Opus 5.5 High design worker
 Started: 2026-10-18
 
@@ -29,8 +29,8 @@ Claude owns prototype files. Foreman owns preview script, integration checks, ex
 - [x] Product claims inspected and one visual spec proposed.
 - [x] Stephen authorizes judgment and asks to build without another approval.
 - [x] Fresh staging task branch and Opus 5.5 High worker launched.
-- [ ] Prototype built and preview verified.
-- [ ] Checkpoint and review handoff.
+- [x] Prototype built and preview verified.
+- [x] Checkpoint and review handoff prepared.
 
 ## Decisions
 
@@ -40,6 +40,12 @@ Claude owns prototype files. Foreman owns preview script, integration checks, ex
 ## Verification
 
 `npm run check`; static preview browser acceptance at desktop/mobile, synthetic search suggestions and empty state, keyboard, reduced motion, scrolling, network and console inspection.
+
+Results: documentation, strict TypeScript, production build and all 31 test files / 166 tests passed. Prototype JavaScript syntax checks and diff whitespace check passed. Chromium browser acceptance passed at 1440×900, 375×812 and 390×812: all three seeded queries, empty state, arrow-key example tabs, CTA focus/arrival, reduced motion, fast and reverse scrolling, local-only network requests, and no page errors. Mobile overflow discovered during review was fixed; final viewport/client/scroll widths agree at 375 and 390px. Safari and Firefox were not tested.
+
+Local preview: `http://127.0.0.1:41006/`, supervised by Paseo's Landing preview service. This is a local Mac preview; the Tailscale endpoint did not respond and is not a verified remote URL. Review script: `designs/landing/README.md`. Screenshot evidence remains local in ignored `output/playwright/`.
+
+Visual comparison against the approved concept: same paper/green/marigold character, unfolding hero and source-thread/export motion. Search gets its own section after How it works, and the placeholder Sign in was omitted so every CTA has a useful local action. Mobile stacks the hero and steps; reduced motion presents completed scenes. No production deployment or public acquisition flow was added.
 
 ## Risks and recovery
 

@@ -10,3 +10,5 @@ __pycache__/
 *.py[cod]
 
 playwright-report/
+.playwright-cli/
+output/playwright/

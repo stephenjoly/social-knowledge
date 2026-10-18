@@ -1,6 +1,6 @@
 # Consumer landing page — design spec: "Unfold"
 
-Status: proposed, awaiting Stephen's approval. Nothing will be built before approval.
+Status: approved by Stephen on 2026-10-18 and built as a browser mockup in [`designs/landing/`](designs/landing/README.md). Build deviations: no placeholder `Sign in` link (the static preview has no app behind it), and the interactive search demo is its own "Try it" section after How it works.
 
 ## Concept
 
