@@ -241,7 +241,16 @@ Anything else that cannot be built as drawn is a blocker to raise, not a judgeme
 
 ## Verification
 
-`scripts/ui-screens.mjs` boots a disposable server with synthetic fixtures and captures every
-screen listed above to `artifacts/ui-screens/`. Compare each capture against its export at the
-same width before claiming a screen is done. A screen is complete when its structure, spacing,
-type, colour, and states match the export, the journey still works, and `npm run check` passes.
+```bash
+source ~/.cache/sk-browser/env.sh     # Chromium's system libraries live outside the repo
+npx tsx scripts/ui-screens.ts         # captures all fifteen screens to artifacts/ui-screens/
+npx tsx scripts/ui-compare.ts         # writes side-by-side + difference sheets to artifacts/ui-compare/
+```
+
+`ui-screens.ts` boots a disposable server over the synthetic archive in `scripts/ui-fixture.ts`
+and captures at 1280×880 with a 2× device pixel ratio, which is exactly the resolution of the
+exports in `docs/design/ui-v2/screens/`. `ui-compare.ts` puts the export and the capture side by
+side and blends them: in the difference strip, anything that is not black has drifted.
+
+A screen is complete when its structure, spacing, type, colour, and states match the export, its
+journey still works, and `npm run check` passes.
