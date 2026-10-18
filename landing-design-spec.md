@@ -1,6 +1,6 @@
 # Consumer landing page — design spec: "Unfold"
 
-Status: historical initial concept, approved and built on 2026-10-18. Subsequent user feedback and current scope are recorded in [`landing-refinement-brief.md`](landing-refinement-brief.md); the current browser mockup and review script are in [`designs/landing/`](designs/landing/README.md). The initial build omitted placeholder Sign in and placed sample search in its own section.
+Status: historical initial concept, approved and built on 2026-10-18. Current restoration scope is recorded in [`landing-restore-brief.md`](landing-restore-brief.md); the current browser mockup and review script are in [`designs/landing/`](designs/landing/README.md). The intervening real-app refinement was rejected by Stephen; the initial visual design has been restored. The initial build omitted placeholder Sign in and placed sample search in its own section.
 
 ## Concept
 

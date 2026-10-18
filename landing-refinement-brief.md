@@ -1,6 +1,6 @@
 # Unfold refinement — real product and getting started
 
-Status: approved under Stephen's continuing authorization to use judgment and build. User likes current visual direction and motion; requests grounding in real app, Get started CTA, server setup instructions, and visible Apple Shortcut download/setup.
+Status: historical, rejected by Stephen as a severe visual regression. Superseded by `landing-restore-brief.md`. This assignment remains only as history; do not reapply its screenshot or expanded setup direction.
 
 ## One-page scope
 
