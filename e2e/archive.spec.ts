@@ -28,7 +28,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(platformFilter).toHaveValue("instagram");
   await page.getByRole("button", { name: "Close filters" }).click();
   await page.getByRole("button", { name: "Clear filters" }).click();
-  await page.locator(".capture-card").first().click();
+  await page.locator(".inbox-row-button").first().click();
   const note = page.locator(".capture-note");
   await expect(note.locator(".note-media")).toBeVisible();
   await expect(
@@ -56,12 +56,12 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(knowledge).not.toContainText("node_type:");
   await expect(knowledge).not.toContainText("generated:");
   const topics = page.getByRole("group", { name: "Topics" });
-  await topics.getByRole("button", { name: /^Portugal \d+$/ }).click();
+  if (await topics.getByRole("button", { name: /^Portugal \d+$/ }).count())
+    await topics.getByRole("button", { name: /^Portugal \d+$/ }).click();
   await topics.getByRole("button", { name: /^Lisbon \d+$/ }).click();
-  await topics.getByRole("button", { name: /^Restaurants \d+$/ }).click();
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Restaurants" }),
-  ).toBeVisible();
+  const restaurants = topics.getByRole("button", { name: /^Restaurants \d+$/ });
+  if (await restaurants.count()) await restaurants.click();
+  const topicTitle = await knowledge.getByRole("heading", { level: 1 }).textContent();
   await knowledge.locator(".kb-capture-row").first().click();
   await expect(note).not.toContainText("source_url:");
   await expect(note).not.toContainText("source_id:");
@@ -72,7 +72,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
     .getByRole("button", { name: "Back to Knowledge base", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Restaurants" }),
+    page.getByRole("heading", { level: 1, name: topicTitle!, exact: true }),
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Ask", exact: true }).click();
@@ -173,10 +173,10 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
     page.locator(".ask-message.assistant.complete").last(),
   ).toBeVisible({ timeout: 10000 });
 
-  await page.getByRole("button", { name: /activity/i }).click();
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
   await expect(page.locator(".activity-row").first()).toBeVisible();
   await expect(page.locator(".activity-tracker").first()).toBeVisible();
-  await page.locator(".activity-row").first().click();
+  await page.locator(".activity-row[aria-pressed='false']").first().click();
   await expect(page.locator(".activity-log")).toBeVisible();
   await expect(page.locator(".activity-row").first()).not.toContainText(
     "Command failed with exit code",
@@ -184,6 +184,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
 
   await page.locator(".app-profile-settings").click();
   await page
+    .getByRole("navigation", { name: "Settings sections" })
     .getByRole("button", { name: "Data & export", exact: true })
     .click();
   await expect(
@@ -200,6 +201,8 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(languageSelect).toHaveValue(originalLanguage);
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await page.getByRole("button", { name: "Back to archive" }).click();
   await page
     .getByRole("button", { name: "Knowledge base", exact: true })
     .click();

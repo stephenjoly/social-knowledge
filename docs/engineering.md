@@ -38,13 +38,12 @@ Changes to browser journeys should also be exercised against a disposable runnin
 
 ## Dashboard typography
 
-`web/typography.css` defines the shared rem-based type scale: 12px captions,
-14px secondary text and controls, 16px body text, 20px section headings, and
-32px page headings (28px on mobile), at the default 16px browser setting.
-Page introductions share this hierarchy across Inbox, Activity, Knowledge base,
-Ask, and Settings. Activity rows, logs, and account controls use these tokens;
-failure guidance wraps so recovery instructions remain readable. Preserve the
-compact archive layout and verify mobile reflow when changing these roles.
+`web/typography.css` loads the self-hosted Inter face and retains the legacy
+rem-based scale for secondary surfaces. The v2 type roles in
+`web/design-tokens.css` follow the approved design contract: 28px page titles
+(30px in Inbox), 26px settings titles, 14px body copy, and compact metadata and
+controls. Preserve the specified hierarchy and verify mobile reflow when changing
+these roles. Processing logs use the system monospace stack.
 
 ## Dashboard UI v2 tokens and primitives
 
@@ -52,8 +51,8 @@ compact archive layout and verify mobile reflow when changing these roles.
 from [`docs/design/ui-v2-spec.md`](design/ui-v2-spec.md). The shared primitives
 live in `web/components/ui/` and are exported from `primitives.ts`; their styles
 in `primitives.css` import the tokens and use the `ui-` class prefix. The v2
-button is `ActionButton` with `ui-btn` classes, because the legacy `Button` and
-`.ui-button` remain in use until the old shell is retired.
+button is `ActionButton` with `ui-btn` classes. `web/settings-ui.tsx` provides the
+shared settings rows, panels, and controls used by account and workspace pages.
 
 Component tests are `test/**/*.test.tsx`. They are type-checked by
 `tsconfig.web.json`, not the server config, and render with `react-dom/server`

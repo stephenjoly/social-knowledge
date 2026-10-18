@@ -25,7 +25,7 @@ type SeedCapture = {
   takeaways: string[];
   recommendations: string[];
   claims: string[];
-  entities: Array<{ name: string; type: string; location: string | null }>;
+  entities: Array<{ name: string; type: AnalysisResult["entities"][number]["type"]; location: string | null }>;
   sourceLanguage: string;
   translationLanguage: string | null;
   durationSeconds: number;
@@ -326,6 +326,7 @@ function analysisFor(seed: SeedCapture): AnalysisResult {
     entities: seed.entities.map((entity) => ({
       ...entity,
       description: null,
+      confidence: 0.9,
     })),
     recommendations: seed.recommendations,
     claimsNeedingVerification: seed.claims,

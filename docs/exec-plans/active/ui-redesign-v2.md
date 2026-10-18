@@ -28,8 +28,9 @@ drawings do not show. Mobile layouts for every redesigned surface.
 
 Excluded: capture processing, provider behavior, schema changes, and new product capability.
 The only new client behavior is the command palette and the keyboard shortcuts, both of which
-navigate and never query the server. Deployment is out of scope; the feature PR targets
-`staging`.
+navigate and never query the server. The feature PR targets `staging`; the owner's
+integration handoff adds disposable PR-preview verification to acceptance.
+Production deployment remains out of scope.
 
 ## Acceptance criteria
 
@@ -74,17 +75,19 @@ same region concurrently.
 
 - [x] Design contract, references, and deviations recorded in `docs/design/ui-v2-spec.md`.
 - [x] Synthetic fixture and screenshot harness capture all fifteen screens.
-- [ ] Extraction merged with tests green.
-- [ ] Tokens and primitives merged.
-- [ ] Shell merged.
-- [ ] Inbox and capture merged.
-- [ ] Activity merged.
-- [ ] Knowledge base and note merged.
-- [ ] Ask merged.
-- [ ] Settings merged.
-- [ ] Auth merged.
+- [x] Extraction merged.
+- [x] Tokens and primitives merged.
+- [x] Shell merged.
+- [x] Inbox and capture merged.
+- [x] Activity merged.
+- [x] Knowledge base and note merged.
+- [x] Ask merged.
+- [x] Settings merged.
+- [x] Auth merged.
 - [ ] Review passes on all fifteen screens.
-- [ ] Integrated check, Playwright, and draft PR.
+- [x] Draft PR #50 targets staging; all five page branches merged locally.
+- [x] Integrated check and Playwright (six documented local Python-dependent unit failures).
+- [ ] Verified live preview and matching screenshots; PR ready for review.
 
 ## Decisions
 
@@ -97,6 +100,32 @@ same region concurrently.
   checkboxes, each recorded in the spec.
 - 2026-10-18: The command palette is client-side navigation only. It is the one new behavior
   the design requires, and it needs no server work.
+
+## Integration handoff progress (2026-10-18)
+
+- Resumed the existing worktree and PR #50; fetched origin, with staging unchanged.
+- Integrated shell `91e7db1`, Activity `11c256a`, Settings `9ee9a73`, Knowledge
+  `c9b986c`, and Ask/auth `36600a7`. Preserved the shell, extracted Activity,
+  sidebar-owned Settings state, full-page notes, and the union of fixtures/tests.
+- Each integration passed typecheck and build. Latest unit run: 201 passed,
+  3 skipped, 6 failures limited to shortcut-generator requiring absent python3.
+- Visual worker is visible in the same Paseo workspace. Its Claude provider
+  session limit resets at 22:30 UTC; no visual acceptance claim has been made.
+- Integrated captures render all fifteen screens at 1440, 1024, and 390px without
+  document-level horizontal overflow or browser exceptions. These are rendering
+  checks, not visual-fidelity acceptance.
+- Added `scripts/ui-e2e.ts` to run the four otherwise-skipped authenticated
+  journeys on the disposable fixture with a deterministic, persisted Ask answer.
+  All sixteen Playwright tests pass with no skips, including streaming/cancel/retry,
+  G shortcuts, the command palette, and all member-visible mobile settings routes.
+- `npm run check` passes documentation, types, and build; unit results remain
+  201 passed / 3 skipped / the six known missing-python3 failures.
+- Removed the already-merged extraction and token worktrees/branches after
+  checking ancestry and removing only their dependency symlinks. The five page
+  worktrees remain until final acceptance.
+- A one-shot Paseo heartbeat resumes this task at 22:31 UTC on 2026-10-18, after
+  the visual worker's provider reset. PR #50 stays draft until all acceptance
+  criteria, including live preview screenshots, are met.
 
 ## Verification
 

@@ -52,6 +52,22 @@ Library browsing uses owner-scoped populated trees and a compact recursive conte
 
 Domain services must not depend on initialized server instances or UI code. The UI must not rely on database layout or private archive paths. Cross-cutting services such as events and notifications are injected into the worker.
 
+## Browser modules
+
+`web/main.tsx` composes authentication, navigation, shared Activity state, and the
+capture and command dialogs. `web/pages/` contains the sidebar shell, Inbox,
+Activity, Knowledge base, capture notes, Ask, authentication, and Settings.
+`web/shared/` owns browser HTTP helpers, response types, and formatting; these
+modules consume HTTP contracts and never import initialized server services.
+
+The shell owns the selected settings topic and renders the account or workspace
+navigation in its single sidebar. Capture notes replace the visible page inside
+the shell while preserving that page's browsing state. The capture dialog opens
+over the current destination. Shared controls live in `web/components/ui/`, with
+colours and geometry defined in `web/design-tokens.css`; page styles remain next
+to the corresponding modules in `web/`. Account administration and Shortcut setup
+retain their focused modules, using the shared settings controls.
+
 ## Data and trust boundaries
 
 - Every account-owned job, capture, connection, export, API key, and OAuth grant is scoped to a user.

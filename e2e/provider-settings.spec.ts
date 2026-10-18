@@ -124,7 +124,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await page.getByRole("button", { name: "Capture a post", exact: true }).click();
   await page.getByLabel("Post link").fill("https://www.instagram.com/reel/qa-test/");
   await page.getByRole("button", { name: "Save to archive", exact: true }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "My account" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "AI & models" })).toBeVisible();
   const openAiTopic = async () => {
     await page.goto(`http://127.0.0.1:${port}/?tab=settings&topic=ai`);
     await expect(page.getByRole("heading", { level: 1, name: "AI & models" })).toBeVisible();

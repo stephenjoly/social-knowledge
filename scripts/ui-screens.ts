@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -165,15 +165,7 @@ config.appUrl = base;
 await mkdir(path.join(root, "data"), { recursive: true });
 const store = new JobStore(config.databasePath);
 const user = await seedUiFixture(store, config);
-// A verified analysis selection so Ask can show the thinking level it runs with.
-store.saveAiProviderConnection(user.id, "openai", "fixture-not-a-key", "sk-…7Q2c");
-store.saveAiTaskSelections(user.id, {
-  transcriptionProvider: "openai",
-  transcriptionModel: config.transcriptionModel,
-  analysisProvider: "openai",
-  analysisModel: "gpt-5-mini",
-  analysisThinkingLevel: "medium",
-});
+// seedUiFixture provides the verified analysis selection used by Ask and Settings.
 
 // Older conversations for Ask's recent list, aged so their labels read as a weekday and a date.
 const daysSinceTuesday = (new Date().getDay() + 5) % 7 || 7;
@@ -184,6 +176,7 @@ const earlierConversations = [
 const agedConversations = new Database(config.databasePath);
 for (const [title, daysAgo] of earlierConversations) {
   const older = store.createConversation(user.id, title);
+  if (!older) throw new Error("Unable to seed a recent conversation");
   store.addConversationMessage(user.id, older.id, "user", title);
   agedConversations
     .prepare("UPDATE conversations SET updated_at=? WHERE id=?")
@@ -192,6 +185,7 @@ for (const [title, daysAgo] of earlierConversations) {
 agedConversations.close();
 
 const conversation = store.createConversation(user.id, "Lisbon food recommendations");
+if (!conversation) throw new Error("Unable to seed the answer conversation");
 store.addConversationMessage(
   user.id,
   conversation.id,
@@ -237,6 +231,8 @@ const context = await browser.newContext({
   deviceScaleFactor: 2,
 });
 const page = await context.newPage();
+const browserErrors: string[] = [];
+page.on("pageerror", (error) => browserErrors.push(error.message));
 
 await mkdir(outDir, { recursive: true });
 await page.goto(base);
@@ -250,6 +246,7 @@ await page.waitForSelector(".app-frame, .app-sidebar, main", { timeout: 15_000 }
 const storageState = await context.storageState();
 
 const failures: string[] = [];
+const measurements: Array<{ screen: string; viewport: number; document: number }> = [];
 for (const screen of screens) {
   if (only.length && !only.includes(screen.id)) continue;
   try {
@@ -260,6 +257,13 @@ for (const screen of screens) {
     await page.screenshot({
       path: path.join(outDir, `${screen.id}-${screen.name}.png`),
     });
+    const geometry = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      document: document.documentElement.scrollWidth,
+    }));
+    measurements.push({ screen: `${screen.id}-${screen.name}`, ...geometry });
+    if (geometry.document > geometry.viewport)
+      throw new Error(`horizontal overflow: ${geometry.document}px exceeds ${geometry.viewport}px`);
     console.log(`captured ${screen.id}-${screen.name}`);
   } catch (error) {
     const reason = error instanceof Error ? error.message.split("\n")[0] : String(error);
@@ -267,6 +271,12 @@ for (const screen of screens) {
     console.error(`FAILED  ${screen.id}-${screen.name}: ${reason}`);
   }
 }
+
+await writeFile(
+  path.join(outDir, "verification.json"),
+  JSON.stringify({ width, height, measurements, failures, browserErrors }, null, 2) + "\n",
+);
+failures.push(...browserErrors.map((error) => `browser: ${error}`));
 
 await browser.close();
 await app.close();

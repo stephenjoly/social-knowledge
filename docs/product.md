@@ -24,7 +24,19 @@ Social Knowledge turns Facebook and Instagram media a person deliberately submit
 
 ## Inbox behavior
 
-Inbox opens directly into capture search, filters, sorting, and tile/table views. It has no top summary cards. The loaded capture count remains beside the collection controls; account-wide summary APIs remain available to existing clients.
+Inbox opens directly into capture search, filters, sorting, and a compact list. It has no top summary cards. The loaded capture count remains beside the collection controls; account-wide summary APIs remain available to existing clients.
+
+The sidebar groups Inbox, Activity, and Knowledge base under Library, with Ask in
+a separate Assistant group. Its capture button opens a dialog over the current
+page. The search control and Command/Ctrl+K open a destination palette; this is
+navigation, not archive search. The G then I/A/K/Q shortcuts open Inbox, Activity,
+Knowledge base, and Ask. The processing card shows live account-owned work and
+links to Activity; on mobile it remains available inside the menu.
+
+The account-row gear opens Settings on My account. Settings replaces the sidebar
+navigation with My account, AI & models, Connections, API keys, Data & export,
+and People & access for administrators. Back to archive returns to the previous
+archive destination. There is no Overview page or second settings sidebar.
 
 ## Activity behavior
 
@@ -40,7 +52,14 @@ For release verification boundaries, see [Preview acceptance](preview-acceptance
 
 ## Knowledge base browsing
 
-Knowledge base browsing uses linked content maps: Home shows populated branches; category pages browse child categories, existing extracted insights, and captures across their subtree. Empty categories stay out of the browsing UI without removing stored taxonomy. Local Back/Forward controls navigate reading history, with Open capture on the right of capture notes. Expand all and Collapse all control the visible tree. Move capture is not exposed in this view. The global Capture link action is shown on Inbox only.
+Knowledge base shows populated category cards, topic counts, and extracted
+insights linked to their captures. Category and topic pages browse child topics,
+takeaways, and captures across their subtree. Empty categories stay out of the
+browsing UI without removing stored taxonomy. Local Back/Forward controls retain
+reading history. Capture notes show the original source, takeaways,
+recommendations, transcripts, and classification details; recommendation markers
+are decorative. The note's Back action returns to the page and state it was opened
+from. Capture remains available from the application shell.
 
 ## AI setup
 
