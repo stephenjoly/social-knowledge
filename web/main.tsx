@@ -152,8 +152,8 @@ function App() {
   const [captureError, setCaptureError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [captureSubmitted, setCaptureSubmitted] = useState(false);
-  const [activityFilter, setActivityFilter] = useState<"active" | "all">("active");
-  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+  const [activityFilter, setActivityFilter] = useState<"active" | "all">("all");
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(highlightedJob);
   const [jobDetails, setJobDetails] = useState<ActivityDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState(false);
@@ -393,12 +393,12 @@ function App() {
   const newestActiveId = inProgressJobs[0]?.id ?? queuedJobs[0]?.id ?? null;
   const attentionTotal = Math.max(activityCounts.failed, failedTotal);
   useEffect(() => {
-    if (activityFilter !== "active") return;
-    if (newestActiveId && newestActiveId !== lastNewestActive.current) {
+    const keepLinkedJob = lastNewestActive.current === null && highlightedJob;
+    if (newestActiveId && newestActiveId !== lastNewestActive.current && !keepLinkedJob) {
       setExpandedJobId(newestActiveId);
     }
     lastNewestActive.current = newestActiveId;
-  }, [activityFilter, newestActiveId]);
+  }, [newestActiveId]);
   useEffect(() => {
     if (!expandedJobId || tab !== "activity") return;
     const requestId = ++detailsRequest.current;
@@ -1059,6 +1059,10 @@ function App() {
               retryingIds={retryingIds}
               onRetry={(job) => void retryJob(job)}
               onRetryAll={() => void retryAll()}
+              onFixConnection={() => {
+                setSettingsTopic("connections");
+                navigateTo("settings");
+              }}
             />
           )}
           {tab === "library" && <Library onOpen={setDetail} />}

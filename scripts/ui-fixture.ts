@@ -310,29 +310,34 @@ export async function seedUiFixture(store: JobStore, config: AppConfig) {
     })!;
     store.assignClassification(capture.id, capture.analysis.classification);
     store.setDisplayTitle(job.id, seed.title);
+    for (const status of ["downloading", "processing", "transcribing"] as const)
+      store.setStatus(job.id, status);
     store.complete(job.id, notePath);
   }
 
   // Work in flight, so Activity and the sidebar processing card have live state.
-  const transcribing = store.createOrGet({
+  // Created oldest first, a few milliseconds apart, so Activity lists them in a
+  // stable newest-first order.
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+  const failed = store.createOrGet({
     ownerUserId: user.id,
-    sourceUrl: "https://www.instagram.com/reel/fixture-in-flight/",
-    normalizedUrl: "https://www.instagram.com/reel/fixture-in-flight/",
-    sourceHash: "fixture-in-flight",
+    sourceUrl: "https://www.facebook.com/share/r/fixture-failed/",
+    normalizedUrl: "https://www.facebook.com/share/r/fixture-failed/",
+    sourceHash: "fixture-failed",
     userNote: "",
   }).job;
-  store.setDisplayTitle(transcribing.id, "Alfama at golden hour");
-  store.setStatus(transcribing.id, "transcribing");
-
-  const downloading = store.createOrGet({
-    ownerUserId: user.id,
-    sourceUrl: "https://www.instagram.com/reel/fixture-downloading/",
-    normalizedUrl: "https://www.instagram.com/reel/fixture-downloading/",
-    sourceHash: "fixture-downloading",
-    userNote: "",
-  }).job;
-  store.setDisplayTitle(downloading.id, "A perfect Sintra day");
-  store.setStatus(downloading.id, "downloading");
+  store.setStatus(failed.id, "downloading");
+  store.fail(
+    failed.id,
+    {
+      code: "authentication_required",
+      title: "Facebook session expired",
+      message: "New Facebook captures will fail until you reconnect.",
+      diagnostic: "fixture: synthetic session expiry",
+    },
+    0,
+  );
+  await tick();
 
   store.createOrGet({
     ownerUserId: user.id,
@@ -341,24 +346,33 @@ export async function seedUiFixture(store: JobStore, config: AppConfig) {
     sourceHash: "fixture-queued",
     userNote: "",
   });
+  await tick();
 
-  const failed = store.createOrGet({
+  const downloading = store.createOrGet({
     ownerUserId: user.id,
-    sourceUrl: "https://www.facebook.com/share/r/fixture-failed/",
-    normalizedUrl: "https://www.facebook.com/share/r/fixture-failed/",
-    sourceHash: "fixture-failed",
+    sourceUrl: "https://www.instagram.com/reel/fixture-downloading/",
+    normalizedUrl: "https://www.instagram.com/reel/fixture-downloading/",
+    sourceHash: "fixture-downloading",
     userNote: "",
   }).job;
-  store.fail(
-    failed.id,
-    {
-      code: "platform_session_expired",
-      title: "Facebook session expired",
-      message: "New Facebook captures will fail until you reconnect.",
-      diagnostic: "fixture: synthetic session expiry",
-    },
-    1,
+  store.setDisplayTitle(downloading.id, "How I plan my whole week in 20 minutes");
+  store.setStatus(downloading.id, "downloading");
+  await tick();
+
+  const transcribing = store.createOrGet({
+    ownerUserId: user.id,
+    sourceUrl: "https://www.instagram.com/reel/fixture-in-flight/",
+    normalizedUrl: "https://www.instagram.com/reel/fixture-in-flight/",
+    sourceHash: "fixture-in-flight",
+    userNote: "",
+  }).job;
+  store.setDisplayTitle(
+    transcribing.id,
+    "Pastel de nata: the bakery locals actually queue for",
   );
+  store.setStatus(transcribing.id, "downloading");
+  store.setStatus(transcribing.id, "processing");
+  store.setStatus(transcribing.id, "transcribing");
 
   store.updatePreferences(user.id, {
     defaultLanguage: "English",
