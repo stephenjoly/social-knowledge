@@ -10,3 +10,6 @@ __pycache__/
 *.py[cod]
 
 playwright-report/
+
+# Screenshot and review artifacts
+artifacts/
