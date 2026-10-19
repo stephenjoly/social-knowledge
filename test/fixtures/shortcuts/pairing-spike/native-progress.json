@@ -8,7 +8,8 @@
     "nativeSeedExportedAndDecoded": true,
     "tokenFreeProbeSignedAndImported": true,
     "safariUrlSchemeHandoffStartsProbe": true,
-    "loopbackRedemptionAccepted": true
+    "loopbackRedemptionAccepted": true,
+    "nativeSyntheticJsonSavedAsTextFile": true
   },
   "nativeActionContracts": {
     "saveFile": "is.workflow.actions.documentpicker.save",
@@ -24,5 +25,5 @@
     "iPhone installation and Share Sheet",
     "custom native transport error message and sound"
   ],
-  "blocker": "Folder authorization pending human action. Computer-use tool denies access to com.apple.UserNotificationCenter."
+  "blocker": "Corrected probe redeemed and saved synthetic JSON text. Native readback/ack still pending; awaiting visible dialog status from user."
 }

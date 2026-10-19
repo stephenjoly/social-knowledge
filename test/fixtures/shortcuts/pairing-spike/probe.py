@@ -14,7 +14,7 @@ INSTALLATION = "synthetic-installation-1"
 ENVIRONMENT = "loopback-spike"
 CAPTURE_URL = "https://www.instagram.com/reel/synthetic-pairing-probe/"
 NOTE = "Gift idea for Dad"
-FILENAME = "sk-pairing-synthetic.json"
+FILENAME = "sk-pairing-synthetic.txt"
 
 
 def origin(port):

@@ -29,7 +29,7 @@ with exactly one **Save File** and one **Get File from Folder**. Choose the SAME
 new device-local synthetic folder for both; do not use iCloud Drive, Desktop,
 Documents, another cloud provider, or an existing personal folder. On macOS use
 a disposable explicitly local folder; on iPhone use **On My iPhone**. Set filename
-and relative read path to `sk-pairing-synthetic.json`, turn Ask Where to Save OFF,
+and relative read path to `sk-pairing-synthetic.txt`, turn Ask Where to Save OFF,
 and Overwrite ON. Export only that new scratch graph. This macOS version exports
 a signed AEA container: decode the synthetic artifact with `aea decrypt` using
 the public key in its embedded signing certificate, then `aa extract`; the payload
@@ -155,3 +155,17 @@ or repeated picker selection, record failure against install-and-connect accepta
 Cleanup only what this probe creates: stop mock, delete synthetic credential file,
 new synthetic folder, new test shortcut, seed/export/temp reports after recording
 boolean evidence. Do not inspect or clean unrelated shortcuts/files.
+
+### Follow-up native run
+
+Human folder approval allowed Save File to complete. Native Shortcuts changed the
+text output extension to `.txt` despite a `.json` destination, so the original
+readback failed with file-not-found. The probe now consistently uses
+`sk-pairing-synthetic.txt` containing JSON. The corrected probe was signed and
+reimported, redeemed a fresh synthetic ticket, and wrote parseable JSON with
+the expected fields. Readback acknowledgement and the independent second run
+remain unverified. All five Python checks pass after the filename correction.
+
+Do not launch `ShortcutsViewService.xpc` as an application: when unavailable,
+macOS opens a misleading application-selection dialog. Use the supported
+Shortcuts runner and inspect already-visible UI instead.
