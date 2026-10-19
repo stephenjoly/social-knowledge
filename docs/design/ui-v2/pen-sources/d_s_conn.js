@@ -1,0 +1,12 @@
+const [w,scr]=Wrap(PX,"12 · Settings: Connections","Problems surface where you'll see them: an expired Facebook session gets an amber dot in the settings menu and a single obvious Reconnect action. Assistants connected over MCP are listed with when they last used your archive.",PY,880);
+wS2=w;
+SB(scr,"settings","Connections");
+const col=Page(scr,"SETTINGS  /  WORKSPACE","Connections","Sources Social Knowledge saves from, and assistants allowed to search your archive.");
+const s=Section(col,"Social sessions","Instagram and Facebook need a signed-in browser session to fetch posts. Cookies are encrypted and never shown again.");
+let r=Row(s,"Instagram","Session verified 3 days ago · usually lasts about a month",{lead:x=>IconBox(x,"instagram","#fdecf1","#c13584")});Status(r,"Connected");Btn(r,"Replace cookies");
+r=Row(s,"Facebook","Session expired on 14 Oct · new Facebook captures will fail until you reconnect",{fill:"#fffcf6",lead:x=>IconBox(x,"facebook","#e8effd","#1877f2")});Status(r,"Needs attention","warn");Btn(r,"Reconnect",{primary:1});
+r=Row(s,"How to export browser cookies","Step-by-step for Safari, Chrome, and Firefox",{last:1,labelFill:C.mut2,lead:x=>IconBox(x,"info",C.sub,C.mut,28)});I(r,"chevron-down",16,"#a1a1aa");
+const a=Section(col,"Connected assistants","AI assistants that can search your archive over MCP. Revoking takes effect immediately.");
+r=Row(a,"Claude","Connected 2 Oct · last searched 2 hours ago",{lead:x=>IconBox(x,"bot","#f6ede4","#b45f2a")});Btn(r,"Revoke",{danger:1});
+r=Row(a,"ChatGPT","Connected 18 Sep · last searched yesterday",{lead:x=>IconBox(x,"message-circle","#e9f3ee","#10735a")});Btn(r,"Revoke",{danger:1});
+r=Row(a,"Connect another assistant","Paste this address into any MCP-compatible app",{last:1,lead:x=>IconBox(x,"plus",C.sub,C.mut,28)});Input(r,"https://knowledge.example.com/mcp",250,{mono:1});Btn(r,"Copy",{icon:"copy"});

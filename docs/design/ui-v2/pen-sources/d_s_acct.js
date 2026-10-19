@@ -1,0 +1,16 @@
+const [w,scr]=Wrap(PX,"10 · Settings: My account","Your profile, sign-in, and the irreversible stuff, in that order. Each row says what it does, and only one thing on the page is red.",PY,880);
+wS5=w;
+SB(scr,"settings","My account");
+const col=Page(scr,"SETTINGS  /  ACCOUNT","My account","Your profile, sign-in details, and account preferences.");
+const p=Section(col,"Profile",null);
+let r=Row(p,"Stephen","@stephen · Admin · joined March 2026",{lead:x=>Av(x,44,"#3f6b52","S")});
+r=Row(p,"Display name","Shown on your avatar and to people you invite.");Input(r,"Stephen",260);
+r=Row(p,"Username","Used to sign in. Ask another admin to change it.");Input(r,"stephen",260,{disabled:1,muted:1,icon:"lock"});
+r=Row(p,"Avatar colour",null,{last:1});
+const sw=Fr(r,{name:"Swatches",gap:8,alignItems:"center"});
+["#3f6b52","#4f6fa8","#b4574f","#c08a3e","#7a5ea8","#52525b"].forEach((c,i)=>{const o=Fr(sw,{name:"Swatch",width:26,height:26,cornerRadius:999,padding:3,...(i===0?{stroke:c,strokeWidth:2}:{}),justifyContent:"center",alignItems:"center"});Insert(o,{type:"ellipse",name:"Colour",width:i===0?16:20,height:i===0?16:20,fill:c});});
+const s=Section(col,"Sign-in & security",null);
+r=Row(s,"Password","Last changed 3 months ago",{lead:x=>IconBox(x,"lock",C.sub,C.mut2,30)});Btn(r,"Change password");
+r=Row(s,"Current session","Safari on iPhone · active now",{last:1,lead:x=>IconBox(x,"smartphone",C.sub,C.mut2,30)});Status(r,"This device");Btn(r,"Sign out",{icon:"log-out"});
+const d=Section(col,"Danger zone",null);
+r=Row(d,"Delete account","Permanently removes your account and archive. Export first if you want a copy.",{last:1});Btn(r,"Delete account",{danger:1,icon:"trash-2"});

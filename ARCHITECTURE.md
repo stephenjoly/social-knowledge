@@ -52,6 +52,35 @@ Library browsing uses owner-scoped populated trees and a compact recursive conte
 
 Domain services must not depend on initialized server instances or UI code. The UI must not rely on database layout or private archive paths. Cross-cutting services such as events and notifications are injected into the worker.
 
+## Browser modules
+
+`web/main.tsx` composes authentication, navigation, shared Activity state, and the
+capture and command dialogs. `web/pages/` contains the sidebar shell, Inbox,
+Activity, Knowledge base, capture notes, Ask, authentication, and Settings.
+`web/shared/` owns browser HTTP helpers, response types, and formatting; these
+modules consume HTTP contracts and never import initialized server services.
+
+The shell owns the selected settings topic and renders the account or workspace
+navigation in its single sidebar. Capture notes replace the visible page inside
+the shell while preserving that page's browsing state. The capture dialog opens
+over the current destination. Shared controls live in `web/components/ui/`, with
+colours and geometry defined in `web/design-tokens.css`; page styles remain next
+to the corresponding modules in `web/`. Account administration and Shortcut setup
+retain their focused modules, using the shared settings controls.
+
+App navigation keeps settings topics in browser history and runs the shared
+`web/unsaved-changes.ts` guard before leaving editable settings. Account changes
+clear transient private state and advance a session generation so delayed reads,
+mutations, and event callbacks cannot populate the next account's workspace.
+Inbox layout preference is scoped to the account in browser storage; switching
+Rows/Tiles preserves the loaded query results and browsing position.
+
+Ask binds its source panel to an individual answer through `ask-format.ts`, which
+also maps persisted failure codes to controlled recovery messages. The thread
+tracks whether the reader is following incoming text and preserves citation focus
+and reading position across capture-note navigation. Settings setup progression
+lives in `web/ai-setup-progress.tsx`; saved configuration remains authoritative.
+
 ## Data and trust boundaries
 
 - Every account-owned job, capture, connection, export, API key, and OAuth grant is scoped to a user.
@@ -60,6 +89,13 @@ Domain services must not depend on initialized server instances or UI code. The 
 - AI provider credentials and task assignments are separate records. Task assignments own the validated provider, model, and thinking level. Legacy per-provider preferences remain compatible but do not change saved task assignments. Capture jobs snapshot selected models and thinking level at submission or manual retry; Ask uses the current shared analysis assignment. Updating settings does not mutate already queued jobs.
 - Explicit AI connection diagnostics use the account's saved task selection with bounded sample requests. They do not create archive or conversation records. Uploaded test audio stays in memory, and responses contain controlled result codes and selection metadata rather than provider output or raw diagnostics.
 - Authenticated ingestion retains valid HTTPS submissions as owned jobs. Unsupported-platform bookmarks start in a terminal failure state and cannot enter the capture queue; the downloader keeps its Facebook/Instagram allowlist. Shortcut status reads use capture credentials with the same ownership boundary.
+- Unsupported terminal bookmarks have a nullable `jobs.archived_at` visibility field,
+  added after the legacy ownership migration. Owner-scoped archive/restore endpoints
+  change only that field and return the safe Activity projection. Normal Activity,
+  attention, and retry selections exclude archived jobs; the archived filter and
+  direct owner detail preserve access to their URLs and event history. Restoring
+  never queues work. Older binaries ignore the additive column and can show these
+  bookmarks again, while retaining their existing unsupported-platform retry block.
 - SQLite is the catalog and queue source of truth. Media and generated notes are referenced durable filesystem artifacts.
 - Activity responses use an explicit public projection. Raw job records, diagnostic errors, cookie data, credentials, and internal note paths stay behind the persistence boundary. Failed events persist an optional, allowlisted failure code per attempt; legacy causes are inferred only from known historical message prefixes, otherwise remain unavailable. Raw diagnostic text never supplies UI copy. The failure list pages independently of the capture table; bulk retry selects all eligible account-owned failures in one transaction.
 - Social content and model inputs are untrusted. Model outputs are accepted only through explicit structured schemas.

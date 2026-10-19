@@ -1,3 +1,11 @@
+@font-face {
+  font-family: Inter;
+  src: url("./fonts/inter-latin-wght-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 /* Shared app hierarchy. rem units follow the reader's browser text setting. */
 :root {
   --text-caption: 0.75rem;
@@ -8,31 +16,8 @@
   --text-heading: 2rem;
 }
 
-.app-nav button,
-.app-capture {
-  font-size: var(--text-secondary);
-}
-
-.app-workspace-label,
-.app-nav-badge,
-.app-profile-copy small {
-  font-size: var(--text-caption);
-}
-
-.app-wordmark,
-.app-mobile-wordmark {
-  font-size: var(--text-body);
-}
-
-.capture-panel input,
-.capture-panel textarea {
-  font-size: var(--text-body);
-}
-
 .hero h1,
 .page-title h1,
-.capture-panel h1,
-.inbox-hero h1,
 .knowledge-page-heading h1,
 .ask-page-intro h1,
 .settings-heading h1 {
@@ -42,8 +27,6 @@
 
 .hero p,
 .page-title p,
-.capture-intro p,
-.inbox-hero p,
 .knowledge-page-heading p,
 .ask-page-intro p,
 .settings-heading > div > p:last-child {
@@ -52,14 +35,8 @@
 }
 
 @media (max-width: 780px) {
-  .app-nav button {
-    font-size: var(--text-caption);
-  }
-
   .hero h1,
   .page-title h1,
-  .capture-panel h1,
-  .inbox-hero h1,
   .knowledge-page-heading h1,
   .ask-page-intro h1,
   .settings-heading h1 {

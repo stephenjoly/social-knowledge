@@ -1,5 +1,43 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { MoreHorizontal, Search, UserRoundX, X } from "lucide-react";
+import {
+  Archive,
+  ArrowRight,
+  Copy,
+  Ellipsis,
+  Languages,
+  Link as LinkIcon,
+  Lock,
+  LogOut,
+  Monitor,
+  RefreshCw,
+  Search,
+  Shield,
+  Smartphone,
+  UserPlus,
+  UserRoundCheck,
+  UserRoundX,
+} from "lucide-react";
+import {
+  ActionButton,
+  Avatar,
+  CardRow,
+  IconBox,
+  Input,
+  Select,
+  StatusPill,
+  cx,
+} from "./components/ui/primitives";
+import {
+  Feedback,
+  SaveBar,
+  SettingsDialog,
+  SettingsPageHeader,
+  SettingsSection,
+  formatMonthYear,
+  formatShortDate,
+  formatUntil,
+} from "./settings-ui";
+import { confirmDiscardUnsaved, useUnsavedChanges } from "./unsaved-changes";
 
 export type AccountUser = {
   id: string;
@@ -14,6 +52,7 @@ export type AccountUser = {
 type Invitation = {
   id: string;
   role: "admin" | "member";
+  createdByUserId?: string | null;
   createdAt: string;
   expiresAt: string;
   consumedAt: string | null;
@@ -49,93 +88,45 @@ function readableError(error: unknown, fallback: string) {
   );
 }
 
-const initials = (user: Pick<AccountUser, "displayName" | "username">) =>
-  (user.displayName || user.username)
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-const joined = (value?: string) =>
-  value
-    ? new Intl.DateTimeFormat(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }).format(new Date(value))
-    : "—";
+const displayNameOf = (user: Pick<AccountUser, "displayName" | "username">) =>
+  user.displayName || user.username;
 
-function Dialog({
-  title,
-  children,
-  onClose,
-}: {
-  title: string;
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  const panel = useRef<HTMLElement>(null);
-  const returnFocus = useRef(document.activeElement as HTMLElement | null);
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
-  useEffect(() => {
-    panel.current?.focus();
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeRef.current();
-      if (event.key !== "Tab" || !panel.current) return;
-      const controls = Array.from(
-        panel.current.querySelectorAll<HTMLElement>(
-          "button:not(:disabled), input:not(:disabled), select:not(:disabled)",
-        ),
-      );
-      const first = controls[0];
-      const last = controls[controls.length - 1];
-      if (
-        event.shiftKey &&
-        (document.activeElement === first ||
-          document.activeElement === panel.current)
-      ) {
-        event.preventDefault();
-        last?.focus();
-      } else if (
-        !event.shiftKey &&
-        (document.activeElement === last ||
-          document.activeElement === panel.current)
-      ) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => {
-      window.removeEventListener("keydown", handleKey);
-      window.requestAnimationFrame(() => returnFocus.current?.focus());
-    };
-  }, []);
-  return (
-    <div
-      className="account-dialog-layer"
-      role="presentation"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <section
-        ref={panel}
-        className="account-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="account-dialog-title"
-        tabIndex={-1}
-      >
-        <header>
-          <h2 id="account-dialog-title">{title}</h2>
-          <button type="button" aria-label="Close" onClick={onClose}>
-            <X />
-          </button>
-        </header>
-        {children}
-      </section>
-    </div>
-  );
+export const avatarColours = [
+  { value: "#3f6b52", name: "Green" },
+  { value: "#4f6fa8", name: "Blue" },
+  { value: "#b4574f", name: "Red" },
+  { value: "#c08a3e", name: "Amber" },
+  { value: "#7a5ea8", name: "Purple" },
+  { value: "#52525b", name: "Graphite" },
+];
+
+function describeSession(userAgent: string) {
+  const browser = /Edg\//.test(userAgent)
+    ? "Edge"
+    : /Firefox\//.test(userAgent)
+      ? "Firefox"
+      : /Chrome\//.test(userAgent)
+        ? "Chrome"
+        : /Safari\//.test(userAgent)
+          ? "Safari"
+          : "This browser";
+  const system = /iPhone/.test(userAgent)
+    ? "iPhone"
+    : /iPad/.test(userAgent)
+      ? "iPad"
+      : /Android/.test(userAgent)
+        ? "Android"
+        : /Mac OS X/.test(userAgent)
+          ? "macOS"
+          : /Windows/.test(userAgent)
+            ? "Windows"
+            : /Linux/.test(userAgent)
+              ? "Linux"
+              : null;
+  return {
+    label: system ? `${browser} on ${system}` : browser,
+    mobile: /iPhone|Android|Mobile/.test(userAgent),
+  };
 }
 
 export function MyAccount({
@@ -143,25 +134,49 @@ export function MyAccount({
   onUserChange,
   onSignOut,
   onOpenData,
+  onOpenLanguage,
+  noteLanguage = null,
+  onUnsavedChange,
 }: {
   user: AccountUser;
   onUserChange: (user: AccountUser) => void;
   onSignOut: () => Promise<void>;
   onOpenData: () => void;
+  /** Opens Data & export at the note language setting. */
+  onOpenLanguage?: () => void;
+  noteLanguage?: string | null;
+  /** Receives a summary of unsaved profile edits, or null. */
+  onUnsavedChange?: (summary: string | null) => void;
 }) {
   const [displayName, setDisplayName] = useState(user.displayName || "");
   const [username, setUsername] = useState(user.username);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageIsError, setMessageIsError] = useState(false);
+  const [avatarMessage, setAvatarMessage] = useState("");
+  const [avatarMessageIsError, setAvatarMessageIsError] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
-  const [avatarOpen, setAvatarOpen] = useState(false);
   const [avatarPending, setAvatarPending] = useState(false);
-  const [avatarError, setAvatarError] = useState("");
-  const colors = ["#315a48", "#355f78", "#73598d", "#9a5848", "#8a6a2f"];
-  const saveProfile = async (event: FormEvent) => {
-    event.preventDefault();
+  const session = describeSession(navigator.userAgent);
+  const name = displayName.trim() || username.trim() || user.username;
+  const dirty =
+    displayName.trim() !== (user.displayName || "") ||
+    username.trim().toLowerCase() !== user.username;
+  const report = (text: string, error = false) => {
+    setMessage(text);
+    setMessageIsError(error);
+    if (text) setAvatarMessage("");
+  };
+  const reportAvatar = (text: string, error = false) => {
+    setAvatarMessage(text);
+    setAvatarMessageIsError(error);
+    if (text) setMessage("");
+  };
+  const saveProfile = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!dirty || !username.trim()) return;
     setSaving(true);
-    setMessage("");
+    report("");
     try {
       const result = await request<{ user: AccountUser }>(
         "/api/v1/account/profile",
@@ -174,173 +189,236 @@ export function MyAccount({
         },
       );
       onUserChange(result.user);
-      setMessage("Profile saved.");
+      setDisplayName(result.user.displayName || "");
+      setUsername(result.user.username);
+      report("Profile saved.");
     } catch (error) {
-      setMessage(readableError(error, "Profile could not be saved."));
+      report(readableError(error, "Profile could not be saved."), true);
     } finally {
       setSaving(false);
     }
   };
+  const chooseColour = async (colour: string) => {
+    if (avatarPending || colour === user.avatarColor) return;
+    setAvatarPending(true);
+    reportAvatar("");
+    try {
+      const result = await request<{ user: AccountUser }>(
+        "/api/v1/account/profile",
+        { method: "PATCH", body: JSON.stringify({ avatarColor: colour }) },
+      );
+      onUserChange(result.user);
+      reportAvatar(
+        dirty
+          ? "Avatar colour saved. Your name changes still need Save."
+          : "Avatar colour saved.",
+      );
+    } catch (error) {
+      reportAvatar(
+        readableError(error, "Avatar colour could not be saved."),
+        true,
+      );
+    } finally {
+      setAvatarPending(false);
+    }
+  };
+  const changes = [
+    displayName.trim() !== (user.displayName || "") ? "display name" : null,
+    username.trim().toLowerCase() !== user.username ? "username" : null,
+  ].filter(Boolean);
+  useUnsavedChanges(
+    dirty ? `Your ${changes.join(" and ")} changes aren’t saved.` : null,
+    onUnsavedChange,
+  );
   return (
-    <div className="account-page-stack">
-      <section className="settings-card profile-card">
-        <div className="account-card-heading">
-          <div>
-            <h2>Profile</h2>
-            <p>How you appear in your personal workspace.</p>
-          </div>
-        </div>
-        <form onSubmit={saveProfile} className="profile-form">
-          <div className="profile-identity">
-            <span
-              className="profile-avatar"
-              style={{
-                background: user.avatarColor || "#edf3ee",
-                color: user.avatarColor ? "#fff" : "#4e745e",
-              }}
-            >
-              {initials({ displayName, username })}
-            </span>
-            <div>
-              <strong>{displayName || username}</strong>
-              <small>
-                {user.role === "admin" ? "Administrator" : "Member"} · Joined{" "}
-                {joined(user.createdAt)}
-              </small>
-            </div>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => {
-                setAvatarError("");
-                setAvatarOpen(true);
-              }}
-            >
-              Change avatar
-            </button>
-          </div>
-          <div className="profile-fields">
-            <label>
-              Display name
-              <input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                autoComplete="name"
+    <>
+      <SettingsPageHeader
+        crumb="SETTINGS  /  ACCOUNT"
+        title="My account"
+        description="Your profile, sign-in details, and account preferences."
+      />
+      <SettingsSection
+        title="Profile"
+        description="Name changes apply when you save. Avatar colour saves as soon as you pick one."
+        after={
+          <>
+            {dirty ? (
+              <SaveBar
+                message={`Your ${changes.join(" and ")} changed. Save to update your profile.`}
+                saving={saving}
+                saveDisabled={!username.trim()}
+                onDiscard={() => {
+                  setDisplayName(user.displayName || "");
+                  setUsername(user.username);
+                  report("");
+                }}
+                onSave={() => void saveProfile()}
               />
-            </label>
-            <label>
-              Username
-              <input
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
+            ) : null}
+            <Feedback error={messageIsError}>{message}</Feedback>
+          </>
+        }
+      >
+        <form className="st-form-rows" onSubmit={(event) => void saveProfile(event)}>
+          <CardRow
+            className="st-profile-row"
+            leading={
+              <Avatar
+                name={name}
+                color={user.avatarColor || undefined}
+                size={44}
               />
-              <small>Used to sign in to your account.</small>
-            </label>
-            <button disabled={saving || !username.trim()}>
-              {saving ? "Saving…" : "Save changes"}
-            </button>
-          </div>
-        </form>
-        {message && (
-          <p className="action-feedback" role="status">
-            {message}
-          </p>
-        )}
-      </section>
-      <section className="settings-card account-rows">
-        <h2>Sign-in &amp; security</h2>
-        <div>
-          <span>
-            <strong>Password</strong>
-            <small>Update the password used to access your account.</small>
-          </span>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => setPasswordOpen(true)}
+            }
+            title={name}
+            description={`@${user.username} · ${user.role === "admin" ? "Admin" : "Member"}${user.createdAt ? ` · joined ${formatMonthYear(user.createdAt)}` : ""}`}
+          />
+          <CardRow
+            title={<label htmlFor="account-display-name">Display name</label>}
+            description="Shown on your avatar and to people you invite."
           >
+            <Input
+              id="account-display-name"
+              className="st-control-260"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              autoComplete="name"
+              maxLength={100}
+            />
+          </CardRow>
+          <CardRow
+            title={<label htmlFor="account-username">Username</label>}
+            description="Used to sign in. Changing it changes how you sign in."
+          >
+            <Input
+              id="account-username"
+              className="st-control-260"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete="username"
+              maxLength={40}
+              required
+            />
+          </CardRow>
+          <CardRow
+            title={<span id="account-avatar-colour">Avatar colour</span>}
+            description={
+              <>
+                <span id="account-avatar-hint">
+                  Saves immediately. No need to press Save.
+                </span>
+                {avatarMessage && (
+                  <span
+                    className={cx(
+                      "st-inline-status",
+                      avatarMessageIsError && "st-feedback-error",
+                    )}
+                    role={avatarMessageIsError ? "alert" : "status"}
+                  >
+                    {avatarMessage}
+                  </span>
+                )}
+              </>
+            }
+            last
+          >
+            <div
+              className="st-swatches"
+              role="group"
+              aria-labelledby="account-avatar-colour"
+              aria-describedby="account-avatar-hint"
+            >
+              {avatarColours.map((colour) => {
+                const selected = user.avatarColor === colour.value;
+                return (
+                  <button
+                    key={colour.value}
+                    type="button"
+                    className={cx("st-swatch", selected && "st-swatch-selected")}
+                    style={{ color: colour.value }}
+                    aria-label={`${colour.name} avatar colour`}
+                    aria-pressed={selected}
+                    disabled={avatarPending}
+                    onClick={() => void chooseColour(colour.value)}
+                  >
+                    <span aria-hidden="true" />
+                  </button>
+                );
+              })}
+            </div>
+          </CardRow>
+          <button type="submit" hidden tabIndex={-1} aria-hidden="true" />
+        </form>
+      </SettingsSection>
+      <SettingsSection title="Sign-in & security">
+        <CardRow
+          leading={<IconBox icon={Lock} size={30} />}
+          title="Password"
+          description="Changing it signs you out on every device."
+        >
+          <ActionButton onClick={() => setPasswordOpen(true)}>
             Change password
-          </button>
-        </div>
-        <div>
-          <span>
-            <strong>Current session</strong>
-            <small>This device</small>
-          </span>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => void onSignOut()}
+          </ActionButton>
+        </CardRow>
+        <CardRow
+          leading={
+            <IconBox icon={session.mobile ? Smartphone : Monitor} size={30} />
+          }
+          title="Current session"
+          description={`${session.label} · active now`}
+          last
+        >
+          <StatusPill tone="ok">This device</StatusPill>
+          <ActionButton
+            icon={LogOut}
+            onClick={() => {
+              if (
+                confirmDiscardUnsaved(
+                  dirty
+                    ? `Your ${changes.join(" and ")} changes aren’t saved.`
+                    : null,
+                )
+              )
+                void onSignOut();
+            }}
           >
             Sign out
-          </button>
-        </div>
-      </section>
-      <section className="settings-card archive-row">
-        <div>
-          <h2>Your archive</h2>
-          <p>Manage downloads and exports from Data &amp; Export.</p>
-          <small>
-            Your captures, connections, and API keys belong to your account.
-          </small>
-        </div>
-        <button type="button" className="secondary-button" onClick={onOpenData}>
-          Data &amp; Export →
-        </button>
-      </section>
+          </ActionButton>
+        </CardRow>
+      </SettingsSection>
+      <SettingsSection title="Your archive">
+        {onOpenLanguage && (
+          <CardRow
+            leading={<IconBox icon={Languages} size={30} />}
+            title="Note language"
+            description={
+              noteLanguage
+                ? `New captures are written in ${noteLanguage}. Existing notes keep their language.`
+                : "Choose the language new notes are written in. Existing notes keep their language."
+            }
+          >
+            <ActionButton icon={ArrowRight} onClick={onOpenLanguage}>
+              Change language
+            </ActionButton>
+          </CardRow>
+        )}
+        <CardRow
+          leading={<IconBox icon={Archive} size={30} />}
+          title="Exports and downloads"
+          description="Everything you saved belongs to you. Export a copy whenever you want."
+          last
+        >
+          <ActionButton icon={ArrowRight} onClick={onOpenData}>
+            Data &amp; export
+          </ActionButton>
+        </CardRow>
+      </SettingsSection>
       {passwordOpen && (
         <PasswordDialog
           onClose={() => setPasswordOpen(false)}
           onChanged={onSignOut}
         />
       )}
-      {avatarOpen && (
-        <Dialog
-          title="Choose avatar color"
-          onClose={() => setAvatarOpen(false)}
-        >
-          <div className="avatar-picker">
-            {colors.map((color) => (
-              <button
-                key={color}
-                type="button"
-                aria-label={`Use ${color}`}
-                aria-pressed={user.avatarColor === color}
-                disabled={avatarPending}
-                style={{ background: color }}
-                onClick={async () => {
-                  try {
-                    setAvatarPending(true);
-                    setAvatarError("");
-                    const result = await request<{ user: AccountUser }>(
-                      "/api/v1/account/profile",
-                      {
-                        method: "PATCH",
-                        body: JSON.stringify({ avatarColor: color }),
-                      },
-                    );
-                    onUserChange(result.user);
-                    setAvatarOpen(false);
-                  } catch (error) {
-                    setAvatarError(
-                      readableError(error, "Avatar color could not be saved."),
-                    );
-                  } finally {
-                    setAvatarPending(false);
-                  }
-                }}
-              />
-            ))}
-          </div>
-          {avatarError && (
-            <p className="dialog-error" role="alert">
-              {avatarError}
-            </p>
-          )}
-        </Dialog>
-      )}
-    </div>
+    </>
   );
 }
 
@@ -356,11 +434,31 @@ function PasswordDialog({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   return (
-    <Dialog title="Change password" onClose={onClose}>
+    <SettingsDialog
+      title="Change password"
+      description="Changing your password signs out every device, including this one."
+      onClose={onClose}
+      footer={
+        <>
+          <ActionButton variant="ghost" onClick={onClose}>
+            Cancel
+          </ActionButton>
+          <ActionButton
+            variant="primary"
+            type="submit"
+            form="change-password-form"
+            disabled={pending}
+          >
+            {pending ? "Changing…" : "Change password and sign out"}
+          </ActionButton>
+        </>
+      }
+    >
       <form
-        className="dialog-form"
-        onSubmit={async (e) => {
-          e.preventDefault();
+        id="change-password-form"
+        className="st-dialog-form"
+        onSubmit={async (event) => {
+          event.preventDefault();
           setPending(true);
           setError("");
           try {
@@ -375,178 +473,52 @@ function PasswordDialog({
           }
         }}
       >
-        <p className="password-session-note">
-          Changing your password signs out every device, including this one.
-        </p>
-        <label>
-          Current password
-          <input
+        <div className="st-field">
+          <label htmlFor="current-password">Current password</label>
+          <Input
+            id="current-password"
             type="password"
             autoComplete="current-password"
             value={currentPassword}
-            onChange={(e) => setCurrent(e.target.value)}
+            onChange={(event) => setCurrent(event.target.value)}
             required
+            autoFocus
           />
-        </label>
-        <label>
-          New password
-          <input
+        </div>
+        <div className="st-field">
+          <label htmlFor="new-password">New password</label>
+          <Input
+            id="new-password"
             type="password"
             autoComplete="new-password"
             value={newPassword}
-            onChange={(e) => setNext(e.target.value)}
+            onChange={(event) => setNext(event.target.value)}
             minLength={12}
             required
           />
           <small>Use at least 12 characters.</small>
-        </label>
-        {error && (
-          <p role="alert" className="dialog-error">
-            {error}
-          </p>
-        )}
-        <div className="dialog-actions">
-          <button type="button" className="secondary-button" onClick={onClose}>
-            Cancel
-          </button>
-          <button disabled={pending}>
-            {pending ? "Changing…" : "Change password and sign out"}
-          </button>
         </div>
+        {error && <Feedback error>{error}</Feedback>}
       </form>
-    </Dialog>
+    </SettingsDialog>
   );
 }
 
-function RoleMenu({
+function PersonActions({
   person,
   pending,
-  onChange,
+  onSuspend,
+  onRestore,
 }: {
   person: AccountUser;
   pending: boolean;
-  onChange: (role: "admin" | "member") => void;
+  onSuspend: () => void;
+  onRestore: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const choose = (role: "admin" | "member") => {
-    setOpen(false);
-    onChange(role);
-    window.requestAnimationFrame(() => trigger.current?.focus());
-  };
-  useEffect(() => {
-    if (!open) return;
-    root.current?.querySelector<HTMLElement>("[role='menuitemradio']")?.focus();
-    const close = (event: MouseEvent | KeyboardEvent) => {
-      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
-      if (
-        event instanceof MouseEvent &&
-        root.current?.contains(event.target as Node)
-      )
-        return;
-      setOpen(false);
-      if (event instanceof KeyboardEvent) trigger.current?.focus();
-    };
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", close);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", close);
-    };
-  }, [open]);
-  return (
-    <div className="role-menu" ref={root}>
-      <button
-        ref={trigger}
-        type="button"
-        disabled={pending}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        {person.role === "admin" ? "Administrator" : "Member"}{" "}
-        <span aria-hidden="true">⌄</span>
-      </button>
-      {open && (
-        <div
-          className="role-menu-popover"
-          role="menu"
-          aria-label={`Role for ${person.displayName || person.username}`}
-          onKeyDown={(event) => {
-            const items = Array.from(
-              event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                "[role='menuitemradio']",
-              ),
-            );
-            const current = items.indexOf(
-              document.activeElement as HTMLButtonElement,
-            );
-            let next = current;
-            if (event.key === "ArrowDown") next = (current + 1) % items.length;
-            else if (event.key === "ArrowUp")
-              next = (current - 1 + items.length) % items.length;
-            else if (event.key === "Home") next = 0;
-            else if (event.key === "End") next = items.length - 1;
-            else return;
-            event.preventDefault();
-            items[next]?.focus();
-          }}
-        >
-          {(["admin", "member"] as const).map((role) => (
-            <button
-              key={role}
-              type="button"
-              role="menuitemradio"
-              aria-checked={person.role === role}
-              onClick={() => choose(role)}
-            >
-              <strong>
-                {role === "admin" ? "Administrator" : "Member"}
-                {person.role === role ? " · current" : ""}
-              </strong>
-              <small>
-                {role === "admin"
-                  ? "Can invite people, change roles, and suspend account access."
-                  : "Captures and manages their own archive. Can't manage other accounts."}
-              </small>
-            </button>
-          ))}
-          <p>
-            Applies immediately. Personal archives and credentials stay private
-            to each account.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function InvitationActions({
-  copyUrl,
-  canRevoke,
-  canRegenerate,
-  pending,
-  onCopy,
-  onRevoke,
-  onRegenerate,
-}: {
-  copyUrl: string;
-  canRevoke: boolean;
-  canRegenerate: boolean;
-  pending: boolean;
-  onCopy: () => void;
-  onRevoke: () => void;
-  onRegenerate: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const selectAction = (action: () => void) => {
-    setOpen(false);
-    action();
-    window.requestAnimationFrame(() => trigger.current?.focus());
-  };
+  const name = displayNameOf(person);
   useEffect(() => {
     if (!open) return;
     root.current?.querySelector<HTMLElement>("[role='menuitem']")?.focus();
@@ -568,114 +540,204 @@ function InvitationActions({
     };
   }, [open]);
   return (
-    <div
-      className="invitation-actions"
-      ref={root}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-          setOpen(false);
-      }}
-    >
-      {copyUrl && (
-        <button
-          type="button"
-          className="secondary-button invitation-copy"
-          onClick={onCopy}
-        >
-          Copy link
-        </button>
-      )}
-      {(canRevoke || canRegenerate) && (
-        <button
-          ref={trigger}
-          type="button"
-          className="invitation-overflow"
-          aria-label="Invitation actions"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
-          <MoreHorizontal />
-        </button>
-      )}
+    <div className="st-menu-root" ref={root}>
+      <button
+        ref={trigger}
+        type="button"
+        className="st-icon-button"
+        aria-label={`Actions for ${name}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={pending}
+        onClick={() => setOpen(!open)}
+      >
+        <Ellipsis size={16} aria-hidden="true" />
+      </button>
       {open && (
-        <div
-          className="invitation-actions-menu"
-          role="menu"
-          onKeyDown={(event) => {
-            const items = Array.from(
-              event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                "[role='menuitem']:not(:disabled)",
-              ),
-            );
-            const current = items.indexOf(
-              document.activeElement as HTMLButtonElement,
-            );
-            let next = current;
-            if (event.key === "ArrowDown") next = (current + 1) % items.length;
-            else if (event.key === "ArrowUp")
-              next = (current - 1 + items.length) % items.length;
-            else if (event.key === "Home") next = 0;
-            else if (event.key === "End") next = items.length - 1;
-            else return;
-            event.preventDefault();
-            items[next]?.focus();
-          }}
-        >
-          {canRegenerate && (
-            <button
-              type="button"
-              role="menuitem"
-              disabled={pending}
-              onClick={() => selectAction(onRegenerate)}
-            >
-              Regenerate link
-            </button>
-          )}
-          {canRevoke && (
-            <button
-              type="button"
-              role="menuitem"
-              className="danger-menu-item"
-              disabled={pending}
-              onClick={() => selectAction(onRevoke)}
-            >
-              Revoke invitation
-            </button>
-          )}
+        <div className="st-menu" role="menu" aria-label={`Actions for ${name}`}>
+          <button
+            type="button"
+            role="menuitem"
+            className={person.suspendedAt ? undefined : "st-menu-danger"}
+            onClick={() => {
+              setOpen(false);
+              if (person.suspendedAt) onRestore();
+              else onSuspend();
+            }}
+          >
+            {person.suspendedAt ? (
+              <UserRoundCheck size={15} aria-hidden="true" />
+            ) : (
+              <UserRoundX size={15} aria-hidden="true" />
+            )}
+            {person.suspendedAt ? "Restore access" : "Suspend access…"}
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-export function PeopleAccess({
-  currentUser,
-  onMyAccount,
+function InviteDialog({
+  onClose,
+  onCreated,
 }: {
-  currentUser: AccountUser;
-  onMyAccount: () => void;
+  onClose: () => void;
+  onCreated: (invitation: Invitation, url: string) => Promise<void>;
 }) {
+  const [role, setRole] = useState<"member" | "admin">("member");
+  const [ack, setAck] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const [link, setLink] = useState("");
+  const [copyFailed, setCopyFailed] = useState(false);
+  const [copyMessage, setCopyMessage] = useState("");
+  const create = async (event: FormEvent) => {
+    event.preventDefault();
+    if (role === "admin" && !ack) {
+      setError("Confirm administrator access before creating this invitation.");
+      return;
+    }
+    setPending(true);
+    setError("");
+    try {
+      const result = await request<{
+        invitation: Invitation;
+        invitationUrl: string;
+      }>("/api/v1/admin/invitations", {
+        method: "POST",
+        body: JSON.stringify({ role, administratorAcknowledged: ack }),
+      });
+      setLink(result.invitationUrl);
+      await onCreated(result.invitation, result.invitationUrl);
+    } catch {
+      setError("Invitation could not be created.");
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <SettingsDialog
+      title="Invite someone"
+      description={
+        link
+          ? "Copy this link now. It can’t be shown again after you close this dialog; if it’s lost, use New link to replace it."
+          : "Create a single-use link for one new account. They get their own private, empty archive; inviting someone never shares yours."
+      }
+      onClose={onClose}
+      closeDisabled={pending}
+      footer={
+        link ? (
+          <ActionButton variant="primary" onClick={onClose}>
+            Done
+          </ActionButton>
+        ) : (
+          <>
+            <ActionButton variant="ghost" onClick={onClose} disabled={pending}>
+              Cancel
+            </ActionButton>
+            <ActionButton
+              variant="primary"
+              type="submit"
+              form="invite-form"
+              disabled={pending}
+            >
+              {pending ? "Creating…" : "Create invitation"}
+            </ActionButton>
+          </>
+        )
+      }
+    >
+      {link ? (
+        <div className="st-field">
+          <div className="st-inline-controls">
+            {copyFailed && (
+              <Input
+                aria-label="New invitation link"
+                className="st-grow st-mono"
+                readOnly
+                value={link}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            )}
+            <ActionButton
+              icon={Copy}
+              variant={copyFailed ? "default" : "primary"}
+              onClick={() =>
+                void navigator.clipboard.writeText(link).then(
+                  () => {
+                    setCopyFailed(false);
+                    setCopyMessage("Invitation link copied.");
+                  },
+                  () => {
+                    setCopyFailed(true);
+                    setCopyMessage("Select and copy the invitation link.");
+                  },
+                )
+              }
+            >
+              Copy link
+            </ActionButton>
+          </div>
+          <Feedback>{copyMessage}</Feedback>
+        </div>
+      ) : (
+        <form id="invite-form" className="st-dialog-form" onSubmit={create}>
+          <div className="st-field">
+            <label htmlFor="invitation-role">Invitation role</label>
+            <Select
+              id="invitation-role"
+              value={role}
+              onChange={(event) => {
+                setRole(event.target.value as "member" | "admin");
+                setAck(false);
+              }}
+            >
+              <option value="member">Member — their own private archive</option>
+              <option value="admin">Admin — can also manage access</option>
+            </Select>
+            <small>
+              {role === "admin"
+                ? "Admins can also invite people, change roles, and suspend access. They still can’t open anyone else’s archive."
+                : "Members have their own private archive. They can’t see yours, and can’t manage accounts or invitations."}
+            </small>
+          </div>
+          {role === "admin" && (
+            <label className="st-check">
+              <input
+                type="checkbox"
+                checked={ack}
+                onChange={(event) => setAck(event.target.checked)}
+              />
+              I understand this grants administrator access.
+            </label>
+          )}
+          {error && <Feedback error>{error}</Feedback>}
+        </form>
+      )}
+    </SettingsDialog>
+  );
+}
+
+export function PeopleAccess({ currentUser }: { currentUser: AccountUser }) {
   const [users, setUsers] = useState<AccountUser[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [query, setQuery] = useState("");
-  const [role, setRole] = useState<"member" | "admin">("member");
-  const [ack, setAck] = useState(false);
   const [message, setMessage] = useState("");
-  const [fallbackUrl, setFallbackUrl] = useState("");
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [invitationLinks, setInvitationLinks] = useState<
     Record<string, string>
   >({});
-  const [menu, setMenu] = useState<string | null>(null);
+  const [invitationMessage, setInvitationMessage] = useState("");
+  const [fallbackUrl, setFallbackUrl] = useState("");
   const [suspend, setSuspend] = useState<AccountUser | null>(null);
   const [suspendError, setSuspendError] = useState("");
   const [pending, setPending] = useState(false);
   const [invitationPending, setInvitationPending] = useState<string | null>(
     null,
   );
-  const actionTrigger = useRef<HTMLButtonElement>(null);
   const load = async () => {
     setLoading(true);
     setLoadError("");
@@ -695,30 +757,6 @@ export function PeopleAccess({
   useEffect(() => {
     void load();
   }, []);
-  useEffect(() => {
-    if (!menu) return;
-    window.requestAnimationFrame(() =>
-      document
-        .querySelector<HTMLElement>(".account-actions-menu [role='menuitem']")
-        ?.focus(),
-    );
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
-      if (
-        e instanceof MouseEvent &&
-        (e.target as Element).closest(".row-actions")
-      )
-        return;
-      setMenu(null);
-      if (e instanceof KeyboardEvent) actionTrigger.current?.focus();
-    };
-    document.addEventListener("keydown", close);
-    document.addEventListener("mousedown", close);
-    return () => {
-      document.removeEventListener("keydown", close);
-      document.removeEventListener("mousedown", close);
-    };
-  }, [menu]);
   const updateUser = async (
     target: AccountUser,
     patch: { role?: string; suspended?: boolean },
@@ -732,7 +770,6 @@ export function PeopleAccess({
       );
       setUsers((all) => all.map((u) => (u.id === target.id ? result.user : u)));
       setMessage("Account updated.");
-      setMenu(null);
       setSuspend(null);
     } catch (e) {
       const detail = readableError(e, "Account could not be updated.");
@@ -742,412 +779,308 @@ export function PeopleAccess({
       setPending(false);
     }
   };
-  const activeInvites = invitations.filter(
-    (i) => !i.consumedAt && !i.revokedAt && new Date(i.expiresAt) > new Date(),
+  const runInvitationAction = async (
+    invitation: Invitation,
+    action: "revoke" | "regenerate",
+  ) => {
+    setInvitationPending(invitation.id);
+    setInvitationMessage("");
+    setFallbackUrl("");
+    try {
+      if (action === "revoke") {
+        await request(`/api/v1/admin/invitations/${invitation.id}/revoke`, {
+          method: "POST",
+        });
+        setInvitationLinks((links) => {
+          const next = { ...links };
+          delete next[invitation.id];
+          return next;
+        });
+        setInvitationMessage("Invitation revoked.");
+      } else {
+        const result = await request<{
+          invitation: Invitation;
+          invitationUrl: string;
+        }>(`/api/v1/admin/invitations/${invitation.id}/regenerate`, {
+          method: "POST",
+        });
+        setInvitationLinks((links) => {
+          const next = {
+            ...links,
+            [result.invitation.id]: result.invitationUrl,
+          };
+          if (invitation.id !== result.invitation.id)
+            delete next[invitation.id];
+          return next;
+        });
+        setInvitationMessage(
+          "New invitation link created. Copy it now; the previous link no longer works.",
+        );
+      }
+      await load();
+    } catch (error) {
+      setInvitationMessage(
+        error instanceof Error && !/^[a-z0-9_]+$/.test(error.message)
+          ? error.message
+          : action === "revoke"
+            ? "Invitation could not be revoked."
+            : "Invitation could not be regenerated.",
+      );
+    } finally {
+      setInvitationPending(null);
+    }
+  };
+  const now = Date.now();
+  const openInvitations = invitations.filter(
+    (i) => !i.consumedAt && !i.revokedAt && new Date(i.expiresAt).getTime() > now,
   );
+  const normalizedQuery = query.trim().toLowerCase();
   const filtered = users.filter((u) =>
     `${u.displayName || ""} ${u.username}`
       .toLowerCase()
-      .includes(query.toLowerCase()),
+      .includes(normalizedQuery),
   );
+  const creatorName = (id?: string | null) => {
+    const creator = users.find((u) => u.id === id);
+    return creator ? displayNameOf(creator) : "an admin";
+  };
   return (
-    <div className="people-page-stack">
-      <section className="settings-card invite-card">
-        <div>
-          <h2>Invite someone</h2>
-          <p>Create a link and share it with the person you want to invite.</p>
-        </div>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (role === "admin" && !ack) {
-              setMessage(
-                "Confirm administrator access before creating this invitation.",
-              );
-              return;
-            }
-            setPending(true);
-            try {
-              const result = await request<{
-                invitation: Invitation;
-                invitationUrl: string;
-              }>("/api/v1/admin/invitations", {
-                method: "POST",
-                body: JSON.stringify({
-                  role,
-                  administratorAcknowledged: ack,
-                }),
-              });
-              setFallbackUrl("");
-              setInvitationLinks((links) => ({
-                ...links,
-                [result.invitation.id]: result.invitationUrl,
-              }));
-              setMessage(
-                "Invitation created. Copy it now; it cannot be retrieved later.",
-              );
-              await load();
-            } catch {
-              setMessage("Invitation could not be created.");
-            } finally {
-              setPending(false);
-            }
-          }}
-        >
-          <label>
-            Invitation role
-            <select
-              value={role}
-              onChange={(e) => {
-                setRole(e.target.value as "member" | "admin");
-                setAck(false);
-              }}
-            >
-              <option value="member">
-                Member — access to their own private archive
-              </option>
-              <option value="admin">Administrator — can manage access</option>
-            </select>
-          </label>
-          {role === "admin" && (
-            <label className="toggle-label">
-              <input
-                type="checkbox"
-                checked={ack}
-                onChange={(e) => setAck(e.target.checked)}
-              />
-              I understand this grants administrator access.
-            </label>
-          )}
-          <button disabled={pending}>Create invitation</button>
-        </form>
-        <small>
-          {role === "admin"
-            ? "Administrators can manage accounts and invitations."
-            : "Members cannot manage other accounts or invitations."}
-        </small>
-        {fallbackUrl && (
-          <div className="created-invite">
-            <input
-              readOnly
-              aria-label="New invitation link"
-              value={fallbackUrl}
-            />
-            <button
-              type="button"
-              onClick={() =>
-                void navigator.clipboard.writeText(fallbackUrl).then(
-                  () => setMessage("Invitation link copied."),
-                  () => setMessage("Select and copy the invitation link."),
-                )
-              }
-            >
-              Copy link
-            </button>
+    <>
+      <SettingsPageHeader
+        crumb="SETTINGS  /  ADMINISTRATION"
+        title="People & access"
+        description="Manage who can sign in and what they can administer. Every archive stays private to its owner."
+        action={
+          <ActionButton
+            variant="primary"
+            icon={UserPlus}
+            onClick={() => setInviteOpen(true)}
+          >
+            Invite someone
+          </ActionButton>
+        }
+      />
+      <SettingsSection
+        title="Members"
+        description={`${users.length} ${users.length === 1 ? "person" : "people"} · roles control who manages access; every archive stays private to its owner`}
+        actions={
+          <Input
+            icon={Search}
+            className="st-control-220"
+            type="search"
+            placeholder="Search people…"
+            aria-label="Search people"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        }
+        after={<Feedback>{message}</Feedback>}
+      >
+        <div className="st-people" role="table" aria-label="Members">
+          <div className="st-people-head" role="row">
+            <span role="columnheader">Name</span>
+            <span role="columnheader">Role</span>
+            <span role="columnheader">Joined</span>
+            <span role="columnheader">
+              <span className="sr-only">Actions</span>
+            </span>
           </div>
-        )}
-      </section>
-      {message && (
-        <p className="action-feedback" role="status">
-          {message}
-        </p>
-      )}
-      <section className="settings-card people-table-card">
-        <header>
-          <div>
-            <h2>Accounts</h2>
-            <small>{users.length} accounts</small>
-          </div>
-          <label className="people-search">
-            <Search aria-hidden="true" />
-            <span className="sr-only">Search accounts</span>
-            <input
-              type="search"
-              placeholder="Search accounts…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </label>
-        </header>
-        {loadError && (
-          <div className="settings-inline-error" role="alert">
-            <span>{loadError}</span>
-            <button type="button" onClick={() => void load()}>
-              Retry
-            </button>
-          </div>
-        )}
-        <div className="people-table">
-          <div className="people-table-head">
-            <span>Account</span>
-            <span>Role</span>
-            <span>Joined</span>
-            <span>Access</span>
-            <span />
-          </div>
-          {filtered.map((person) => (
-            <div className="people-table-row" key={person.id}>
-              <div className="people-name">
-                <span
-                  className="mini-avatar"
-                  style={{
-                    background: person.avatarColor || "#ecf1ec",
-                    color: person.avatarColor ? "#fff" : "#4e745e",
-                  }}
-                >
-                  {initials(person)}
-                </span>
-                <span>
-                  <strong>{person.displayName || person.username}</strong>
-                  <small>
-                    {person.username}
-                    {person.id === currentUser.id ? " · You" : ""}
-                  </small>
-                </span>
-              </div>
-              <div>
-                {person.id === currentUser.id ? (
-                  <span>
-                    {person.role === "admin" ? "Administrator" : "Member"}
-                  </span>
-                ) : (
-                  <RoleMenu
-                    person={person}
-                    pending={pending}
-                    onChange={(role) => void updateUser(person, { role })}
+          {filtered.map((person) => {
+            const isSelf = person.id === currentUser.id;
+            const name = displayNameOf(person);
+            return (
+              <div className="st-people-row" role="row" key={person.id}>
+                <div className="st-people-name" role="cell">
+                  <Avatar
+                    name={name}
+                    color={person.avatarColor || undefined}
+                    size={32}
                   />
-                )}
-              </div>
-              <span>{joined(person.createdAt)}</span>
-              <span
-                className={person.suspendedAt ? "status suspended" : "status"}
-              >
-                {person.suspendedAt ? "Suspended" : "Active"}
-              </span>
-              <div className="row-actions">
-                {person.id === currentUser.id ? (
-                  <button
-                    type="button"
-                    className="text-button"
-                    onClick={onMyAccount}
-                  >
-                    My account ↗
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      ref={menu === person.id ? actionTrigger : undefined}
-                      type="button"
-                      aria-label={`Actions for ${person.displayName || person.username}`}
-                      aria-expanded={menu === person.id}
-                      onClick={() =>
-                        setMenu(menu === person.id ? null : person.id)
+                  <span className="st-people-text">
+                    <strong>{name}</strong>
+                    <small>
+                      @{person.username}
+                      {isSelf ? " · you" : ""}
+                      {person.suspendedAt ? " · suspended" : ""}
+                    </small>
+                  </span>
+                </div>
+                <div className="st-people-role" role="cell">
+                  {isSelf ? (
+                    <span
+                      className={cx(
+                        "st-role-badge",
+                        person.role === "admin" && "st-role-badge-admin",
+                      )}
+                    >
+                      {person.role === "admin" ? "Admin" : "Member"}
+                    </span>
+                  ) : (
+                    <Select
+                      className="st-control-116"
+                      aria-label={`Role for ${name}`}
+                      value={person.role === "admin" ? "admin" : "member"}
+                      disabled={pending}
+                      onChange={(event) =>
+                        void updateUser(person, { role: event.target.value })
                       }
                     >
-                      <MoreHorizontal />
-                    </button>
-                    {menu === person.id && (
-                      <div className="account-actions-menu" role="menu">
-                        <strong>{person.displayName || person.username}</strong>
-                        <small>
-                          {person.username} · Joined {joined(person.createdAt)}
-                        </small>
-                        <button
-                          role="menuitem"
-                          type="button"
-                          onClick={() =>
-                            person.suspendedAt
-                              ? void updateUser(person, { suspended: false })
-                              : (setSuspendError(""), setSuspend(person))
-                          }
-                        >
-                          <UserRoundX aria-hidden="true" />
-                          {person.suspendedAt
-                            ? "Restore access"
-                            : "Suspend access…"}
-                        </button>
-                      </div>
-                    )}
-                  </>
-                )}
+                      <option value="member">Member</option>
+                      <option value="admin">Admin</option>
+                    </Select>
+                  )}
+                </div>
+                <div className="st-people-meta" role="cell">
+                  {person.createdAt ? formatShortDate(person.createdAt) : "—"}
+                </div>
+                <div className="st-people-actions" role="cell">
+                  {!isSelf && (
+                    <PersonActions
+                      person={person}
+                      pending={pending}
+                      onSuspend={() => {
+                        setSuspendError("");
+                        setSuspend(person);
+                      }}
+                      onRestore={() =>
+                        void updateUser(person, { suspended: false })
+                      }
+                    />
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-        {loading && <p>Loading accounts…</p>}
-        {!loading && !loadError && users.length === 0 && (
-          <p className="people-empty">No accounts yet.</p>
-        )}
-        {!loading &&
-          !loadError &&
-          users.length > 0 &&
-          filtered.length === 0 && (
-            <p className="people-empty">No accounts match “{query}”.</p>
+            );
+          })}
+          {loading && !users.length && (
+            <p className="st-empty-row" role="status">
+              Loading people…
+            </p>
           )}
-      </section>
-      <section className="settings-card invitations-table">
-        <header>
-          <div>
-            <h2>Invitations</h2>
-            <small>{activeInvites.length} pending</small>
-          </div>
-        </header>
-        <div className="invitation-table-head" aria-hidden="true">
-          <span>Invitation</span>
-          <span>Role</span>
-          <span>Created</span>
-          <span>Status</span>
-          <span />
+          {loadError && (
+            <div className="st-empty-row st-error-row" role="alert">
+              <span>{loadError}</span>
+              <ActionButton onClick={() => void load()}>Retry</ActionButton>
+            </div>
+          )}
+          {!loading && !loadError && users.length > 0 && !filtered.length && (
+            <p className="st-empty-row">No one matches “{query}”.</p>
+          )}
         </div>
-        {!loading && !loadError && invitations.length === 0 && (
-          <p className="people-empty">No invitations yet.</p>
-        )}
-        {invitations.map((inv, index) => {
-          const state = inv.consumedAt
-            ? "Used"
-            : inv.revokedAt
-              ? "Revoked"
-              : new Date(inv.expiresAt) < new Date()
-                ? "Expired"
-                : "Pending";
+      </SettingsSection>
+      <SettingsSection
+        title="Open invitations"
+        description="Links expire after 24 hours and create one account each. A link is shown once; New link replaces it, and the earlier link stops working."
+        after={
+          <>
+            {fallbackUrl && (
+              <Input
+                className="st-mono"
+                readOnly
+                aria-label="New invitation link"
+                value={fallbackUrl}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            )}
+            <Feedback>{invitationMessage}</Feedback>
+          </>
+        }
+      >
+        {openInvitations.map((invitation) => {
+          const link = invitationLinks[invitation.id];
+          const busy = invitationPending === invitation.id;
+          const admin = invitation.role === "admin";
           return (
-            <div className="invitation-row" key={inv.id}>
-              <span>
-                <strong>Invite link {index + 1}</strong>
-              </span>
-              <span>{inv.role === "admin" ? "Administrator" : "Member"}</span>
-              <span>{joined(inv.createdAt)}</span>
-              <span className="status">{state}</span>
-              <span>
-                <InvitationActions
-                  copyUrl={
-                    state === "Pending" ? invitationLinks[inv.id] || "" : ""
-                  }
-                  canRevoke={state === "Pending"}
-                  canRegenerate={!inv.consumedAt}
-                  pending={invitationPending === inv.id}
-                  onCopy={async () => {
-                    const link = invitationLinks[inv.id];
-                    if (!link) return;
+            <CardRow
+              key={invitation.id}
+              leading={<IconBox icon={admin ? Shield : LinkIcon} size={30} />}
+              title={admin ? "Admin invite" : "Member invite"}
+              description={`Created by ${creatorName(invitation.createdByUserId)} · expires ${formatUntil(invitation.expiresAt, now)} · ${link ? "copy it now; it’s shown only once" : "New link replaces the earlier link"}`}
+            >
+              {admin && <StatusPill tone="warn">Admin</StatusPill>}
+              {link ? (
+                <ActionButton
+                  icon={Copy}
+                  onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(link);
                       setFallbackUrl("");
-                      setMessage("Invitation link copied.");
+                      setInvitationMessage("Invitation link copied.");
                     } catch {
                       setFallbackUrl(link);
-                      setMessage("Select and copy the invitation link above.");
+                      setInvitationMessage(
+                        "Select and copy the invitation link above.",
+                      );
                     }
                   }}
-                  onRevoke={() => {
-                    void (async () => {
-                      setInvitationPending(inv.id);
-                      try {
-                        await request(
-                          `/api/v1/admin/invitations/${inv.id}/revoke`,
-                          { method: "POST" },
-                        );
-                        if (fallbackUrl === invitationLinks[inv.id])
-                          setFallbackUrl("");
-                        setInvitationLinks((links) => {
-                          const next = { ...links };
-                          delete next[inv.id];
-                          return next;
-                        });
-                        setMessage("Invitation revoked.");
-                        await load();
-                      } catch (error) {
-                        setMessage(
-                          error instanceof Error
-                            ? error.message
-                            : "Invitation could not be revoked.",
-                        );
-                      } finally {
-                        setInvitationPending(null);
-                      }
-                    })();
-                  }}
-                  onRegenerate={() => {
-                    void (async () => {
-                      setInvitationPending(inv.id);
-                      try {
-                        const result = await request<{
-                          invitation: Invitation;
-                          invitationUrl: string;
-                        }>(`/api/v1/admin/invitations/${inv.id}/regenerate`, {
-                          method: "POST",
-                        });
-                        setFallbackUrl("");
-                        setInvitationLinks((links) => {
-                          const next = {
-                            ...links,
-                            [result.invitation.id]: result.invitationUrl,
-                          };
-                          if (inv.id !== result.invitation.id)
-                            delete next[inv.id];
-                          return next;
-                        });
-                        setMessage(
-                          "New invitation link created. Copy it now; the previous link no longer works.",
-                        );
-                        await load();
-                      } catch (error) {
-                        setMessage(
-                          error instanceof Error
-                            ? error.message
-                            : "Invitation could not be regenerated.",
-                        );
-                      } finally {
-                        setInvitationPending(null);
-                      }
-                    })();
-                  }}
-                />
-              </span>
-            </div>
+                >
+                  Copy link
+                </ActionButton>
+              ) : (
+                <ActionButton
+                  icon={RefreshCw}
+                  disabled={busy}
+                  title="Creates a new link for this invitation. The earlier link stops working immediately."
+                  onClick={() => void runInvitationAction(invitation, "regenerate")}
+                >
+                  New link
+                </ActionButton>
+              )}
+              <ActionButton
+                variant="danger"
+                disabled={busy}
+                onClick={() => void runInvitationAction(invitation, "revoke")}
+              >
+                Revoke
+              </ActionButton>
+            </CardRow>
           );
         })}
-      </section>
-      <p className="privacy-note">
-        Administration grants access management. Each person’s archive and
-        credentials remain private.
-      </p>
-      {suspend && (
-        <Dialog
-          title={`Suspend ${suspend.displayName || suspend.username}’s access?`}
-          onClose={() => setSuspend(null)}
-        >
-          <p>
-            {suspend.displayName || suspend.username} won’t be able to sign in
-            or use API keys until you restore access. Their archive and
-            credentials stay intact and private.
+        {!loading && !loadError && !openInvitations.length && (
+          <p className="st-empty-row">
+            No open invitations. Invite someone to create a link.
           </p>
-          <small>
-            You can restore access anytime from People &amp; access.
-          </small>
-          {suspendError && (
-            <p className="dialog-error" role="alert">
-              {suspendError}
-            </p>
-          )}
-          <div className="dialog-actions">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => setSuspend(null)}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="danger-button"
-              disabled={pending}
-              onClick={() => void updateUser(suspend, { suspended: true })}
-            >
-              {pending ? "Suspending…" : "Suspend access"}
-            </button>
-          </div>
-        </Dialog>
+        )}
+      </SettingsSection>
+      {inviteOpen && (
+        <InviteDialog
+          onClose={() => setInviteOpen(false)}
+          onCreated={async (invitation, url) => {
+            setInvitationLinks((links) => ({ ...links, [invitation.id]: url }));
+            setFallbackUrl("");
+            setInvitationMessage(
+              "Invitation created. Copy it now; it cannot be retrieved later.",
+            );
+            await load();
+          }}
+        />
       )}
-    </div>
+      {suspend && (
+        <SettingsDialog
+          title={`Suspend ${displayNameOf(suspend)}’s access?`}
+          description={`${displayNameOf(suspend)} won’t be able to sign in or use API keys until you restore access. Their archive and credentials stay intact and private.`}
+          onClose={() => setSuspend(null)}
+          closeDisabled={pending}
+          footer={
+            <>
+              <ActionButton variant="ghost" onClick={() => setSuspend(null)}>
+                Cancel
+              </ActionButton>
+              <ActionButton
+                variant="danger"
+                disabled={pending}
+                onClick={() => void updateUser(suspend, { suspended: true })}
+              >
+                {pending ? "Suspending…" : "Suspend access"}
+              </ActionButton>
+            </>
+          }
+        >
+          <p className="st-dialog-note">
+            You can restore access anytime from People &amp; access.
+          </p>
+          {suspendError && <Feedback error>{suspendError}</Feedback>}
+        </SettingsDialog>
+      )}
+    </>
   );
 }

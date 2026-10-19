@@ -1,0 +1,11 @@
+const [w,scr]=Wrap(PX,"01 · Sign in","A quiet, centred sign-in that says what this is before asking for anything. Invitation sign-up uses the same card.",PY,880);
+wM0=w;
+Update(scr,{layout:"vertical",justifyContent:"center",alignItems:"center",gap:24,fill:"#f6f5f2"});
+const card=Fr(scr,{name:"Sign-in card",layout:"vertical",width:400,padding:32,gap:22,cornerRadius:14,fill:"#ffffff",stroke:C.bd,strokeWidth:1,effect:{type:"shadow",offset:{x:0,y:12},blur:32,color:"#18181b0f"}});
+const mk=Fr(card,{name:"Mark",width:36,height:36,cornerRadius:9,fill:C.acc,justifyContent:"center",alignItems:"center"});I(mk,"library-big",18,"#e7ece8");
+const ht=Fr(card,{name:"Heading",layout:"vertical",gap:6,width:"fill_container"});T(ht,"Welcome back",{fontSize:22,fontWeight:"700",letterSpacing:-0.5});T(ht,"Sign in to your private social knowledge archive.",{fontSize:13.5,fill:C.mut,textGrowth:"fixed-width",width:"fill_container"});
+const F2=(l,v,o={})=>{const f=Fr(card,{name:l,layout:"vertical",gap:6,width:"fill_container"});const lr=Fr(f,{name:"Label row",width:"fill_container",justifyContent:"space_between"});T(lr,l,{fontSize:12.5,fontWeight:"600",fill:"#3f3f46"});if(o.aside)T(lr,o.aside,{fontSize:12,fill:C.g,fontWeight:"500"});const i=Fr(f,{name:"Field",width:"fill_container",height:40,padding:[0,12],gap:8,alignItems:"center",cornerRadius:8,fill:"#ffffff",stroke:o.focus?C.g:C.bd,strokeWidth:o.focus?1.5:1,...(o.focus?{effect:{type:"shadow",offset:{x:0,y:0},blur:0,color:"#3f7a5522"}}:{})});T(i,v,{fontSize:14,fill:o.muted?"#a1a1aa":C.ink,textGrowth:"fixed-width",width:"fill_container"});if(o.icon)I(i,o.icon,16,"#a1a1aa");};
+F2("Username","stephen");F2("Password","••••••••••••",{focus:1,icon:"eye"});
+const b=Fr(card,{name:"Continue",width:"fill_container",height:40,justifyContent:"center",alignItems:"center",cornerRadius:8,fill:C.acc});T(b,"Continue",{fontSize:14,fontWeight:"600",fill:"#ffffff"});
+const ft=Fr(card,{name:"Footer",width:"fill_container",justifyContent:"center",gap:4,padding:[4,0,0,0]});T(ft,"Have an invitation link?",{fontSize:12.5,fill:C.mut});T(ft,"Create your account",{fontSize:12.5,fontWeight:"600",fill:C.g});
+const note=Fr(scr,{name:"Privacy note",gap:6,alignItems:"center"});I(note,"lock",13,"#a1a1aa");T(note,"Private by design. Only you can see your archive.",{fontSize:12,fill:"#a1a1aa"});

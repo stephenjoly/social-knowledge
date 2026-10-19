@@ -100,7 +100,9 @@ test.beforeAll(async () => {
         }),
         { headers: { "content-type": "application/json" } },
       );
-    return originalFetch(input, init);
+    if (new URL(url).hostname === "127.0.0.1" || new URL(url).hostname === "localhost")
+      return originalFetch(input, init);
+    throw new Error("Synthetic provider test blocked unexpected outbound fetch");
   }) as typeof fetch;
   app = buildApp(config, store, new EventHub());
   await app.listen({ host: "127.0.0.1", port });
@@ -122,15 +124,21 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await page.getByLabel("Password").fill("a-strong-qa-password");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Capture a post", exact: true }).click();
-  await page.getByLabel("Post URL").fill("https://www.instagram.com/reel/qa-test/");
-  await page.getByRole("button", { name: "Capture post", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await page
-    .getByRole("navigation", { name: "Settings topics" })
-    .getByRole("button", { name: "AI" })
-    .click();
+  await page.getByLabel("Post link").fill("https://www.instagram.com/reel/qa-test/");
+  await page.getByRole("button", { name: "Save to archive", exact: true }).click();
+  await page.getByRole("dialog", { name: "Link saved — AI setup needed", exact: true }).getByRole("button", { name: "Set up AI", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "AI & models" })).toBeVisible();
+  const openAiTopic = async () => {
+    await page.goto(`http://127.0.0.1:${port}/?tab=settings&topic=ai`);
+    await expect(page.getByRole("heading", { level: 1, name: "AI & models" })).toBeVisible();
+  };
+  await openAiTopic();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const progress = page.locator(".st-progress");
+  await expect(progress).toContainText("Connect an AI provider");
+  await expect(progress.locator('[aria-current="step"]')).toContainText("Connect a provider");
 
-  const openAiRow = page.locator(".ai-provider").filter({ hasText: "OpenAI" });
+  const openAiRow = page.locator(".st-provider-row").filter({ hasText: "OpenAI" });
   await openAiRow.getByRole("button", { name: "Connect" }).click();
   const openAiDialog = page.getByRole("dialog", { name: "Connect provider" });
   await openAiDialog.getByLabel("OpenAI API key").fill("sk-browser-secret-1234");
@@ -152,6 +160,11 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await expect(page.getByText("OpenAI connected. Assign it to a task below.")).toBeVisible();
   await expect(page.locator("body")).not.toContainText("sk-browser-secret-1234");
 
+  await expect(progress).toContainText("Choose a Transcription model");
+  await progress.getByRole("button", { name: "Choose models", exact: true }).click();
+  await expect(page.getByLabel("Transcription provider")).toBeFocused();
+  await expect.poll(async () => (await page.getByLabel("Transcription provider").boundingBox())!.y).toBeLessThan(844);
+
   const savedRequests: unknown[] = [];
   await page.route("**/api/v1/ai-settings", async (route) => {
     if (route.request().method() === "PUT")
@@ -159,22 +172,23 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
     await route.continue();
   });
 
-  const transcriptionTask = page
-    .locator(".ai-task")
-    .filter({ has: page.getByRole("heading", { name: "Transcription" }) });
-  await transcriptionTask.getByLabel("Provider").selectOption("openai");
-  await expect(transcriptionTask.getByLabel("Model")).toHaveValue(
+  await page.getByLabel("Transcription provider").selectOption("openai");
+  await expect(page.getByLabel("Transcription model")).toHaveValue(
     config.transcriptionModel,
   );
 
-  const analysisTask = page
-    .locator(".ai-task")
-    .filter({ has: page.getByRole("heading", { name: "Analysis" }) });
-  await analysisTask.getByLabel("Provider").selectOption("openai");
-  await analysisTask.getByLabel("Model").selectOption("gpt-5");
-  const thinking = analysisTask.getByRole("group", { name: "Thinking level" });
-  await thinking.getByRole("button", { name: "high" }).click();
+  await page.getByLabel("Analysis provider").selectOption("openai");
+  await page.getByLabel("Analysis model").selectOption("gpt-5");
+  const thinking = page.getByLabel("Analysis thinking level");
+  await thinking.selectOption("high");
   expect(savedRequests).toHaveLength(0);
+  await expect(progress).toContainText("Save your task model changes");
+  await progress.getByRole("button", { name: "Review changes", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeFocused();
+  await expect.poll(async () => {
+    const box = await page.getByRole("button", { name: "Save changes", exact: true }).boundingBox();
+    return box ? box.y >= 0 && box.y + box.height <= 844 : false;
+  }).toBe(true);
   await expect(page.getByRole("button", { name: "Save changes" })).toBeEnabled();
 
   await page.getByRole("button", { name: "Test connection" }).click();
@@ -185,17 +199,15 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
 
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("AI settings saved.")).toBeVisible();
+  await expect(progress).toContainText("Optional: test your setup");
   expect(savedRequests).toEqual([
     {
       transcription: { provider: "openai", model: config.transcriptionModel },
       analysis: { provider: "openai", model: "gpt-5", thinkingLevel: "high" },
     },
   ]);
-  await page.reload();
-  await page
-    .getByRole("navigation", { name: "Settings topics" })
-    .getByRole("button", { name: "AI" })
-    .click();
+  await openAiTopic();
+  await page.setViewportSize({ width: 1440, height: 1020 });
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({
     path: path.join(screenshotDir, "provider-settings-desktop.png"),
@@ -210,15 +222,8 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   });
   await page.setViewportSize({ width: 1440, height: 1020 });
 
-  const persistedAnalysis = page
-    .locator(".ai-task")
-    .filter({ has: page.getByRole("heading", { name: "Analysis" }) });
-  await expect(persistedAnalysis.getByLabel("Model")).toHaveValue("gpt-5");
-  await expect(
-    persistedAnalysis
-      .getByRole("group", { name: "Thinking level" })
-      .getByRole("button", { name: "high" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("Analysis model")).toHaveValue("gpt-5");
+  await expect(thinking).toHaveValue("high");
 
   await page.getByRole("button", { name: "Test connection" }).click();
   const testDialog = page.getByRole("dialog", { name: "Test connection" });
@@ -251,11 +256,9 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await expect(askTest).toContainText("Passed in");
   await testDialog.getByRole("button", { name: "Close connection tests" }).click();
   await expect(page.getByRole("button", { name: "Test connection" })).toBeFocused();
+  await expect(progress).toContainText("AI is set up");
 
-  await persistedAnalysis
-    .getByRole("group", { name: "Thinking level" })
-    .getByRole("button", { name: "low" })
-    .click();
+  await thinking.selectOption("low");
   await expect(page.getByRole("button", { name: "Save changes" })).toBeEnabled();
 
   await openAiRow.getByRole("button", { name: "Change key" }).click();
@@ -263,11 +266,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await manageDialog.getByRole("button", { name: "Replace API key" }).click();
   await manageDialog.getByLabel("OpenAI API key").fill("sk-browser-secret-5678");
   await manageDialog.getByRole("button", { name: "Connect provider" }).click();
-  await expect(
-    persistedAnalysis
-      .getByRole("group", { name: "Thinking level" })
-      .getByRole("button", { name: "low" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(thinking).toHaveValue("low");
   expect(store.aiTaskSelections(store.getUserByUsername("qa-user")!.id)).toMatchObject({
     analysisThinkingLevel: "high",
   });
@@ -282,10 +281,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await expect(testDialog).toContainText("Add provider credits or increase its quota");
   await testDialog.getByRole("button", { name: "Close connection tests" }).click();
 
-  await persistedAnalysis
-    .getByRole("group", { name: "Thinking level" })
-    .getByRole("button", { name: "high" })
-    .click();
+  await thinking.selectOption("high");
   await page.route(
     "**/api/v1/ai-settings",
     (route) =>
@@ -298,11 +294,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   );
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByRole("button", { name: "Save changes" })).toBeEnabled();
-  await expect(
-    persistedAnalysis
-      .getByRole("group", { name: "Thinking level" })
-      .getByRole("button", { name: "high" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(thinking).toHaveValue("high");
 
   await page.setViewportSize({ width: 390, height: 844 });
   expect(

@@ -1,0 +1,14 @@
+const [w,scr]=Wrap(PX,"11 · Settings: AI & models","Settings replaces the app navigation instead of adding a second sidebar. Providers and task models are one calm list each, and unsaved model changes get a clear save bar instead of a silent form.",PY,880);
+wS1=w;
+SB(scr,"settings","AI & models");
+const col=Page(scr,"SETTINGS  /  WORKSPACE","AI & models","Choose who transcribes your saved videos and who analyses them. Keys are encrypted on your server and never shown again.",h=>Btn(h,"Test connection",{icon:"activity"}));
+const p=Section(col,"Providers","Credentials available to transcription and analysis.");
+let r=Row(p,"OpenAI","API key ••••a91F · added 12 Sep 2026",{lead:x=>IconBox(x,"sparkles","#18181b","#ffffff")});Status(r,"Connected");Btn(r,"Change key");
+r=Row(p,"Cerebras","Fast analysis models · no key added",{last:1,lead:x=>IconBox(x,"cpu","#fdeee3","#c2410c")});Status(r,"Not connected","off");Btn(r,"Connect",{icon:"plus"});
+const t=Section(col,"Task models","Each step can use a different connected provider.");
+r=Row(t,"Transcription","Audio and video → searchable text",{lead:x=>IconBox(x,"audio-lines",C.sub,C.mut2)});Select(r,"OpenAI",130,{dot:"#18181b"});Select(r,"gpt-4o-transcribe",200);
+r=Row(t,"Analysis","Summaries, topics, and Ask",{last:1,lead:x=>IconBox(x,"brain",C.sub,C.mut2)});Select(r,"OpenAI",130,{dot:"#18181b"});Select(r,"gpt-5.5",110);Select(r,"Thinking: Medium",172);
+const bar=Fr(col,{name:"Save bar",width:"fill_container",padding:[10,10,10,16],gap:12,alignItems:"center",cornerRadius:10,fill:C.ink,effect:{type:"shadow",offset:{x:0,y:8},blur:24,color:"#18181b33"}});
+I(bar,"circle-dot",15,"#d9a441");T(bar,"Analysis model changed from gpt-5.4 to gpt-5.5",{fontSize:13,fill:"#f4f4f5",textGrowth:"fixed-width",width:"fill_container"});
+const d=Fr(bar,{name:"Discard",height:32,padding:[0,12],alignItems:"center",cornerRadius:7});T(d,"Discard",{fontSize:13,fontWeight:"500",fill:"#d4d4d8"});
+const s=Fr(bar,{name:"Save",height:32,padding:[0,14],alignItems:"center",cornerRadius:7,fill:"#ffffff"});T(s,"Save changes",{fontSize:13,fontWeight:"600",fill:C.ink});
