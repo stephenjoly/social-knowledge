@@ -107,7 +107,8 @@ button.link-arrow { background: none; border: 0; border-bottom: 2px solid transp
 /* ---------- Hero ---------- */
 .hero {
   max-width: 1360px; margin: 0 auto;
-  min-height: min(100svh, 980px);
+  /* Fill the opening viewport so the dark problem scene never peeks in before scrolling. */
+  min-height: 100vh; min-height: 100svh;
   padding: calc(var(--nav-h) + 40px) var(--gutter) 56px;
   display: grid; grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr); gap: 40px; align-items: center;
 }
@@ -565,7 +566,7 @@ button.link-arrow { background: none; border: 0; border-bottom: 2px solid transp
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1180px) {
-  .hero { grid-template-columns: minmax(0, 1fr); gap: 48px; padding-top: calc(var(--nav-h) + 56px); min-height: 0; }
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 48px; padding-top: calc(var(--nav-h) + 56px); align-content: center; }
   .hero__copy { max-width: 720px; }
   .steps { gap: 14px; }
   .step { padding: 18px 16px; }
