@@ -28,6 +28,18 @@ import type {
   SettingsTopic,
 } from "../shared/types";
 import { Avatar, Keycap, cx } from "../components/ui/primitives";
+import {
+  SidebarCollapseButton,
+  SidebarRail,
+  SidebarResizeHandle,
+  useResizableSidebar,
+} from "../components/resizable-sidebar";
+import {
+  APP_SIDEBAR,
+  SIDEBAR_COLLAPSED_WIDTH,
+  SIDEBAR_CONTENT_RESERVE,
+  SIDEBAR_DESKTOP_QUERY,
+} from "../sidebar-layout";
 
 export type AppDestination = Exclude<AppTab, "capture" | "settings">;
 
@@ -327,6 +339,10 @@ export type SidebarProps = {
 };
 
 export function Sidebar(props: SidebarProps) {
+  const sidebar = useResizableSidebar("social-knowledge-app-sidebar", APP_SIDEBAR, {
+    desktopQuery: SIDEBAR_DESKTOP_QUERY,
+    contentReserve: SIDEBAR_CONTENT_RESERVE,
+  });
   const {
     tab,
     settingsTopic,
@@ -341,19 +357,41 @@ export function Sidebar(props: SidebarProps) {
   const settingsMode = tab === "settings";
   const live = activityCounts.active + activityCounts.queued > 0;
   const activeTab = tab === "capture" ? "inbox" : tab;
+  const collapsed = sidebar.collapsed;
   return (
     <aside
-      className={cx("app-sidebar", settingsMode && "app-sidebar-settings", mobileOpen && "open")}
+      ref={sidebar.layoutRef}
+      className={cx(
+        "app-sidebar",
+        settingsMode && "app-sidebar-settings",
+        mobileOpen && "open",
+        collapsed && "is-collapsed",
+      )}
+      style={
+        sidebar.desktop
+          ? { width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebar.width }
+          : undefined
+      }
       aria-label={settingsMode ? "Settings navigation" : "Archive navigation"}
     >
       <button type="button" className="app-sidebar-close" aria-label="Close menu" onClick={onCloseMobile}>
         <X size={18} aria-hidden="true" />
       </button>
+      {sidebar.desktop && collapsed && (
+        <SidebarRail label="sidebar" buttonRef={sidebar.expandRef} onClick={sidebar.expand} />
+      )}
       {settingsMode ? (
         <>
+          {sidebar.desktop && !collapsed && (
+            <SidebarCollapseButton
+              label="sidebar"
+              buttonRef={sidebar.collapseRef}
+              onClick={sidebar.collapse}
+            />
+          )}
           <button type="button" className="app-sidebar-back" onClick={props.onBack}>
             <ArrowLeft size={16} aria-hidden="true" />
-            Back to archive
+            <span>Back to archive</span>
           </button>
           <h2 className="app-sidebar-title">Settings</h2>
           <nav className="app-nav" aria-label="Settings sections">
@@ -389,6 +427,13 @@ export function Sidebar(props: SidebarProps) {
               <LibraryBig size={12} />
             </span>
             <span className="app-wordmark">social knowledge</span>
+            {sidebar.desktop && !collapsed && (
+              <SidebarCollapseButton
+                label="sidebar"
+                buttonRef={sidebar.collapseRef}
+                onClick={sidebar.collapse}
+              />
+            )}
             <button type="button" className="app-brand-capture" aria-label="Capture a post" onClick={props.onCapture}>
               <Plus size={16} aria-hidden="true" />
             </button>
@@ -435,6 +480,16 @@ export function Sidebar(props: SidebarProps) {
         onOpenSettings={() => onNavigate("settings")}
         onSignOut={props.onSignOut}
       />
+      {sidebar.desktop && !collapsed && (
+        <SidebarResizeHandle
+          label="Sidebar width"
+          width={sidebar.width}
+          minWidth={sidebar.minWidth}
+          maxWidth={sidebar.maxWidth}
+          onResize={sidebar.resize}
+          onReset={sidebar.resetWidth}
+        />
+      )}
     </aside>
   );
 }
