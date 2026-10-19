@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-19",
+  "platform": "macOS 27.0.1 (26A434)",
+  "syntheticOnly": true,
+  "status": "partial_native_verification",
+  "verified": {
+    "syntheticFolderChosenInNativeEditor": true,
+    "nativeSeedExportedAndDecoded": true,
+    "tokenFreeProbeSignedAndImported": true,
+    "safariUrlSchemeHandoffStartsProbe": true,
+    "loopbackRedemptionAccepted": true
+  },
+  "nativeActionContracts": {
+    "saveFile": "is.workflow.actions.documentpicker.save",
+    "getFileFromFolder": "is.workflow.actions.documentpicker.open",
+    "getDictionaryFromInput": "is.workflow.actions.detect.dictionary",
+    "matchTextInputParameter": "text"
+  },
+  "unverified": [
+    "folder authorization and persisted credential readback",
+    "acknowledgement and independent capture run",
+    "storage across restart or reboot",
+    "fresh-user and cross-device folder binding portability",
+    "iPhone installation and Share Sheet",
+    "custom native transport error message and sound"
+  ],
+  "blocker": "Folder authorization pending human action. Computer-use tool denies access to com.apple.UserNotificationCenter."
+}
