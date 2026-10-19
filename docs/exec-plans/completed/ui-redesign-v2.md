@@ -1,12 +1,12 @@
 # Rebuild the dashboard UI to the approved v2 design
 
-Status: active
+Status: completed — owner accepted the current UI for release on 2026-10-19
 Owner: Stephen Joly / orchestrating agent
 Started: 2026-10-18
 
 ## Context
 
-The first redesign ([`pen-dev-ui-refresh`](pen-dev-ui-refresh.md)) replaced the dark shell
+The first redesign ([`pen-dev-ui-refresh`](../active/pen-dev-ui-refresh.md)) replaced the dark shell
 with the current light UI. The owner reviewed the result and rejected it: the settings area
 carries a second sidebar, navigation is an undifferentiated flat list, Settings appears
 twice, there is no primary capture action, in-flight work is invisible, and the pages do not
@@ -88,10 +88,10 @@ same region concurrently.
 - [x] Ask merged.
 - [x] Settings merged.
 - [x] Auth merged.
-- [ ] Review passes on all fifteen screens.
+- [x] Owner accepted the current rendered UI for production after disclosure that exact automated visual sign-off remained outstanding. No pixel-fidelity certification is claimed.
 - [x] Draft PR #50 targets staging; all five page branches merged locally.
 - [x] Integrated check and Playwright (six documented local Python-dependent unit failures).
-- [ ] Verified live preview and matching screenshots; PR ready for review.
+- [x] Verified live preview, recorded reference/live comparisons, and received owner acceptance to promote PR #50.
 
 ## Decisions
 
@@ -147,8 +147,7 @@ same region concurrently.
 - [x] Ask evidence/reading continuity and Settings clarity implemented and
   independently exercised.
 - [x] Final CX review confirms every addendum item with evidence; resolve findings.
-- [ ] Full checks, changed-screen comparison, live build identity and journeys,
-  documentation completion, PR #50 ready.
+- [x] Full checks, comparison artifacts, live build identity/journeys and documentation completed; owner authorized readiness and production promotion.
 
 Focused independent browser acceptance passed 13/13 for A and 13/13 for B.
 A tested the initial stable build; B tested the final rebuilt Ask failure-copy
@@ -222,3 +221,14 @@ outside the repository and sourced before any browser run; the harness itself ne
   and task-scoped checkpoints. Reverting its archive code leaves the additive nullable
   column intact. An older binary can show archived bookmarks again but still cannot
   queue unsupported links. No destructive migration or data cleanup is required.
+
+## Owner release acceptance (2026-10-19)
+
+After receiving the final verified preview, 35/35 browser results, passing CI and
+independent all-28 functional CX review, Stephen requested production deployment.
+This accepts the current rendered result for release despite the disclosed pending
+automated exact-visual review; it does not turn that missing review into a pass.
+The earlier draft/visual-blocker notes above describe the previous handoff state.
+Promotion follows staging acceptance, a verified online production backup and
+retained immutable rollback image, then a staging-to-main release PR and live
+production verification. The release PR records the actual tested/deployed SHAs.

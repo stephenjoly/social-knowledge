@@ -1,6 +1,6 @@
 # Shared implementation brief: approved UI v2 UX follow-through
 
-Status: active. Parent owns coordination and this file. Work only in
+Status: completed. Owner accepted the delivered UI for production on 2026-10-19. Parent owned coordination. Work only in
 `/home/paseo/.paseo/worktrees/0ztajp0b/humble-swan`, existing branch and PR #50.
 Approval: Stephen explicitly requested all 28 items implemented with paired QA
 and a final independent CX review. See [acceptance matrix](../../design/ui-v2-ux-addendum.md).
@@ -108,3 +108,8 @@ local missing-python3 failures; no other unexplained failures are acceptable.
   reversible synthetic-bookmark cleanup. Evidence and matching reference/live
   screenshots are under `artifacts/ux-live-preview/`. No real provider calls;
   exact visual sign-off remains the outstanding draft-PR gate.
+
+Owner subsequently requested production promotion after the final evidence and
+visual-review limitation were disclosed. All functional items are accepted; no
+automated pixel-fidelity or physical-phone claim is added. See the completed
+[execution plan](ui-redesign-v2.md) and the staging-to-main release PR for promotion.
