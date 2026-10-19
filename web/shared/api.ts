@@ -7,6 +7,11 @@ export async function api<T>(path: string, options: RequestInit = {}) {
     },
   });
   const body = await response.json().catch(() => ({}));
+  if (response.status === 401 && body.error === "unauthorized" && typeof window !== "undefined" &&
+      (window.location.pathname === "/app" || window.location.pathname.startsWith("/app/"))) {
+    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.location.replace(`/login?${new URLSearchParams({ returnTo })}`);
+  }
   if (!response.ok)
     throw Object.assign(
       new Error(body.error || body.message || "Request failed"),

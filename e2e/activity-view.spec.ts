@@ -106,7 +106,7 @@ test("Activity inspects safe logs, complete failure counts, and compact account 
   });
   await page.route("**/api/v1/jobs/*/retry", (route) => route.fulfill({ contentType: "application/json", body: "{}" }));
 
-  await page.goto("/");
+  await page.goto("/app");
   const inboxNavigation = await page.locator('.app-nav button[data-tab="inbox"]').boundingBox();
   await page.getByRole("button", { name: "Activity", exact: true }).click();
   expect(await page.locator('.app-nav button[data-tab="inbox"]').boundingBox()).toEqual(inboxNavigation);
@@ -252,7 +252,7 @@ test("unsupported URL bookmarks stay visible without misleading retry or platfor
       : { jobs: [bookmark], nextCursor: null, generatedAt: "2026-10-03T12:01:00.000Z", counts: { active: 0, queued: 0, failed: 1, savedToday: 0, recentEvents: 1 } };
     return route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
   });
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "Activity", exact: true }).click();
   const attention = page.locator(".activity-attention-item");
   await expect(attention).toHaveCount(1);

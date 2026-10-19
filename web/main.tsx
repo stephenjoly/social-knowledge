@@ -28,6 +28,7 @@ import { Detail } from "./pages/capture-detail";
 import { Settings } from "./pages/settings";
 import { Library } from "./pages/library";
 import { AskAI } from "./pages/ask";
+import { safeReturnTo } from "../src/browser-routes";
 import {
   MobileTabBar,
   MobileTopbar,
@@ -264,6 +265,12 @@ function App() {
       if (activeOwnerId.current && activeOwnerId.current !== result.user.id)
         resetAccountState();
       activeOwnerId.current = result.user.id;
+      if (window.location.pathname === "/login") {
+        window.location.replace(safeReturnTo(
+          new URLSearchParams(window.location.search).get("returnTo"),
+        ));
+        return;
+      }
       setUser(result.user);
       setAuthState("ready");
     } catch (e) {
@@ -271,7 +278,12 @@ function App() {
       if (activeOwnerId.current) resetAccountState();
       activeOwnerId.current = null;
       setUser(null);
-      const err = e as { body?: { setupRequired?: boolean } };
+      const err = e as { status?: number; body?: { error?: string; setupRequired?: boolean } };
+      if (window.location.pathname !== "/login" && err.status === 401 && err.body?.error === "unauthorized") {
+        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        window.location.replace(`/login?${new URLSearchParams({ returnTo })}`);
+        return;
+      }
       setAuthState(err.body?.setupRequired ? "setup" : "login");
     }
   }
@@ -730,8 +742,7 @@ function App() {
     try {
       await api("/api/auth/logout", { method: "POST" });
     } finally {
-      setUser(null);
-      setAuthState("login");
+      window.location.assign("/login");
     }
   };
   if (authState === "loading")
@@ -752,12 +763,7 @@ function App() {
             setAuthState("onboarding");
             return;
           }
-          const returnTo = new URLSearchParams(window.location.search).get(
-            "returnTo",
-          );
-          if (returnTo?.startsWith("/oauth/authorize?"))
-            window.location.assign(returnTo);
-          else void check();
+          void check();
         }}
       />
     );

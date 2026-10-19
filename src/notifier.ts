@@ -20,7 +20,7 @@ export class Notifier {
           : "Social Knowledge needs attention",
       Tags: input.kind === "complete" ? "white_check_mark" : "warning",
       Priority: input.kind === "complete" ? "default" : "high",
-      Click: `${this.config.appUrl}/?tab=activity&job=${input.jobId}`,
+      Click: `${this.config.appUrl}/app?tab=activity&job=${input.jobId}`,
     };
     if (this.config.ntfyToken)
       headers.Authorization = `Bearer ${this.config.ntfyToken}`;
