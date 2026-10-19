@@ -566,7 +566,7 @@ button.link-arrow { background: none; border: 0; border-bottom: 2px solid transp
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1180px) {
-  .hero { grid-template-columns: minmax(0, 1fr); gap: 48px; padding-top: calc(var(--nav-h) + 56px); min-height: 0; }
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 48px; padding-top: calc(var(--nav-h) + 56px); align-content: center; }
   .hero__copy { max-width: 720px; }
   .steps { gap: 14px; }
   .step { padding: 18px 16px; }
