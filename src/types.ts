@@ -29,6 +29,7 @@ export interface JobRecord {
   createdAt: string;
   updatedAt: string;
   nextAttemptAt: string;
+  archivedAt?: string | null;
   aiProvider?: "openai" | "cerebras" | null;
   transcriptionProvider?: "openai" | "cerebras" | null;
   transcriptionModel?: string | null;

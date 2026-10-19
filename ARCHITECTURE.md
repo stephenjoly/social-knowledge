@@ -76,6 +76,13 @@ retain their focused modules, using the shared settings controls.
 - AI provider credentials and task assignments are separate records. Task assignments own the validated provider, model, and thinking level. Legacy per-provider preferences remain compatible but do not change saved task assignments. Capture jobs snapshot selected models and thinking level at submission or manual retry; Ask uses the current shared analysis assignment. Updating settings does not mutate already queued jobs.
 - Explicit AI connection diagnostics use the account's saved task selection with bounded sample requests. They do not create archive or conversation records. Uploaded test audio stays in memory, and responses contain controlled result codes and selection metadata rather than provider output or raw diagnostics.
 - Authenticated ingestion retains valid HTTPS submissions as owned jobs. Unsupported-platform bookmarks start in a terminal failure state and cannot enter the capture queue; the downloader keeps its Facebook/Instagram allowlist. Shortcut status reads use capture credentials with the same ownership boundary.
+- Unsupported terminal bookmarks have a nullable `jobs.archived_at` visibility field,
+  added after the legacy ownership migration. Owner-scoped archive/restore endpoints
+  change only that field and return the safe Activity projection. Normal Activity,
+  attention, and retry selections exclude archived jobs; the archived filter and
+  direct owner detail preserve access to their URLs and event history. Restoring
+  never queues work. Older binaries ignore the additive column and can show these
+  bookmarks again, while retaining their existing unsupported-platform retry block.
 - SQLite is the catalog and queue source of truth. Media and generated notes are referenced durable filesystem artifacts.
 - Activity responses use an explicit public projection. Raw job records, diagnostic errors, cookie data, credentials, and internal note paths stay behind the persistence boundary. Failed events persist an optional, allowlisted failure code per attempt; legacy causes are inferred only from known historical message prefixes, otherwise remain unavailable. Raw diagnostic text never supplies UI copy. The failure list pages independently of the capture table; bulk retry selects all eligible account-owned failures in one transaction.
 - Social content and model inputs are untrusted. Model outputs are accepted only through explicit structured schemas.
