@@ -9,8 +9,9 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json && vite build && node scripts/copy-roadmap.mjs",
-    "check": "npm run check:docs && npm run typecheck && npm run build && npm test",
+    "check": "npm run check:docs && npm run check:site && npm run typecheck && npm run build && npm test",
     "check:docs": "node scripts/check-docs.mjs",
+    "check:site": "node scripts/sync-landing-site.mjs --check",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run --config vitest.config.ts",

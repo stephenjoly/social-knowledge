@@ -1,6 +1,6 @@
 # Restore accepted Unfold design and simplify setup
 
-Status: restoration implemented; final mobile layout fix blocked by Opus session limit
+Status: restored direction approved by Stephen; remaining mobile fix carried into approved-landing-polish.md
 Owner: Codex foreman and Opus UI worker
 Started: 2026-10-18
 
@@ -27,7 +27,7 @@ Opus owns only five static page files from the original baseline. Foreman owns c
 
 - [x] Regression acknowledged; original baseline identified.
 - [x] UI restoration assigned with compact acceptance contract.
-- [x] Visual-only scope used while optional installer/portable-Shortcut question remains unanswered; no functional installer or universal download is claimed.
+- [x] Stephen explicitly chose visual mockup first; no functional installer or universal download is claimed.
 - [x] Original design and two-step section implemented; desktop verification passed.
 - [ ] Correct and recheck command-row clipping on phone widths (Opus session limit).
 - [ ] Checkpoint/PR updated.
@@ -36,6 +36,7 @@ Opus owns only five static page files from the original baseline. Foreman owns c
 
 - 2026-10-18: User explicitly requests restoring the earlier design. No further visual approval gate.
 - 2026-10-18: Ask about real installer scope because none exists; continue independent restoration immediately.
+- 2026-10-18: Stephen subsequently approved the restored direction, selected mockup first, and deferred onboarding until after shipping. The Astra review's concise copy changes and this remaining phone-width fix are tracked in `approved-landing-polish.md`.
 
 ## Verification
 

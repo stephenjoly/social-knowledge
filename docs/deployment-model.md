@@ -11,6 +11,21 @@ Social Knowledge uses one public source repository and isolated runtime environm
 | Production | The `main` state promoted by an approved `staging` to `main` PR | Existing persistent production volumes | Personal archive and Apple Shortcut endpoint |
 | GitHub Pages | Static files under `site/` | No application data or credentials | Public project homepage |
 
+## Landing-page source
+
+The approved Unfold page is authored under `designs/landing/`. Run
+`node scripts/sync-landing-site.mjs` after changing its runtime assets to update
+the public `site/` bundle. The explicit copy list includes only HTML, CSS,
+JavaScript, the local font and its licence; design notes and other workspace
+files are excluded. `npm run check:site` (also part of `npm run check`) rejects
+stale public assets before merge.
+
+The compact Get started block remains a labeled preview while the one-line
+installer and portable iPhone Shortcut onboarding are deferred. Static-page
+approval does not certify those flows. The existing GitHub Pages workflow
+publishes `site/` on matching `main` changes; preparing a feature-branch bundle
+does not deploy the public page or the private application.
+
 ## Promotion
 
 1. Create a `codex/*` branch from freshly fetched `origin/staging` and open a feature PR targeting `staging`.
