@@ -49,6 +49,108 @@
   display: none;
 }
 
+.app-sidebar .sidebar-collapse,
+.app-sidebar .sidebar-expand {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--radius-icon-box);
+  color: var(--muted);
+}
+
+.app-sidebar .sidebar-collapse:hover,
+.app-sidebar .sidebar-expand:hover,
+.app-sidebar .sidebar-collapse:focus-visible,
+.app-sidebar .sidebar-expand:focus-visible {
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+.app-sidebar .sidebar-collapse svg,
+.app-sidebar .sidebar-expand svg {
+  width: 16px;
+  height: 16px;
+}
+
+.app-sidebar .sidebar-rail {
+  display: flex;
+  justify-content: center;
+}
+
+.app-sidebar .sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.app-sidebar .sidebar-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+}
+
+.app-sidebar .sidebar-resize-handle:hover::after,
+.app-sidebar .sidebar-resize-handle:focus-visible::after,
+.app-sidebar .sidebar-resize-handle[data-dragging="true"]::after {
+  background: var(--accent);
+}
+
+.app-sidebar .sidebar-resize-handle:focus-visible {
+  outline: none;
+}
+
+.app-sidebar.is-collapsed {
+  gap: 12px;
+  padding-inline: 8px;
+}
+
+.app-sidebar.is-collapsed .app-wordmark,
+.app-sidebar.is-collapsed .app-command-label,
+.app-sidebar.is-collapsed .app-command .ui-keycap,
+.app-sidebar.is-collapsed .app-nav-group-label,
+.app-sidebar.is-collapsed .app-nav-label,
+.app-sidebar.is-collapsed .app-nav-shortcut,
+.app-sidebar.is-collapsed .app-profile-name,
+.app-sidebar.is-collapsed .app-sidebar-title,
+.app-sidebar.is-collapsed .app-sidebar-back span,
+.app-sidebar.is-collapsed .app-processing {
+  display: none;
+}
+
+.app-sidebar.is-collapsed .app-brand,
+.app-sidebar.is-collapsed .app-profile {
+  flex-direction: column;
+  gap: 8px;
+  padding-inline: 0;
+}
+
+.app-sidebar.is-collapsed .app-command,
+.app-sidebar.is-collapsed .app-nav .app-nav-row,
+.app-sidebar.is-collapsed .app-sidebar-back {
+  justify-content: center;
+  width: 100%;
+  padding-inline: 0;
+}
+
+body.sidebar-resizing,
+body.sidebar-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
 .app-brand {
   display: flex;
   flex: none;
@@ -1036,6 +1138,12 @@
     transform: none;
     visibility: visible;
     transition: transform 200ms ease;
+  }
+
+  .app-sidebar .sidebar-collapse,
+  .app-sidebar .sidebar-resize-handle,
+  .app-sidebar .sidebar-rail {
+    display: none;
   }
 
   .app-sidebar .app-sidebar-close {
