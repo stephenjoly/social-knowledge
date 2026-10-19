@@ -286,7 +286,7 @@ main.shell:has(> .sk-settings) {
   height: 26px;
   align-items: center;
   justify-content: center;
-  padding: 3px;
+  padding: 0;
   border: 2px solid transparent;
   border-radius: var(--radius-pill);
   background: transparent;
@@ -294,6 +294,7 @@ main.shell:has(> .sk-settings) {
 }
 
 .st-swatch > span {
+  flex: none;
   width: 20px;
   height: 20px;
   border-radius: var(--radius-pill);
