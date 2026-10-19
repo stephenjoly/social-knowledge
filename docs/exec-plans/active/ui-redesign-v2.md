@@ -146,7 +146,7 @@ same region concurrently.
   independently exercised.
 - [x] Ask evidence/reading continuity and Settings clarity implemented and
   independently exercised.
-- [ ] Final CX review confirms every addendum item with evidence; resolve findings.
+- [x] Final CX review confirms every addendum item with evidence; resolve findings.
 - [ ] Full checks, changed-screen comparison, live build identity and journeys,
   documentation completion, PR #50 ready.
 
@@ -171,6 +171,24 @@ receipt primary focus, Tab containment/recovery, Capture another, and Escape
 returning to the opener, plus all 33 existing journeys.
 GitHub CI passed the preceding runtime checkpoint, including all Python-dependent
 Shortcut tests. The local focus-fix check has the same six environment-only failures.
+GitHub CI also passed final runtime checkpoint `09269f9`. The independent CX
+reviewer inspected the fix and passing regressions and recommended all 28 items as
+functionally addressed. Physical-phone behavior remains an explicitly unverified
+limitation, not an additional acceptance gate. The exact visual gate remains open.
+
+Final live preview serves JavaScript/CSS byte-identical to `09269f9`. Desktop and
+390px member/admin journeys passed, including archive/restore, exact synthetic
+bookmark cleanup, keyboard receipt transitions, all Settings topics, and role/owner
+denials. Fifteen live captures and reference comparison sheets are in
+`artifacts/ux-live-preview/`; its report records unavailable empty-admin journeys
+and the absence of real provider/native-device testing. Frontend byte identity is
+proven; no backend SHA attestation is claimed. Two sign-out harness assumptions
+were corrected by navigating visibly to My account; no runtime fix was needed.
+
+Remaining blocker: exact visual review. The assigned Claude workers reached their
+provider allowance; host policy reserves visual-fidelity work to Claude, while the
+owner requested ChatGPT continuation. Functional work and QA continued on GPT.
+PR #50 remains draft and this plan remains active until the visual gate is met.
 
 The five obsolete page worktrees and local branches were removed after confirming
 their heads are ancestors of the integrated branch and their only untracked entry

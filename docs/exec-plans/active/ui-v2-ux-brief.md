@@ -98,5 +98,13 @@ local missing-python3 failures; no other unexplained failures are acceptable.
   queued and retained-setup receipts focus their primary action, Capture another
   focuses Post link, modal Tab recovers outside focus, and Escape restores the
   opener. The final complete browser suite passed 35/35 (46.9 seconds).
-- Final CX and visual acceptance pending. No acceptance inferred from screenshots
-  alone or workers' self-assessment; no physical-phone evidence yet.
+- Final independent CX review recommends all 28 IDs as functionally addressed
+  after closing its focus finding. Final runtime `09269f9` passed GitHub CI,
+  including the Python-dependent tests. Visual acceptance remains pending.
+  No acceptance is inferred from screenshots alone or workers' self-assessment;
+  physical-phone behavior is explicitly unverified.
+- Parent completed final live asset identity and member/admin desktop/mobile
+  journeys on runtime `09269f9`, including receipt keyboard continuity and
+  reversible synthetic-bookmark cleanup. Evidence and matching reference/live
+  screenshots are under `artifacts/ux-live-preview/`. No real provider calls;
+  exact visual sign-off remains the outstanding draft-PR gate.
