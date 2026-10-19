@@ -5,6 +5,10 @@ redesign. The owner approved the fifteen screens in
 [`docs/design/ui-v2/screens/`](ui-v2/screens/) and requires the implementation to
 match them. Treat the screens as normative, not as inspiration.
 
+On 2026-10-19 the owner approved the [28-item UX addendum](ui-v2-ux-addendum.md)
+for this same PR. Its specific behavior and presentation changes supersede the
+corresponding original screen details; unaffected geometry and tokens remain binding.
+
 ## Sources of truth, in priority order
 
 1. **Screen exports** — `docs/design/ui-v2/screens/NN-name.png`. What the owner approved.

@@ -13,14 +13,20 @@ No secrets, raw diagnostics, untrusted instructions, or cross-owner access.
 
 ## Ownership and staged assignments
 
-- UI implementation Worker (Opus high): `web/**` only. Milestone A: items 01–11,
-  17–18, 20, Activity/mobile parts of 28. Milestone B, fresh assignment: Ask and
-  Settings items 12–16, 19, 21–27, remaining 28. Never edit backend/tests/docs.
+- UI A implementation Worker (Opus high): `web/main.tsx`, app-shell, Inbox,
+  Activity, capture dialog, palette, related CSS, and shared types. Items 01–11,
+  17–18, 20, Activity/mobile parts of 28. Never edit backend/tests/docs.
+- UI B implementation Worker (Opus high): `web/pages/ask.tsx`, `ask-format.ts`,
+  `settings.tsx`, `web/account-settings.tsx`, `web/ask.css`, `web/settings.css`,
+  `web/settings-ui.tsx`, `web/shortcut-setup.tsx`, and dedicated new B helper files.
+  Items 12–16, 19, 21–27, remaining 28. Ask A to wire App callbacks/guards; never
+  edit A's files. Starts after backend QA frees a slot, with disjoint ownership.
 - Backend implementation Worker (Codex medium): `src/**` only, item 08 and safe
   retained-capture/reopened-Ask contracts when necessary. Coordinate API changes
   through parent. No UI/tests/docs edits.
-- Backend QA Worker (Codex medium): `test/ui-v2-ux-backend.test.ts` only; independent
-  migration/ownership/recovery tests and review. Report findings to parent.
+- Backend QA Worker (Codex medium): `test/ui-v2-ux-backend.test.ts` and the existing
+  Activity API safe-field assertion; independent migration/ownership/recovery tests
+  and review. Completed: 21 independent tests, 41 combined tests passed.
 - UI QA Worker, staged when a slot opens (Codex medium): `e2e/**`, `scripts/**`,
   and specifically assigned UI unit tests. Independent journeys for every item,
   no runtime edits. Coordinate deterministic fixtures with implementation.

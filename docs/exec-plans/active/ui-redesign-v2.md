@@ -134,6 +134,22 @@ same region concurrently.
   visual/layout work for Claude, so exact-fidelity acceptance remains pending.
   PR #50 stays draft until all acceptance criteria are met.
 
+## UX follow-through (2026-10-19)
+
+- [x] Recorded the owner's approval of all 28 improvements in the design addendum.
+- [x] Created visible implementation and independent QA workers in the existing
+  workspace with disjoint file ownership.
+- [x] Implemented additive, owner-scoped unsupported-bookmark archive/restore;
+  independent QA passed 21 new contract tests and 41 combined archive/Activity/database
+  tests. Typechecks passed; committed checkpoint `5d9d184`.
+- [ ] Capture, Activity, Inbox, palette, and setup entry points implemented and
+  independently exercised.
+- [ ] Ask evidence/reading continuity and Settings clarity implemented and
+  independently exercised.
+- [ ] Final CX review confirms every addendum item with evidence; resolve findings.
+- [ ] Full checks, changed-screen comparison, live build identity and journeys,
+  documentation completion, PR #50 ready.
+
 ## Verification
 
 - `npx tsx scripts/ui-screens.ts` writes all fifteen screens to `artifacts/ui-screens/`;
@@ -154,6 +170,11 @@ outside the repository and sourced before any browser run; the harness itself ne
 - **Regression in working journeys.** The existing Vitest and Playwright suites run on every
   stream; a stream is not merged with a failing check.
 - **Scope creep into backend work.** The spec lists what is backed by an endpoint. Anything else
-  is a blocker to raise, not a feature to invent.
+  is a blocker to raise, not a feature to invent. The approved UX addendum explicitly
+  authorizes reversible unsupported-bookmark archiving; it does not authorize deletion.
 - Rollback is per stream: each is an isolated branch, and the integration branch can drop a
   merge without disturbing the others.
+- The UX follow-through uses the owner's single worktree with disjoint file ownership
+  and task-scoped checkpoints. Reverting its archive code leaves the additive nullable
+  column intact. An older binary can show archived bookmarks again but still cannot
+  queue unsupported links. No destructive migration or data cleanup is required.
