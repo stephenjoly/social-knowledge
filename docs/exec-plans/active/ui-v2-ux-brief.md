@@ -94,5 +94,9 @@ local missing-python3 failures; no other unexplained failures are acceptable.
 - Fresh independent GPT-6.1-Sol high CX reviewer
   `e74c329f-90c8-4ccd-a78e-87beaa6244aa` reviews every acceptance item against
   code and independent evidence. Its scope excludes visual-fidelity judgments.
+- Its Capture focus-transition finding was fixed and independently verified:
+  queued and retained-setup receipts focus their primary action, Capture another
+  focuses Post link, modal Tab recovers outside focus, and Escape restores the
+  opener. The final complete browser suite passed 35/35 (46.9 seconds).
 - Final CX and visual acceptance pending. No acceptance inferred from screenshots
   alone or workers' self-assessment; no physical-phone evidence yet.

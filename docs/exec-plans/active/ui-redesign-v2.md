@@ -155,9 +155,26 @@ A tested the initial stable build; B tested the final rebuilt Ask failure-copy
 and citation-return fixes. The final combined check passed docs, types, and build:
 249 unit tests passed, 3 skipped, and six failed solely because python3 is absent.
 The complete seeded browser suite passed 33/33 on the final build, including both
-QA streams and existing journeys. The parent is completing responsive captures;
-a fresh visible GPT-6.1-Sol high worker owns the independent functional CX review.
+QA streams and existing journeys. All 60 responsive captures (15 each at 1280,
+1440, 1024, and 390px) have no document overflow or browser exceptions; comparison
+sheets are generated. A fresh visible GPT-6.1-Sol high worker owns the independent
+functional CX review. Runtime checkpoint `2f2e16a` is pushed to PR #50.
 Exact visual acceptance and final live-preview verification remain open.
+
+Independent final CX review checked every addendum ID against implementation and
+QA assertions. It found one additional keyboard-continuity issue: Capture lost
+focus while switching between its form and receipt. The correction focuses the
+new state's primary control while preserving the opener; modal Tab handling also
+recovers outside focus. Independent queued/retained-setup keyboard regressions
+passed, and the complete browser suite passed 35/35 in 46.9 seconds. This includes
+receipt primary focus, Tab containment/recovery, Capture another, and Escape
+returning to the opener, plus all 33 existing journeys.
+GitHub CI passed the preceding runtime checkpoint, including all Python-dependent
+Shortcut tests. The local focus-fix check has the same six environment-only failures.
+
+The five obsolete page worktrees and local branches were removed after confirming
+their heads are ancestors of the integrated branch and their only untracked entry
+was a dependency symlink. No force removal was used; unrelated worktrees remain.
 
 ## Verification
 

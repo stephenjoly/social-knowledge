@@ -1,4 +1,4 @@
-import { useRef, type FormEvent } from "react";
+import { useEffect, useRef, type FormEvent } from "react";
 import {
   Archive,
   Bookmark,
@@ -198,6 +198,12 @@ export function CaptureDialog({
 }) {
   const ref = useRef<HTMLElement>(null);
   useDialogFocus(ref, onClose);
+  // The dialog stays mounted while its form and receipt replace one another.
+  // Move focus to the new state's primary control without losing the opener
+  // recorded by useDialogFocus for Escape/close restoration.
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+  }, [receipt]);
   const detected = detectPost(url);
   const otherSite = !detected && isOtherSite(url);
   const copy = receipt ? receiptCopy[receipt.outcome] : null;

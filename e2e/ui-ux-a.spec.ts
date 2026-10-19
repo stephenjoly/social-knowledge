@@ -22,6 +22,72 @@ async function submit(page: Page, url: string) {
   return page.getByRole("dialog");
 }
 
+for (const scenario of [
+  { name: "queued", account: fixtureAccount, status: 202, primary: "View progress", title: "Post queued" },
+  { name: "retained 428 setup", account: { username: "maya", password: "fixture-maya-password", displayName: "Maya Chen" }, status: 428, primary: "Set up AI", title: "Link saved — AI setup needed" },
+]) {
+  test(`F1 02,03,28 keyboard focus survives ${scenario.name} receipt and Capture another`, async ({ page }) => {
+    await login(page, scenario.account);
+    const opener = page.getByRole("button", { name: "Capture a post", exact: true });
+    await opener.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog");
+    const link = dialog.getByLabel("Post link", { exact: true });
+    await expect(link).toBeFocused();
+    const url = `https://www.instagram.com/reel/qa-keyboard-${scenario.status}/`;
+    await link.fill(url);
+    const response = page.waitForResponse((item) => item.url().endsWith("/api/v1/jobs") && item.request().method() === "POST");
+    // Submit from the focused field using only the keyboard. The disappearing
+    // field must transfer focus to the receipt action rather than document.body.
+    await page.keyboard.press("Enter");
+    const receipt = await response;
+    expect(receipt.status()).toBe(scenario.status);
+    const body = await receipt.json();
+    expect(body.job.status).toBe(scenario.status === 428 ? "failed" : "queued");
+    if (scenario.status === 428) {
+      expect(body.job.errorCode).toBe("ai_setup_required");
+      const stored = await browserApi(page, `/api/v1/jobs/${body.job.id}`);
+      expect(stored.status()).toBe(200);
+      expect((await stored.json()).job.normalizedUrl).toBe(url.replace(/\/$/, ""));
+    }
+    await expect(dialog.getByRole("heading", { name: scenario.title, exact: true })).toBeVisible();
+    const primary = dialog.getByRole("button", { name: scenario.primary, exact: true });
+    await expect(primary).toBeFocused();
+    const close = dialog.getByRole("button", { name: "Close capture", exact: true });
+    await page.keyboard.press("Tab");
+    await expect(close).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(primary).toBeFocused();
+    for (const key of ["Tab", "Shift+Tab"]) {
+      for (let step = 0; step < 6; step++) {
+        await page.keyboard.press(key);
+        expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+      }
+    }
+    // Programmatic outside focus can occur during DOM replacement or browser
+    // integration. Tab must recover into the modal in either direction.
+    await opener.evaluate((element: HTMLButtonElement) => element.focus());
+    await expect(opener).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(close).toBeFocused();
+    await opener.evaluate((element: HTMLButtonElement) => element.focus());
+    await page.keyboard.press("Shift+Tab");
+    await expect(primary).toBeFocused();
+    const another = dialog.getByRole("button", { name: "Capture another", exact: true });
+    for (let step = 0; step < 5; step++) {
+      if (await another.evaluate((element) => element === document.activeElement)) break;
+      await page.keyboard.press("Shift+Tab");
+    }
+    await expect(another).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(dialog.getByRole("heading", { name: "Capture a post", exact: true })).toBeVisible();
+    await expect(link).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
+  });
+}
+
 test("02 receipts distinguish queued, saved, processing, and retained unsupported URLs", async ({ page }) => {
   await login(page);
   const cases = [
