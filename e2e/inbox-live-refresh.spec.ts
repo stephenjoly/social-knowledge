@@ -28,7 +28,7 @@ test("Inbox starts with capture controls and coalesces live refreshes", async ({
     counts: { active: 0, queued: 0, failed: 0, savedToday: 0, recentEvents: 0 },
   } }));
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
   await expect(page.getByPlaceholder("Search titles, notes, or creators")).toBeVisible();
   await expect(page.locator(".analytics-card, .inbox-analytics")).toHaveCount(0);

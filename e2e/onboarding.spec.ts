@@ -54,7 +54,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
       },
     });
   });
-  await page.goto(baseUrl);
+  await page.goto(`${baseUrl}/login`);
   await page.getByLabel("Username").fill("first-admin");
   await page
     .getByLabel("Password", { exact: true })
@@ -75,7 +75,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   await page.getByRole("button", { name: "Use for analysis" }).click();
   await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
 
-  await page.goto(`${baseUrl}/?tab=settings`);
+  await page.goto(`${baseUrl}/app?tab=settings`);
   await page
     .getByRole("navigation", { name: "Settings topics" })
     .getByRole("button", { name: "People & access" })
@@ -184,7 +184,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   ).toBeVisible();
   await accountMenu.getByRole("button", { name: "Log out" }).click();
   await expect(
-    invitedPage.getByRole("heading", { name: "Invitation unavailable" }),
+    invitedPage.getByRole("heading", { name: "Welcome back" }),
   ).toBeVisible();
   await invitedContext.close();
 });

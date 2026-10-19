@@ -18,6 +18,10 @@ Claude Opus 5.5 High worker owns only `designs/landing/index.html` and `landing.
 
 Foreman owns docs, verification, checkpoint/PR49, and mechanical publication of the approved static bundle into `site/` for existing GitHub Pages workflow. This does not authorize or perform production-app promotion.
 
-## Acceptance
+## Runtime-routing follow-up (2026-10-18)
+
+Stephen subsequently authorized and Codex implemented `/` public landing, `/login` existing authentication, and `/app` private dashboard. Runtime packaging (`scripts/package-landing.mjs`) adds Sign in/Open app links using existing link styles and a session/legacy-invitation script, without editing the design HTML/CSS. Preserve that integration when polishing the source: keep hero `data-try`, privacy link, and script references usable by the packager. After source sync, rebuild and verify the integrated page as well as the static preview. No new approval or onboarding scope is introduced.
+
+## Original polish acceptance
 
 Small diff implementing copy above; no approved visual direction changes. Copy button fully visible, tappable and within command box at 375/390px with both placeholder and long command; no page overflow; desktop unchanged. Hero, example selector and sample search remain intact. Existing preview labels remain honest and obvious enough. Use own browser/tab; report focused checks and limitations, then finish. No extra exploration.

@@ -9,6 +9,7 @@ import { hash, verify } from "@node-rs/argon2";
 import Fastify, { type FastifyRequest } from "fastify";
 import { z } from "zod";
 import { AuthService, SESSION_COOKIE } from "./auth.js";
+import { safeReturnTo } from "./browser-routes.js";
 import type { AppConfig } from "./config.js";
 import {
   captureSortKeys,
@@ -488,7 +489,41 @@ export function buildApp(
   app.register(fastifyStatic, {
     root: config.uiDir,
     prefix: "/",
-    wildcard: false,
+    index: false,
+  });
+  app.get("/", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const params = new URL(request.raw.url!, "http://local.invalid").searchParams;
+    // Preserve application bookmarks made before the public root existed.
+    if (params.has("returnTo"))
+      return reply.redirect(`/login?${params.toString()}`);
+    if (params.has("tab") || params.has("job"))
+      return reply.redirect(`/app?${params.toString()}`);
+    return reply.sendFile("landing/index.html");
+  });
+  app.get("/login", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const destination = safeReturnTo(
+      new URL(request.raw.url!, "http://local.invalid").searchParams.get("returnTo"),
+    );
+    if (auth.user(request)) return reply.redirect(destination);
+    return reply.sendFile("index.html");
+  });
+  app.get("/login/", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return reply.redirect(`/login${new URL(request.raw.url!, "http://local.invalid").search}`);
+  });
+  for (const route of ["/app", "/app/*"]) {
+    app.get(route, async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      if (!auth.user(request))
+        return reply.redirect(`/login?${new URLSearchParams({ returnTo: request.raw.url! })}`);
+      return reply.sendFile("index.html");
+    });
+  }
+  app.get("/index.html", async (_request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return reply.redirect("/app");
   });
   app.get("/health", async () => ({ status: "ok" }));
   app.get("/openapi.json", async () => openApiDocument(config.appUrl));
@@ -652,6 +687,10 @@ export function buildApp(
     auth.logout(request.cookies[SESSION_COOKIE]);
     reply.clearCookie(SESSION_COOKIE, { path: "/" });
     return { ok: true };
+  });
+  app.get("/api/auth/session", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return { authenticated: Boolean(auth.user(request)) };
   });
   app.get("/api/auth/me", async (request, reply) => {
     const user = auth.user(request);
@@ -1073,7 +1112,7 @@ export function buildApp(
       });
       return {
         invitation,
-        invitationUrl: `${config.appUrl.replace(/\/$/, "")}/#invite=${token}`,
+        invitationUrl: `${config.appUrl.replace(/\/$/, "")}/login#invite=${token}`,
       };
     };
     protectedApi.patch("/api/v1/account/profile", async (request, reply) => {
@@ -1199,7 +1238,7 @@ export function buildApp(
         return invitation
           ? reply.code(201).send({
               invitation,
-              invitationUrl: `${config.appUrl.replace(/\/$/, "")}/#invite=${token}`,
+              invitationUrl: `${config.appUrl.replace(/\/$/, "")}/login#invite=${token}`,
             })
           : reply.code(404).send({ error: "invitation_not_found" });
       },
@@ -2123,6 +2162,5 @@ export function buildApp(
       });
     });
   });
-  app.get("/*", async (_request, reply) => reply.sendFile("index.html"));
   return app;
 }

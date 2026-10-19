@@ -12,7 +12,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   page,
 }) => {
   test.setTimeout(120000);
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByLabel("Username").fill(username!);
   await page.getByLabel("Password").fill(password!);
   await page.getByRole("button", { name: "Continue" }).click();

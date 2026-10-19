@@ -12,7 +12,7 @@ test("restores page and dialog navigation with browser history", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByLabel("Username").fill(username!);
   await page.getByLabel("Password").fill(password!);
   await page.getByRole("button", { name: "Continue" }).click();

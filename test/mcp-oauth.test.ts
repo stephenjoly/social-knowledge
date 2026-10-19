@@ -30,6 +30,12 @@ describe("OAuth and MCP", () => {
     const cookie = String(login.headers["set-cookie"]).split(";")[0];
     const verifier = "v".repeat(64), challenge = createHash("sha256").update(verifier).digest("base64url");
     const authBody = { response_type: "code", client_id: clientId, redirect_uri: "https://client.example/callback", scope: "knowledge:read", state: "state-1", code_challenge: challenge, code_challenge_method: "S256", resource: `${config.appUrl}/mcp` };
+    const authorizationUrl = `/oauth/authorize?${new URLSearchParams(authBody)}`;
+    const signedOut = await app.inject(authorizationUrl);
+    expect(signedOut.statusCode).toBe(302);
+    const loginRedirect = new URL(signedOut.headers.location!, config.appUrl);
+    expect(loginRedirect.pathname).toBe("/login");
+    expect(loginRedirect.searchParams.get("returnTo")).toBe(authorizationUrl);
     const consent = await app.inject({ method: "POST", url: "/oauth/authorize", headers: { cookie }, payload: authBody });
     expect(consent.statusCode).toBe(302); const code = new URL(consent.headers.location!).searchParams.get("code")!;
     const exchanged = await app.inject({ method: "POST", url: "/oauth/token", headers: { "content-type": "application/x-www-form-urlencoded" }, payload: new URLSearchParams({ grant_type: "authorization_code", code, client_id: clientId, redirect_uri: authBody.redirect_uri, code_verifier: verifier, resource: authBody.resource }).toString() });

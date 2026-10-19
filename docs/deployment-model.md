@@ -20,6 +20,14 @@ JavaScript, the local font and its licence; design notes and other workspace
 files are excluded. `npm run check:site` (also part of `npm run check`) rejects
 stale public assets before merge.
 
+The application build also packages this bundle under `dist-ui/landing/`, so
+Dokploy serves the landing at the application's base URL. `/login` serves the
+existing authentication/setup screens and `/app` requires a browser session.
+Runtime-only integration reuses existing link styling for Sign in/Open app and
+forwards legacy fragment invitations. Keep `APP_URL` set to the origin, without
+an `/app` suffix; API, Shortcut, MCP and OAuth URLs are unchanged. GitHub Pages
+remains an independent static project homepage, without instance login links.
+
 The compact Get started block remains a labeled preview while the one-line
 installer and portable iPhone Shortcut onboarding are deferred. Static-page
 approval does not certify those flows. The existing GitHub Pages workflow

@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.build.json && vite build && node scripts/copy-roadmap.mjs",
+    "build": "tsc -p tsconfig.build.json && vite build && node scripts/copy-roadmap.mjs && node scripts/package-landing.mjs",
     "check": "npm run check:docs && npm run check:site && npm run typecheck && npm run build && npm test",
     "check:docs": "node scripts/check-docs.mjs",
     "check:site": "node scripts/sync-landing-site.mjs --check",

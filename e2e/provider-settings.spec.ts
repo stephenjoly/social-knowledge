@@ -117,7 +117,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1020 });
-  await page.goto(`http://127.0.0.1:${port}`);
+  await page.goto(`http://127.0.0.1:${port}/app`);
   await page.getByLabel("Username").fill("qa-user");
   await page.getByLabel("Password").fill("a-strong-qa-password");
   await page.getByRole("button", { name: "Continue" }).click();

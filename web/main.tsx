@@ -10,6 +10,7 @@ import {
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { safeReturnTo } from "../src/browser-routes";
 import {
   Activity,
   Bot,
@@ -918,6 +919,11 @@ async function api<T>(path: string, options: RequestInit = {}) {
     },
   });
   const body = await response.json().catch(() => ({}));
+  if (response.status === 401 &&
+      (window.location.pathname === "/app" || window.location.pathname.startsWith("/app/"))) {
+    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.location.replace(`/login?${new URLSearchParams({ returnTo })}`);
+  }
   if (!response.ok)
     throw Object.assign(
       new Error(body.error || body.message || "Request failed"),
@@ -4690,10 +4696,21 @@ function App() {
   async function check() {
     try {
       const result = await api<{ user: AccountUser }>("/api/auth/me");
+      if (window.location.pathname === "/login") {
+        window.location.replace(safeReturnTo(
+          new URLSearchParams(window.location.search).get("returnTo"),
+        ));
+        return;
+      }
       setUser(result.user);
       setAuthState("ready");
     } catch (e) {
       setUser(null);
+      if (window.location.pathname !== "/login") {
+        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        window.location.replace(`/login?${new URLSearchParams({ returnTo })}`);
+        return;
+      }
       const err = e as { body?: { setupRequired?: boolean } };
       setAuthState(err.body?.setupRequired ? "setup" : "login");
     }
@@ -5059,8 +5076,7 @@ function App() {
     try {
       await api("/api/auth/logout", { method: "POST" });
     } finally {
-      setUser(null);
-      setAuthState("login");
+      window.location.assign("/login");
     }
   };
   if (authState === "loading")
@@ -5081,12 +5097,7 @@ function App() {
             setAuthState("onboarding");
             return;
           }
-          const returnTo = new URLSearchParams(window.location.search).get(
-            "returnTo",
-          );
-          if (returnTo?.startsWith("/oauth/authorize?"))
-            window.location.assign(returnTo);
-          else void check();
+          void check();
         }}
       />
     );

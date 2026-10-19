@@ -2,6 +2,10 @@
 
 Social Knowledge is a single-process TypeScript application with a React browser client. The monolith is intentional: one deployable owns ingestion, processing, search, export, and the authenticated UI while keeping data local and operational complexity low.
 
+The same runtime serves the public Unfold landing at `/`, existing sign-in/first-account/invitation screens at `/login`, and the session-protected dashboard at `/app`. Signed-out app visits preserve their destination through login; signed-in login visits continue to the app or an allowlisted OAuth authorization URL. APIs, OAuth and MCP retain their origin-root paths. Old root tab/job bookmarks redirect to `/app`, and a small public browser script forwards old fragment invitations to `/login` without putting tokens in HTTP requests. Unknown browser paths return 404 rather than the dashboard shell.
+
+The build packages `site/` into `dist-ui/landing/`, separately from Vite assets, and adds instance sign-in/open-app links plus legacy-invitation handling. The standalone Pages bundle stays host-independent. Landing artwork and styling remain authored under `designs/landing/`.
+
 ## System map
 
 ```text

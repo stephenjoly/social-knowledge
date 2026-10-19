@@ -8,7 +8,9 @@ import { testConfig } from "../test/helpers.js";
 
 const root = await mkdtemp(path.join(os.tmpdir(), "social-knowledge-qa-"));
 const config = testConfig(root);
-config.appUrl = "http://127.0.0.1:4185";
+const port = Number(process.env.PASEO_PORT ?? "4185");
+if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid preview port");
+config.appUrl = process.env.APP_URL || `http://127.0.0.1:${port}`;
 await mkdir(path.dirname(config.databasePath), { recursive: true });
 const store = new JobStore(config.databasePath);
 const app = buildApp(config, store, new EventHub());
@@ -24,7 +26,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => { void close().then(() => process.exit(0)); });
 }
 try {
-  await app.listen({ host: "127.0.0.1", port: 4185 });
+  await app.listen({ host: "127.0.0.1", port });
 } catch (error) {
   await close();
   throw error;
