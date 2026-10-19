@@ -278,12 +278,12 @@ function App() {
       if (activeOwnerId.current) resetAccountState();
       activeOwnerId.current = null;
       setUser(null);
-      if (window.location.pathname !== "/login") {
+      const err = e as { status?: number; body?: { error?: string; setupRequired?: boolean } };
+      if (window.location.pathname !== "/login" && err.status === 401 && err.body?.error === "unauthorized") {
         const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
         window.location.replace(`/login?${new URLSearchParams({ returnTo })}`);
         return;
       }
-      const err = e as { body?: { setupRequired?: boolean } };
       setAuthState(err.body?.setupRequired ? "setup" : "login");
     }
   }

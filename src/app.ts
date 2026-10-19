@@ -499,7 +499,7 @@ export function buildApp(
       return reply.redirect(`/login?${params.toString()}`);
     if (params.has("tab") || params.has("job") || params.has("capture"))
       return reply.redirect(`/app?${params.toString()}`);
-    return reply.sendFile("landing/index.html");
+    return reply.sendFile("landing/index.html", { cacheControl: false });
   });
   app.get("/login", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -507,7 +507,7 @@ export function buildApp(
       new URL(request.raw.url!, "http://local.invalid").searchParams.get("returnTo"),
     );
     if (auth.user(request)) return reply.redirect(destination);
-    return reply.sendFile("index.html");
+    return reply.sendFile("index.html", { cacheControl: false });
   });
   app.get("/login/", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -518,7 +518,7 @@ export function buildApp(
       reply.header("Cache-Control", "no-store");
       if (!auth.user(request))
         return reply.redirect(`/login?${new URLSearchParams({ returnTo: request.raw.url! })}`);
-      return reply.sendFile("index.html");
+      return reply.sendFile("index.html", { cacheControl: false });
     });
   }
   app.get("/index.html", async (_request, reply) => {

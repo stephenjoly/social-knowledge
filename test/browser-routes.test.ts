@@ -1,12 +1,49 @@
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { safeReturnTo } from "../src/browser-routes.js";
 import { JobStore } from "../src/db.js";
 import { EventHub } from "../src/events.js";
 import { testConfig } from "./helpers.js";
+import { api } from "../web/shared/api.js";
+
+describe("expired browser sessions", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each(["/app", "/app/detail"])("returns %s to login with its query and fragment", async (pathname) => {
+    const replace = vi.fn();
+    vi.stubGlobal("window", { location: { pathname, search: "?tab=activity&job=old", hash: "#source", replace } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 })));
+    await expect(api("/api/v1/jobs")).rejects.toMatchObject({ status: 401, body: { error: "unauthorized" }, message: "unauthorized" });
+    expect(replace).toHaveBeenCalledExactlyOnceWith(`/login?${new URLSearchParams({ returnTo: `${pathname}?tab=activity&job=old#source` })}`);
+  });
+
+  it.each(["/login", "/", "/application"])("does not create a login redirect loop from %s", async (pathname) => {
+    const replace = vi.fn();
+    vi.stubGlobal("window", { location: { pathname, replace } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "invalid_credentials" }), { status: 401 })));
+    await expect(api("/api/auth/login")).rejects.toMatchObject({ status: 401, message: "invalid_credentials" });
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it.each([403, 500])("keeps non-session error %s on the current app page", async (status) => {
+    const replace = vi.fn();
+    vi.stubGlobal("window", { location: { pathname: "/app", replace } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "fixture_failure" }), { status })));
+    await expect(api("/api/v1/jobs")).rejects.toMatchObject({ status, message: "fixture_failure" });
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("keeps a rejected provider key in its Settings dialog", async () => {
+    const replace = vi.fn();
+    vi.stubGlobal("window", { location: { pathname: "/app", search: "?tab=settings", replace } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "invalid_api_key" }), { status: 401 })));
+    await expect(api("/api/v1/ai-providers/openai", { method: "PUT" })).rejects.toMatchObject({ status: 401, message: "invalid_api_key" });
+    expect(replace).not.toHaveBeenCalled();
+  });
+});
 
 describe("authentication return destinations", () => {
   it.each([
@@ -51,6 +88,7 @@ describe("public landing and private browser routes", () => {
   it("serves the packaged public page and assets without exposing the app", async () => {
     const landing = await app.inject("/");
     expect(landing.statusCode).toBe(200);
+    expect(landing.headers["cache-control"]).toBe("no-store");
     expect(landing.body).toContain("You saved it");
     expect(landing.body).toContain('href="/login" data-session-link');
     expect(landing.body).toContain('/landing/session.js');
@@ -78,6 +116,7 @@ describe("public landing and private browser routes", () => {
     expect((await app.inject("/index.html")).headers.location).toBe("/app");
     const login = await app.inject("/login");
     expect(login.statusCode).toBe(200);
+    expect(login.headers["cache-control"]).toBe("no-store");
     expect(login.body).toContain('id="root"');
     const setup = await app.inject("/api/auth/me");
     expect(setup.json().setupRequired).toBe(true);
@@ -88,6 +127,7 @@ describe("public landing and private browser routes", () => {
     expect((await request("/api/auth/session")).json()).toEqual({ authenticated: true });
     expect((await request("/")).body).toContain("You saved it");
     expect((await request("/app")).body).toContain('id="root"');
+    expect((await request("/app")).headers["cache-control"]).toBe("no-store");
     expect((await request("/login")).headers.location).toBe("/app");
     const destination = "/app?tab=settings";
     expect((await request(`/login?returnTo=${encodeURIComponent(destination)}`)).headers.location).toBe(destination);
@@ -98,6 +138,7 @@ describe("public landing and private browser routes", () => {
     expect((await request("/app")).statusCode).toBe(302);
   });
   it("preserves old root bookmarks and creates login-based invitations", async () => {
+    expect((await app.inject("/?job=example")).headers.location).toBe("/app?job=example");
     expect((await app.inject("/?tab=settings&job=example")).headers.location).toBe("/app?tab=settings&job=example");
     expect((await app.inject("/?capture=1")).headers.location).toBe("/app?capture=1");
     expect((await app.inject("/?returnTo=%2Foauth%2Fauthorize%3Fstate%3Dx")).headers.location).toBe("/login?returnTo=%2Foauth%2Fauthorize%3Fstate%3Dx");
@@ -107,5 +148,12 @@ describe("public landing and private browser routes", () => {
     expect(new URL(invite.json().invitationUrl).pathname).toBe("/login");
     expect(new URL(invite.json().invitationUrl).search).toBe("");
     expect(new URL(invite.json().invitationUrl).hash).toMatch(/^#invite=/);
+  });
+  it("canonicalizes trailing login slash without losing the return destination", async () => {
+    const query = new URLSearchParams({ returnTo: "/app?tab=activity&job=example" }).toString();
+    const response = await app.inject(`/login/?${query}`);
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toBe(`/login?${query}`);
+    expect(response.headers["cache-control"]).toBe("no-store");
   });
 });

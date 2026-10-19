@@ -1,6 +1,6 @@
 # Restore accepted Unfold design and simplify setup
 
-Status: restored direction approved by Stephen; remaining mobile fix carried into approved-landing-polish.md
+Status: completed; remaining mobile work completed by approved-landing-polish.md
 Owner: Codex foreman and Opus UI worker
 Started: 2026-10-18
 
@@ -29,8 +29,8 @@ Opus owns only five static page files from the original baseline. Foreman owns c
 - [x] UI restoration assigned with compact acceptance contract.
 - [x] Stephen explicitly chose visual mockup first; no functional installer or universal download is claimed.
 - [x] Original design and two-step section implemented; desktop verification passed.
-- [ ] Correct and recheck command-row clipping on phone widths (Opus session limit).
-- [ ] Checkpoint/PR updated.
+- [x] Correct and recheck command-row clipping on phone widths; verified in the completed approved-landing-polish milestone.
+- [x] Checkpoint/PR updated.
 
 ## Decisions
 
@@ -51,3 +51,5 @@ Opus 5.5 High wrote the restoration and new setup block, then hit its session li
 ## Risks and recovery
 
 No production deployment or account data involved. Installation functionality must be implemented and verified separately before advertising an executable endpoint. Preserve prior work in git history; remove only rejected task-owned screenshot artifacts.
+
+Completion note: the historical clipping finding above was resolved and verified in `docs/exec-plans/completed/approved-landing-polish.md`; this restoration plan is closed. Onboarding implementation remains explicitly deferred.

@@ -15,5 +15,7 @@ html = html.replace(/(<button[^>]+data-try>.*?<\/button>)/, '$1\n          <a cl
 const footerSlot = /<span\s+data-footer-session-slot(?:="")?\s*>\s*<\/span>/;
 if (!footerSlot.test(html)) throw new Error("Landing footer is missing its runtime session-link slot");
 html = html.replace(footerSlot, '<a href="/login" data-session-link>Sign in</a>');
+if ((html.match(/data-session-link/g) ?? []).length !== 3)
+  throw new Error("Landing must include header, hero and footer session links");
 await writeFile("dist-ui/landing/index.html", html);
 await cp("web/landing-session.js", "dist-ui/landing/session.js");
