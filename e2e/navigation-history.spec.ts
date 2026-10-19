@@ -25,25 +25,62 @@ test("restores page and dialog navigation with browser history", async ({
   await page.goForward();
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
 
-  await expect(page.getByRole("button", { name: "Capture a post" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Inbox", exact: true }).click();
   await page.getByRole("button", { name: "Capture a post" }).click();
-  await expect(page).toHaveURL(/tab=capture/);
-  await page.getByRole("button", { name: "Close capture" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Inbox", exact: true }),
-  ).toBeVisible();
-  await expect(page).not.toHaveURL(/tab=capture/);
+  await expect(page).toHaveURL(/tab=activity&capture=1/);
+  await expect(page.getByRole("dialog", { name: "Capture a post" })).toBeVisible();
   await page.goBack();
+  await expect(page.getByRole("dialog", { name: "Capture a post" })).toHaveCount(0);
+  await page.goForward();
+  await page.getByRole("button", { name: "Close capture" }).click();
+  await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+  await expect(page).not.toHaveURL(/capture=1/);
+  await page.getByRole("button", { name: "Inbox", exact: true }).click();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+  await page.goForward();
   await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
   const baseline = await page.locator(".shell").boundingBox();
   const navBaseline = await page.locator('.app-nav button[data-tab="inbox"]').boundingBox();
   for (const name of ["Knowledge base", "Ask", "Inbox", "Activity"]) {
     await page.getByRole("button", { name, exact: true }).click();
-    await expect(page.getByRole("button", { name: "Capture a post", exact: true })).toHaveCount(name === "Inbox" ? 1 : 0);
     const geometry = await page.locator(".shell").boundingBox();
     expect(geometry?.x).toBe(baseline?.x);
     expect(geometry?.width).toBe(baseline?.width);
     expect(await page.locator('.app-nav button[data-tab="inbox"]').boundingBox()).toEqual(navBaseline);
   }
+
+  for (const [key, heading] of [
+    ["i", "Inbox"], ["a", "Activity"], ["k", "Knowledge base"],
+    ["q", "Ask what you've saved"],
+  ]) {
+    await page.keyboard.press("g");
+    await page.keyboard.press(key!);
+    await expect(page.getByRole("heading", { level: 1, name: heading!, exact: true })).toBeVisible();
+  }
+  const question = page.getByLabel("Ask your archive");
+  await question.fill("gi");
+  await expect(page).toHaveURL(/tab=ask/);
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("dialog", { name: "Go to", exact: true });
+  const search = palette.getByRole("combobox");
+  await expect(search).toBeFocused();
+  await search.fill("Knowledge");
+  await expect(palette.getByRole("option")).toHaveCount(1);
+  await page.keyboard.press("Enter");
+  await expect(palette).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1, name: "Knowledge base", exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await page.getByRole("button", { name: "Open Settings" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "My account" })).toBeVisible();
+  for (const name of ["AI & models", "Connections", "API keys", "Data & export", "My account"]) {
+    await page.getByRole("button", { name: "Open menu" }).click();
+    await page.getByRole("navigation", { name: "Settings sections" })
+      .getByRole("button", { name, exact: true }).click();
+    await expect(page.getByRole("heading", { level: 1, name, exact: true })).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await page.getByRole("button", { name: "Back to archive" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Knowledge base", exact: true })).toBeVisible();
 });

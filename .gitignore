@@ -12,3 +12,6 @@ __pycache__/
 playwright-report/
 .playwright-cli/
 output/playwright/
+
+# Screenshot and review artifacts
+artifacts/

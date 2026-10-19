@@ -1,0 +1,505 @@
+/*
+ * Dashboard UI v2 shared primitives. Geometry follows the pen reference
+ * implementations in docs/design/ui-v2/pen-sources/sprelude.js and mprelude.js.
+ * Every class is prefixed `ui-`; the button uses `ui-btn` because the legacy
+ * `.ui-button` is still styled in styles.css.
+ */
+@import "../../design-tokens.css";
+
+/* Button */
+.ui-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: var(--type-control);
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.ui-btn-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.ui-btn-default {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.ui-btn-default:hover:not(:disabled) {
+  background: var(--canvas);
+}
+
+.ui-btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--surface);
+  box-shadow: var(--shadow-primary-button);
+}
+
+.ui-btn-primary:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+.ui-btn-danger {
+  border-color: var(--danger-border);
+  background: var(--surface);
+  color: var(--danger);
+}
+
+.ui-btn-danger:hover:not(:disabled) {
+  background: var(--canvas);
+}
+
+.ui-btn-ghost:hover:not(:disabled) {
+  background: var(--subtle);
+}
+
+.ui-btn:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+.ui-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Select and Input share the 32px control frame and the green focus border. */
+.ui-select,
+.ui-input {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 32px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--type-control);
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.ui-select:focus-within,
+.ui-input:focus-within {
+  border-color: var(--green);
+  box-shadow: 0 0 0 0.5px var(--green);
+}
+
+/* Select */
+.ui-select-control {
+  flex: 1;
+  align-self: stretch;
+  min-width: 0;
+  margin: 0;
+  padding: 0 31px 0 10px;
+  border: 0;
+  border-radius: inherit;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  appearance: none;
+  cursor: pointer;
+}
+
+.ui-select-has-dot .ui-select-control {
+  padding-left: 25px;
+}
+
+.ui-select-dot {
+  position: absolute;
+  left: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  pointer-events: none;
+}
+
+.ui-select-chevron {
+  position: absolute;
+  right: 10px;
+  width: 13px;
+  height: 13px;
+  color: var(--placeholder);
+  pointer-events: none;
+}
+
+.ui-select-disabled {
+  background: var(--canvas);
+  color: var(--placeholder);
+}
+
+.ui-select-disabled .ui-select-control {
+  cursor: not-allowed;
+}
+
+/* Input */
+.ui-input {
+  padding: 0 10px;
+}
+
+.ui-input-large {
+  height: 40px;
+}
+
+.ui-input-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--placeholder);
+}
+
+.ui-input-control {
+  flex: 1;
+  align-self: stretch;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.ui-input-control::placeholder {
+  color: var(--placeholder);
+  opacity: 1;
+}
+
+.ui-input-disabled {
+  background: var(--canvas);
+  color: var(--placeholder);
+}
+
+.ui-input-disabled .ui-input-control {
+  cursor: not-allowed;
+}
+
+/* Toggle: a real checkbox laid over a decorative 36×20 track. */
+.ui-toggle {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  width: 36px;
+  height: 20px;
+}
+
+.ui-toggle-input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ui-toggle-track {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--faint);
+  transition: background-color 150ms ease;
+}
+
+.ui-toggle-knob {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-toggle-knob);
+  transition: transform 150ms ease;
+}
+
+.ui-toggle-input:checked + .ui-toggle-track {
+  background: var(--green);
+}
+
+.ui-toggle-input:checked + .ui-toggle-track .ui-toggle-knob {
+  transform: translateX(16px);
+}
+
+.ui-toggle-input:focus-visible + .ui-toggle-track {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+.ui-toggle-input:disabled {
+  cursor: not-allowed;
+}
+
+.ui-toggle-input:disabled + .ui-toggle-track {
+  opacity: 0.5;
+}
+
+/* Status pill */
+.ui-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  font-size: var(--type-metadata);
+  font-weight: var(--weight-medium);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.ui-status-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+}
+
+.ui-status-ok {
+  background: var(--green-tint);
+  color: var(--green-ink);
+}
+
+.ui-status-ok .ui-status-dot {
+  background: var(--green);
+}
+
+.ui-status-off {
+  background: var(--subtle);
+  color: var(--muted-strong);
+}
+
+.ui-status-off .ui-status-dot {
+  background: var(--placeholder);
+}
+
+.ui-status-warn {
+  background: var(--amber-tint);
+  color: var(--amber-ink);
+}
+
+.ui-status-warn .ui-status-dot {
+  background: var(--amber);
+}
+
+/* Chip */
+.ui-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--subtle);
+  color: var(--muted-strong);
+  font-family: inherit;
+  font-size: var(--type-metadata);
+  font-weight: var(--weight-medium);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.ui-chip-icon {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+.ui-chip-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+}
+
+.ui-chip-selected {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+button.ui-chip {
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+button.ui-chip:hover:not(.ui-chip-selected):not(:disabled) {
+  background: var(--border);
+}
+
+button.ui-chip:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+button.ui-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Keycap */
+.ui-keycap {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-keycap);
+  background: var(--subtle);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: var(--type-keycap);
+  font-weight: var(--weight-medium);
+  line-height: 1.2;
+}
+
+/* Icon box */
+.ui-icon-box {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-icon-box);
+}
+
+.ui-icon-box-neutral {
+  background: var(--subtle);
+  color: var(--muted-strong);
+}
+
+.ui-icon-box-green {
+  background: var(--green-tint);
+  color: var(--green);
+}
+
+/* Avatar */
+.ui-avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--avatar);
+  color: var(--surface);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  user-select: none;
+}
+
+/* Card and card row */
+.ui-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.ui-card-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ui-card-row:last-child,
+.ui-card-row-last {
+  border-bottom: 0;
+}
+
+.ui-card-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ui-card-row-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--type-row-title);
+  font-weight: var(--weight-semibold);
+}
+
+.ui-card-row-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--type-row-help);
+  line-height: var(--leading-row-help);
+}
+
+/* Section heading */
+.ui-section-heading {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.ui-section-heading-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ui-section-heading-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--type-section-heading);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-section-heading);
+}
+
+.ui-section-heading-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--type-control);
+  line-height: var(--leading-row-help);
+}
+
+.ui-section-heading-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-btn,
+  .ui-select,
+  .ui-input,
+  .ui-toggle-track,
+  .ui-toggle-knob,
+  button.ui-chip {
+    transition: none;
+  }
+}

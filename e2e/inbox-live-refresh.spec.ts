@@ -33,12 +33,13 @@ test("Inbox starts with capture controls and coalesces live refreshes", async ({
   await expect(page.getByPlaceholder("Search titles, notes, or creators")).toBeVisible();
   await expect(page.locator(".analytics-card, .inbox-analytics")).toHaveCount(0);
   const initialRequests = captureRequests;
+  const initialAnalytics = analyticsRequests;
   await page.evaluate(() => {
     const source = (window as unknown as { testEventSource: { emit: (data: string) => void } }).testEventSource;
     for (let index = 0; index < 8; index++) source.emit(JSON.stringify({ type: "capture", payload: { status: "complete" } }));
   });
   await expect.poll(() => captureRequests).toBe(initialRequests + 1);
-  expect(analyticsRequests).toBe(0);
+  await expect.poll(() => analyticsRequests).toBe(initialAnalytics + 1);
   await page.screenshot({ path: "test-results/inbox-refined-desktop.png", fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByPlaceholder("Search titles, notes, or creators")).toBeVisible();

@@ -70,7 +70,7 @@ const safeAccount = (user: AccountRecord): AccountRecord => ({
 const activityCursorSchema = z.object({
   createdAt: z.string().datetime(),
   id: z.string().uuid(),
-  filter: z.enum(["active", "all"]),
+  filter: z.enum(["active", "all", "archived"]),
 });
 const failedActivityCursorSchema = z.object({
   priority: z.number().int().min(0).max(8),
@@ -497,7 +497,7 @@ export function buildApp(
     // Preserve application bookmarks made before the public root existed.
     if (params.has("returnTo"))
       return reply.redirect(`/login?${params.toString()}`);
-    if (params.has("tab") || params.has("job"))
+    if (params.has("tab") || params.has("job") || params.has("capture"))
       return reply.redirect(`/app?${params.toString()}`);
     return reply.sendFile("landing/index.html");
   });
@@ -1267,7 +1267,7 @@ export function buildApp(
       const parsed = z
         .object({
           limit: z.coerce.number().int().min(1).max(100).default(50),
-          filter: z.enum(["active", "all"]).optional(),
+          filter: z.enum(["active", "all", "archived"]).optional(),
           cursor: z.string().max(300).optional(),
           timeZone: z.string().min(1).max(100).optional(),
           timezone: z.string().min(1).max(100).optional(),
@@ -1382,6 +1382,27 @@ export function buildApp(
           }
         : reply.code(404).send({ error: "not_found" });
     });
+    for (const action of ["archive", "restore"] as const) {
+      protectedApi.post(`/api/v1/jobs/:id/${action}`, async (request, reply) => {
+        reply.header("Cache-Control", "no-store");
+        const params = z
+          .object({ id: z.string().uuid() })
+          .safeParse(request.params);
+        const body = z.object({}).strict().safeParse(request.body ?? {});
+        if (!params.success || !body.success)
+          return reply.code(400).send({ error: "invalid_request" });
+        const result = store.setJobArchived(
+          auth.user(request)!.id,
+          params.data.id,
+          action === "archive",
+        );
+        if (result.outcome === "not_found")
+          return reply.code(404).send({ error: "not_found" });
+        if (result.outcome === "invalid_target")
+          return reply.code(409).send({ error: "not_archivable" });
+        return { job: activityJob(result.job, store.events(result.job.id)) };
+      });
+    }
     protectedApi.post("/api/v1/jobs/retry-failed", async (request, reply) => {
       const user = auth.user(request)!;
       if (store.countFailedActivityJobs(user.id) === 0)

@@ -1,0 +1,12 @@
+const [w,scr]=Wrap(PX,"13 · Settings: API keys","Keys read like a list of devices: what each one is for, when it was last used, and a revoke action. The iPhone Shortcut gets its own setup card instead of being buried in help text.",PY,880);
+wS3=w;
+SB(scr,"settings","API keys");
+const col=Page(scr,"SETTINGS  /  WORKSPACE","API keys","Keys let the iPhone Shortcut and your own scripts save posts. A new key is shown once, so copy it somewhere safe.",h=>Btn(h,"Create API key",{primary:1,icon:"plus"}));
+const k=Section(col,"Active keys","Revoke any key you no longer recognise. Revoking stops it working immediately.");
+const lead=x=>IconBox(x,"key-round",C.sub,C.mut2);
+let r=Row(k,"iPhone Shortcut","sk_live_••••7Q2c · created 21 Sep · last used 2 hours ago",{lead});Btn(r,"Revoke",{danger:1});
+r=Row(k,"Obsidian sync script","sk_live_••••aa91 · created 3 Aug · last used 12 days ago",{lead});Btn(r,"Revoke",{danger:1});
+r=Row(k,"Old laptop","sk_live_••••0f3d · created 1 Jun · never used",{last:1,lead});Status(r,"Unused","off");Btn(r,"Revoke",{danger:1});
+const sc=Section(col,"Save from your iPhone","Share any Instagram or Facebook post to Social Knowledge straight from the share sheet.");
+r=Row(sc,"Social Knowledge Shortcut","Version 6 · signed by Apple · confirms each save and tells you when it is ready",{lead:x=>IconBox(x,"smartphone","#e8f0ea",C.g)});Btn(r,"Setup guide",{ghost:1});Btn(r,"Add to iPhone",{primary:1,icon:"download"});
+r=Row(sc,"Agent API examples","Request formats for scripts and automations",{last:1,labelFill:C.mut2,lead:x=>IconBox(x,"code",C.sub,C.mut,28)});I(r,"chevron-down",16,"#a1a1aa");

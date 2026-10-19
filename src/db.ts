@@ -75,7 +75,7 @@ export type InboxAnalyticsCounts = {
   failedImports: number;
 };
 
-export type ActivityFilter = "active" | "all";
+export type ActivityFilter = "active" | "all" | "archived";
 export type ActivityCursor = { createdAt: string; id: string };
 export type FailedActivityCursor = {
   priority: number;
@@ -248,11 +248,30 @@ export class JobStore {
     const job = this.get(id);
     return job?.ownerUserId === userId ? job : null;
   }
+  setJobArchived(ownerUserId: string, id: string, archived: boolean) {
+    return this.database.transaction(() => {
+      const job = this.getOwned(ownerUserId, id);
+      if (!job) return { outcome: "not_found" as const };
+      if (job.status !== "failed" || job.errorCode !== "unsupported_platform")
+        return { outcome: "invalid_target" as const };
+      // Visibility only: preserve the terminal time, attempts and event history.
+      if (archived) {
+        this.database.prepare(
+          "UPDATE jobs SET archived_at=COALESCE(archived_at,?) WHERE id=? AND owner_user_id=? AND status='failed' AND error_code='unsupported_platform'",
+        ).run(new Date().toISOString(), id, ownerUserId);
+      } else {
+        this.database.prepare(
+          "UPDATE jobs SET archived_at=NULL WHERE id=? AND owner_user_id=? AND status='failed' AND error_code='unsupported_platform'",
+        ).run(id, ownerUserId);
+      }
+      return { outcome: "ok" as const, job: this.getOwned(ownerUserId, id)! };
+    })();
+  }
   list(userId: string, limit = 50) {
     return (
       this.database
         .prepare(
-          "SELECT * FROM jobs WHERE owner_user_id=? ORDER BY created_at DESC LIMIT ?",
+          "SELECT * FROM jobs WHERE owner_user_id=? AND archived_at IS NULL ORDER BY created_at DESC LIMIT ?",
         )
         .all(userId, limit) as Row[]
     ).map((row) => this.mapJob(row) as JobRecord);
@@ -263,7 +282,10 @@ export class JobStore {
     limit: number;
     cursor?: ActivityCursor;
   }) {
-    const where = ["owner_user_id=?"];
+    const where = [
+      "owner_user_id=?",
+      input.filter === "archived" ? "archived_at IS NOT NULL" : "archived_at IS NULL",
+    ];
     const params: unknown[] = [input.userId];
     if (input.filter === "active")
       where.push(
@@ -300,7 +322,7 @@ export class JobStore {
     limit: number;
     cursor?: FailedActivityCursor;
   }) {
-    const where = ["owner_user_id=?", "status='failed'"];
+    const where = ["owner_user_id=?", "status='failed'", "archived_at IS NULL"];
     const params: unknown[] = [input.userId];
     if (input.cursor) {
       where.push(
@@ -341,7 +363,7 @@ export class JobStore {
   countFailedActivityJobs(userId: string) {
     const row = this.database
       .prepare(
-        "SELECT COUNT(*) AS total FROM jobs WHERE owner_user_id=? AND status='failed'",
+        "SELECT COUNT(*) AS total FROM jobs WHERE owner_user_id=? AND archived_at IS NULL AND status='failed'",
       )
       .get(userId) as Row;
     return Number(row.total ?? 0);
@@ -356,11 +378,11 @@ export class JobStore {
     const row = this.database
       .prepare(
         `SELECT
-           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND status IN ('downloading','processing','transcribing','translating','analyzing','writing')) AS active,
-           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND status='queued') AS queued,
-           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND status='failed') AS failed,
+           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND archived_at IS NULL AND status IN ('downloading','processing','transcribing','translating','analyzing','writing')) AS active,
+           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND archived_at IS NULL AND status='queued') AS queued,
+           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND archived_at IS NULL AND status='failed') AS failed,
            (SELECT COUNT(*) FROM captures WHERE owner_user_id=? AND created_at>=? AND created_at<?) AS savedToday,
-           (SELECT COUNT(*) FROM job_events e JOIN jobs j ON j.id=e.job_id WHERE j.owner_user_id=? AND e.created_at>=? AND e.created_at<=?) AS recentEvents`,
+           (SELECT COUNT(*) FROM job_events e JOIN jobs j ON j.id=e.job_id WHERE j.owner_user_id=? AND j.archived_at IS NULL AND e.created_at>=? AND e.created_at<=?) AS recentEvents`,
       )
       .get(
         input.userId,
@@ -385,7 +407,7 @@ export class JobStore {
     return (
       this.database
         .prepare(
-          "SELECT * FROM jobs WHERE owner_user_id=? AND status='failed' ORDER BY created_at DESC",
+          "SELECT * FROM jobs WHERE owner_user_id=? AND archived_at IS NULL AND status='failed' ORDER BY created_at DESC",
         )
         .all(userId) as Row[]
     ).map((row) => this.mapJob(row) as JobRecord);
@@ -401,7 +423,7 @@ export class JobStore {
            (SELECT COUNT(*) FROM captures WHERE owner_user_id=?) AS totalCaptures,
            (SELECT COUNT(*) FROM captures WHERE owner_user_id=? AND created_at>=?) AS capturesLast24Hours,
            (SELECT COUNT(*) FROM captures WHERE owner_user_id=? AND created_at>=?) AS capturesLast7Days,
-           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND status='failed') AS failedImports`,
+           (SELECT COUNT(*) FROM jobs WHERE owner_user_id=? AND archived_at IS NULL AND status='failed') AS failedImports`,
       )
       .get(
         ownerUserId,
@@ -506,7 +528,7 @@ export class JobStore {
   }
   retry(id: string, selections?: AiTaskSelectionInput | AiProviderId | null) {
     const job = this.get(id);
-    if (!job || job.status !== "failed" || job.errorCode === "unsupported_platform") return false;
+    if (!job || job.archivedAt || job.status !== "failed" || job.errorCode === "unsupported_platform") return false;
     const now = new Date().toISOString();
     const snapshot =
       typeof selections === "string"
@@ -545,7 +567,7 @@ export class JobStore {
     return this.database.transaction(() => {
       const rows = this.database
         .prepare(
-          "SELECT id FROM jobs WHERE owner_user_id=? AND status='failed' AND (error_code IS NULL OR error_code <> 'unsupported_platform')",
+          "SELECT id FROM jobs WHERE owner_user_id=? AND archived_at IS NULL AND status='failed' AND (error_code IS NULL OR error_code <> 'unsupported_platform')",
         )
         .all(ownerUserId) as Array<{ id: string }>;
       const now = new Date().toISOString();
@@ -555,7 +577,7 @@ export class JobStore {
           : selections;
       const retry = this.database.prepare(
         `UPDATE jobs SET status='queued',attempts=0,error=NULL,error_code=NULL,error_detail=NULL,next_attempt_at=?,updated_at=?,
-         ai_provider=COALESCE(?,ai_provider),transcription_provider=COALESCE(?,transcription_provider),transcription_model=COALESCE(?,transcription_model),analysis_provider=COALESCE(?,analysis_provider),analysis_model=COALESCE(?,analysis_model),analysis_thinking_level=CASE WHEN ? THEN ? ELSE analysis_thinking_level END WHERE id=? AND owner_user_id=? AND status='failed'`,
+         ai_provider=COALESCE(?,ai_provider),transcription_provider=COALESCE(?,transcription_provider),transcription_model=COALESCE(?,transcription_model),analysis_provider=COALESCE(?,analysis_provider),analysis_model=COALESCE(?,analysis_model),analysis_thinking_level=CASE WHEN ? THEN ? ELSE analysis_thinking_level END WHERE id=? AND owner_user_id=? AND archived_at IS NULL AND status='failed'`,
       );
       const retriedIds: string[] = [];
       for (const row of rows) {
@@ -3370,6 +3392,11 @@ export class JobStore {
         "ALTER TABLE captures ADD COLUMN comments_json TEXT NOT NULL DEFAULT '[]'",
       );
     this.migrateOwnership();
+    // Run after the legacy ownership table rebuild so every schema retains it.
+    const ownedJobColumns = this.database
+      .prepare("PRAGMA table_info(jobs)").all() as Array<{ name: string }>;
+    if (!ownedJobColumns.some((column) => column.name === "archived_at"))
+      this.database.exec("ALTER TABLE jobs ADD COLUMN archived_at TEXT");
     const messageColumns = (
       this.database
         .prepare("PRAGMA table_info(conversation_messages)")
@@ -3546,6 +3573,7 @@ export class JobStore {
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
       nextAttemptAt: String(row.next_attempt_at),
+      archivedAt: (row.archived_at as string | null) ?? null,
       aiProvider: (row.ai_provider as JobRecord["aiProvider"]) ?? null,
       transcriptionProvider:
         (row.transcription_provider as JobRecord["transcriptionProvider"]) ??

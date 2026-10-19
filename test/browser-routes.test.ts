@@ -99,6 +99,7 @@ describe("public landing and private browser routes", () => {
   });
   it("preserves old root bookmarks and creates login-based invitations", async () => {
     expect((await app.inject("/?tab=settings&job=example")).headers.location).toBe("/app?tab=settings&job=example");
+    expect((await app.inject("/?capture=1")).headers.location).toBe("/app?capture=1");
     expect((await app.inject("/?returnTo=%2Foauth%2Fauthorize%3Fstate%3Dx")).headers.location).toBe("/login?returnTo=%2Foauth%2Fauthorize%3Fstate%3Dx");
     const cookie = await signIn();
     const invite = await app.inject({ method: "POST", url: "/api/v1/admin/invitations", headers: { cookie }, payload: {} });
