@@ -48,6 +48,27 @@ async function expectColumnGeometry(page: Page, viewportWidth: 1440 | 1800) {
 const noHorizontalOverflow = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 
+async function expectCircularAvatarColours(page: Page) {
+  for (const width of [1440, 1024, 390]) {
+    await page.setViewportSize({ width, height: 1020 });
+    const swatches = page.getByRole("group", { name: "Avatar colour", exact: true }).getByRole("button");
+    await expect(swatches).toHaveCount(6);
+    for (const swatch of await swatches.all()) {
+      const button = await swatch.boundingBox();
+      const dot = await swatch.locator("span").boundingBox();
+      expect(button).not.toBeNull();
+      expect(dot).not.toBeNull();
+      expect(button!.width).toBeCloseTo(button!.height, 1);
+      expect(dot!.width).toBeCloseTo(dot!.height, 1);
+      expect(dot!.width).toBeGreaterThan(0);
+      await expect(swatch).toHaveCSS("border-radius", "999px");
+      await expect(swatch.locator("span")).toHaveCSS("border-radius", "999px");
+    }
+    expect(await noHorizontalOverflow(page)).toBe(true);
+  }
+  await page.setViewportSize({ width: 1440, height: 1020 });
+}
+
 test.describe.serial("account profile and access management", () => {
   test.beforeAll(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), "social-knowledge-e2e-account-"));
@@ -71,6 +92,7 @@ test.describe.serial("account profile and access management", () => {
     await signIn(page, "account-admin", adminPassword);
     await expect(page.getByRole("navigation", { name: "Settings topics" })).toHaveCount(0);
     await expectColumnGeometry(page, 1440);
+    await expectCircularAvatarColours(page);
 
     await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
     await page.getByLabel("Display name").fill("Archive Owner");
@@ -85,6 +107,7 @@ test.describe.serial("account profile and access management", () => {
     await blue.click();
     await expect(page.getByRole("status")).toContainText("Avatar colour saved.");
     await expect(blue).toHaveAttribute("aria-pressed", "true");
+    await expectCircularAvatarColours(page);
 
     await page.getByRole("button", { name: "Change password" }).click();
     const passwordDialog = page.getByRole("dialog", { name: "Change password" });
