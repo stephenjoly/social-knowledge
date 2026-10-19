@@ -12,5 +12,8 @@ html = html.replaceAll('href="landing.css"', 'href="/landing/landing.css"')
 // remain host-independent; only the integrated app offers instance sign-in.
 html = html.replace('<a href="#receipts">Privacy</a>', '<a href="#receipts">Privacy</a>\n        <a href="/login" data-session-link>Sign in</a>');
 html = html.replace(/(<button[^>]+data-try>.*?<\/button>)/, '$1\n          <a class="link-arrow" href="/login" data-session-link>Sign in</a>');
+const footerSlot = /<span\s+data-footer-session-slot(?:="")?\s*>\s*<\/span>/;
+if (!footerSlot.test(html)) throw new Error("Landing footer is missing its runtime session-link slot");
+html = html.replace(footerSlot, '<a href="/login" data-session-link>Sign in</a>');
 await writeFile("dist-ui/landing/index.html", html);
 await cp("web/landing-session.js", "dist-ui/landing/session.js");

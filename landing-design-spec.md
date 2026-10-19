@@ -2,6 +2,8 @@
 
 Status: historical initial concept, approved and built on 2026-10-18. Current restoration scope is recorded in [`landing-restore-brief.md`](landing-restore-brief.md); the current browser mockup and review script are in [`designs/landing/`](designs/landing/README.md). The intervening real-app refinement was rejected by Stephen; the initial visual design has been restored. The initial build omitted placeholder Sign in and placed sample search in its own section.
 
+Approved follow-up: [`landing-approved-polish-brief.md`](landing-approved-polish-brief.md) adds a finished footer, concise claim/requirements copy and the mobile Copy fix. The integrated runtime now serves `/`, `/login` and `/app`, with session-aware app links; the initial concept below remains historical.
+
 ## Concept
 
 A saved post is folded-up value. The page shows one video post unfolding into its useful parts (who made it, what was said, the steps, the places), filing itself into a private library, and coming back when you search for it. The motion follows what the product does: share → understand → find.

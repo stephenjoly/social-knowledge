@@ -37,6 +37,7 @@
           <a class="btn btn--primary" href="#start" data-start>Get started</a>
           <button class="link-arrow" type="button" data-try>Try the search <span aria-hidden="true">↓</span></button>
         </div>
+        <p class="hero__fit">Self-hosted · your server and AI keys</p>
       </div>
 
       <div class="hero__stage-wrap">
@@ -217,7 +218,7 @@
       <div class="try__intro">
         <p class="eyebrow">Try it</p>
         <h2 id="try-title" class="h2">Search a sample library.</h2>
-        <p class="lede">Nine invented saves. Type the way you’d remember them — the search runs right here on this page, and nothing is sent anywhere.</p>
+        <p class="lede">Nine invented saves. Type the way you’d remember them — this sample search runs right here on the page and sends nothing anywhere.</p>
         <div class="chips" data-chips>
           <button type="button" class="chip-btn">that chickpea thing</button>
           <button type="button" class="chip-btn">hotel with the onsen</button>
@@ -241,6 +242,7 @@
       <header class="section-head">
         <p class="eyebrow">Everyday examples</p>
         <h2 id="examples-title" class="h2">One save. Something you can use.</h2>
+        <p class="section-head__note">Layouts are illustrative. Real notes hold a summary, transcript and takeaways — how much can be pulled out depends on what each post makes available.</p>
       </header>
       <div class="ex">
         <div class="ex__side">
@@ -267,9 +269,9 @@
         <h2 id="receipts-title" class="h2">Every note keeps its receipts.</h2>
         <ul class="facts">
           <li><strong>Private to you.</strong> Your library is private to your account.</li>
-          <li><strong>Your AI, your keys.</strong> You choose and connect the AI provider. Your keys are stored encrypted.</li>
+          <li><strong>Your AI, your keys.</strong> You choose and connect the AI provider. Your keys are stored encrypted. To transcribe and analyse a save, its audio, frames and text are sent to the provider you configure.</li>
           <li><strong>Download everything.</strong> Notes, transcripts and media, in a format that opens in Obsidian.</li>
-          <li><strong>Honest about support.</strong> Instagram and Facebook are fully supported. Links from other platforms are kept as bookmarks only.</li>
+          <li><strong>Honest about support.</strong> Instagram and Facebook videos are captured, as far as each post and your account access allow. Links from other platforms are kept as bookmarks only.</li>
         </ul>
       </div>
       <div class="thread" aria-hidden="true">
@@ -336,13 +338,30 @@
           </div>
         </li>
       </ol>
-      <p class="start__note" data-start-note>Preview only — the install command and Shortcut aren’t available yet.</p>
+      <p class="start__note" data-start-note>Preview only — the install command and Shortcut aren’t available yet. Once installed, connect an AI provider in the app; provider charges apply.</p>
       <p class="visually-hidden" data-copy-status aria-live="polite"></p>
     </section>
   </main>
 
   <footer class="foot">
-    <p>Concept mockup. Every creator, post, caption and result on this page is an invented example.</p>
+    <div class="foot__inner">
+      <div class="foot__brand">
+        <a class="wordmark wordmark--light" href="#top" aria-label="Social Knowledge, back to top">
+          <span class="wordmark__mark" aria-hidden="true"><span></span></span>
+          <span>Social Knowledge</span>
+        </a>
+        <p class="foot__tagline">A private, self-hosted library for the Instagram and Facebook videos you save — searchable, readable and always linked to the original.</p>
+      </div>
+      <nav class="foot__links" aria-label="Footer">
+        <a href="#how">How it works</a>
+        <a href="#examples">Examples</a>
+        <a href="#receipts">Privacy</a>
+        <a href="#start">Get started</a>
+        <a href="https://github.com/stephenjoly/social-knowledge" rel="noopener">GitHub <span aria-hidden="true">↗</span></a>
+        <span data-footer-session-slot></span>
+      </nav>
+    </div>
+    <p class="foot__fine">Every creator, post, caption and result shown on this page is an invented example.</p>
   </footer>
 
   <script src="data.js"></script>

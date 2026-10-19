@@ -54,6 +54,9 @@ describe("public landing and private browser routes", () => {
     expect(landing.body).toContain("You saved it");
     expect(landing.body).toContain('href="/login" data-session-link');
     expect(landing.body).toContain('/landing/session.js');
+    const footer = landing.body.slice(landing.body.indexOf("<footer"));
+    expect(footer).toContain('href="/login" data-session-link');
+    expect(footer).not.toContain("data-footer-session-slot");
     for (const url of ["/landing/landing.css", "/landing/data.js", "/landing/landing.js", "/landing/session.js", "/landing/assets/inter-latin-wght-normal.woff2"]) {
       expect((await app.inject(url)).statusCode).toBe(200);
     }

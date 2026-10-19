@@ -3,7 +3,7 @@
 Standalone, dependency-free browser mockup of the consumer landing page described in
 [`landing-design-spec.md`](../../landing-design-spec.md), restored per
 [`landing-restore-brief.md`](../../landing-restore-brief.md). Synthetic content only: every
-creator, post, caption, transcript and search result is invented. Nothing is collected or sent.
+creator, post, caption, transcript and search result is invented. Sample search runs locally and sends no demo content anywhere.
 
 ## Run
 
@@ -13,6 +13,12 @@ python3 -m http.server 4173 --directory designs/landing
 ```
 
 Any static server rooted at `designs/landing/` works. No build step, no packages, no external requests.
+
+For the integrated website, run `node scripts/sync-landing-site.mjs` then `npm run build`.
+The supervised **Website preview** service serves the landing at `/`, existing authentication
+at `/login`, and the private dashboard at `/app`, using an isolated disposable SQLite archive.
+Runtime packaging adds Sign in/Open app links to the header, hero and footer, with one
+same-origin session-status request. The standalone public bundle remains host-independent.
 
 ## Files
 
@@ -58,6 +64,9 @@ Any static server rooted at `designs/landing/` works. No build step, no packages
     steps become a scroll-revealed stack; no horizontal scrolling.
 12. **Reduced motion** (OS setting or DevTools emulation): no auto-cycle or flying; tabs switch
     with a 150 ms cross-fade; every scroll scene is shown fully drawn.
+13. **Footer:** brand, section navigation and GitHub remain readable on desktop and phones.
+    Tab through its links to check visible focus. In the integrated Website preview, its
+    session link opens `/login` when signed out and `/app` when signed in.
 
 ## Implementation notes
 
@@ -84,13 +93,14 @@ Any static server rooted at `designs/landing/` works. No build step, no packages
 
 - Checked in Chromium (Paseo browser) at 1440×900, 390×844 and 375×812. Safari and Firefox not
   checked. `scrollend` is used when available, with a timeout fallback.
-- There is no Sign in link: the static preview has no app behind it. Public sign-up / invite flow
-  is still the spec's open decision.
+- The standalone static page has no app behind it. The integrated runtime adds session-aware
+  app access; existing first-administrator and invitation flows remain at `/login`.
 - Thumbnails are flat SVG illustrations, not real media. Copy claims are limited to the spec's
   verified claim list.
 - The one-line installer and generic self-hosted Shortcut are not implemented. The setup block
   is a visual preview with no fabricated working endpoint; the download has no `href` and is
   marked disabled. Existing fixed-host v6 artifacts are not advertised as portable downloads.
-- Remaining visual issue: at phone widths, the new command row can clip its Copy control.
-  Page width itself does not overflow. Opus reached its session limit before this layout fix;
-  keep this review draft until the command row is corrected and rechecked.
+- Footer, requirements/output/provider copy and mobile command containment were verified in
+  the integrated runtime at 1440/390/375px. Keyboard focus showed the 3px marigold outline;
+  reduced-motion emulation kept the footer visible with no animation. Both placeholder and
+  long command text keep Copy inside the command box; clipboard success used a test stub.
