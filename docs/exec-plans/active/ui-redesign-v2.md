@@ -26,9 +26,13 @@ view, and the six settings pages. Design tokens, shared primitives, the two side
 the ⌘K palette, keyboard navigation, and the empty, loading, error, and retry states that the
 drawings do not show. Mobile layouts for every redesigned surface.
 
-Excluded: capture processing, provider behavior, schema changes, and new product capability.
-The only new client behavior is the command palette and the keyboard shortcuts, both of which
-navigate and never query the server. The feature PR targets `staging`; the owner's
+On 2026-10-19 Stephen approved all 28 recommendations from the UX review, with
+paired QA and final independent CX review. The [approved addendum](../../design/ui-v2-ux-addendum.md)
+defines these changes; the [shared brief](ui-v2-ux-brief.md) defines ownership and checks.
+This adds reversible unsupported-bookmark archiving (including an additive migration),
+Inbox tiles, and recovery, evidence, and settings refinements to the original scope.
+Excluded: capture processing changes and provider behavior. The palette and keyboard
+shortcuts navigate and never query the server. The feature PR targets `staging`; the owner's
 integration handoff adds disposable PR-preview verification to acceptance.
 Production deployment remains out of scope.
 
