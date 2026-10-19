@@ -1,13 +1,13 @@
 # Synthetic pairing: shortest two-run probe
 
-**Status: partial native verification; complete feasibility UNPROVEN.** On macOS
-27.0.1, the foreman created/exported a synthetic local-folder seed, signed/imported
-the token-free probe, and used Safari to start pairing. The loopback server accepted
-redemption. Folder authorization then blocked execution; persistent readback and a
-second run remain unverified. Computer-use access to the system permission app is
-blocked; human approval was requested. No real credentials or production access.
-See [native progress](native-progress.json). Existing native-smoke.py is historical;
-parent uses CUA for native interactions and the native `shortcuts` CLI where supported.
+**Status: macOS pairing/readback and independent capture verified; iPhone feasibility UNPROVEN.**
+The signed synthetic probe accepted browser pairing, saved JSON as a text file,
+read it back, and authenticated acknowledgement. A separate native CLI capture
+run loaded the saved credential and submitted the exact synthetic URL, Dad note
+and submission identity. The mock accepted it; ticket replay was rejected.
+No real credentials or production access. See [native progress](native-progress.json).
+Visual result confirmation, confirmed app restart, fresh-device folder portability,
+and iPhone Share Sheet remain unverified.
 
 ## What to run first
 
@@ -169,3 +169,14 @@ remain unverified. All five Python checks pass after the filename correction.
 Do not launch `ShortcutsViewService.xpc` as an application: when unavailable,
 macOS opens a misleading application-selection dialog. Use the supported
 Shortcuts runner and inspect already-visible UI instead.
+
+### Completed Mac protocol evidence
+
+The observed `/events` response recorded accepted redemption, accepted readback
+acknowledgement, rejected ticket replay, and accepted independent capture. Capture
+acceptance validates both the stored credential and exact URL/note/submission body.
+The capture runner was interrupted after server acceptance because it remained open
+at native result handling; no visual Saved confirmation is claimed. App quit was
+not conclusively observed, so restart/reboot persistence remains unverified.
+The mock was stopped; its shutdown export was not produced. The recorded boolean
+evidence above comes from the directly observed endpoint response.

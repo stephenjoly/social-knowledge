@@ -88,3 +88,11 @@ Earlier checkpoint (superseded where noted above):
 ## Risks and recovery
 
 Key uncertainty is native credential persistence without a dedicated app or manual key entry. Do not substitute an unapproved manual-key workflow and call the requirement met. If direct personalized downloads remain required, return a separate signing/bootstrap infrastructure proposal. Hide the new option if acceptance fails; preserve legacy downloads, credentials, and captures. Database additions must remain compatible with existing SQLite data. No production credentials or deployment changes are needed for this planning milestone.
+
+### Native milestone follow-up
+
+Mac protocol verified: browser handoff → redeem → local text-file save → readback
+acknowledgement → independent CLI capture with exact Dad note. Replay rejected.
+Native text extension corrected to `.txt`. No production changes. Visual results,
+confirmed restart, fresh-device portability and iPhone Share Sheet remain open.
+Mock stopped after testing. See the pairing fixture native-progress report.
