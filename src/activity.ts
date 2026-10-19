@@ -40,6 +40,7 @@ export type ActivityJob = {
   errorCode: (typeof failureCodes)[number] | null;
   createdAt: string;
   updatedAt: string;
+  archivedAt: string | null;
   reachedStages: ActivityStageName[];
   stages: ActivityStage[];
 };
@@ -392,6 +393,9 @@ export function activityJob(
     errorCode: safeErrorCode(job.errorCode, status),
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
+    archivedAt: job.archivedAt && timestamp(job.archivedAt) !== null
+      ? new Date(job.archivedAt).toISOString()
+      : null,
     ...stages,
   };
 }

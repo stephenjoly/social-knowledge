@@ -85,7 +85,8 @@ test("switches real Inbox controls over a sorted capture response", async ({
   await page.getByLabel("Password").fill(password!);
   await page.getByRole("button", { name: "Continue" }).click();
 
-  await expect(page.locator(".inbox-tile")).toHaveCount(2);
+  await expect(page.locator(".inbox-row")).toHaveCount(2);
+  await expect(page.locator(".inbox-row").first()).toContainText("Learning");
   await expect(page.locator(".analytics-card")).toHaveCount(0);
 
   await page.getByLabel("Sort captures").selectOption("title:asc");
@@ -99,13 +100,9 @@ test("switches real Inbox controls over a sorted capture response", async ({
     )
     .toBe(true);
 
-  await page.getByRole("button", { name: "Table" }).click();
-  await expect(page.locator(".inbox-capture-table")).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Title/ })).toBeVisible();
-  await expect(page.locator(".inbox-capture-table")).toContainText("Learning");
-  await expect(page.locator(".inbox-capture-table")).toContainText("Workflows");
+  await expect(page.locator(".inbox-list")).toContainText("Workflows");
 
-  await page.getByRole("button", { name: "+ Add filter" }).click();
+  await page.getByRole("button", { name: "Add filter" }).click();
   await page.getByLabel("Platform").selectOption("instagram");
   await page.getByRole("button", { name: "Close filters" }).click();
   await expect(
@@ -120,7 +117,8 @@ test("switches real Inbox controls over a sorted capture response", async ({
     .toBe(true);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator(".inbox-mobile-row").first()).toBeVisible();
+  await expect(page.locator(".inbox-row").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open menu" })).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(

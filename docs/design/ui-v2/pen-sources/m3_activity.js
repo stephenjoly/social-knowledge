@@ -1,0 +1,24 @@
+const [w,scr]=Wrap(PX,"04 · Activity","Live progress at a glance: four numbers, one list of anything that failed, and every capture with a five-step tracker. Selecting a row opens its stages and safe logs on the right instead of a modal.",PY,880);
+wM3=w;
+SB(scr,"app","Activity");
+const m=Content(scr,{gap:20});
+AppHead(m,"LIVE PROGRESS","Activity","Every capture, from link to filed note.",h=>{Btn(h,"Retry all failed",{icon:"rotate-ccw"});});
+const st=Fr(m,{name:"Stats",width:"fill_container",gap:12});
+for(const [l,v,c,ic] of [["Processing","2",C.g,"loader-circle"],["Queued","1","#a1a1aa","hourglass"],["Needs attention","1","#d9a441","triangle-alert"],["Saved today","6","#4f6fa8","circle-check"]]){const k=Fr(st,{name:l,layout:"vertical",gap:8,width:"fill_container",padding:[14,16],cornerRadius:10,fill:"#ffffff",stroke:C.bd,strokeWidth:1});const r=Fr(k,{name:"Label",gap:6,alignItems:"center"});I(r,ic,14,c);T(r,l,{fontSize:12.5,fill:C.mut,fontWeight:"500"});T(k,v,{fontSize:26,fontWeight:"700",letterSpacing:-0.6});}
+const body=Fr(m,{name:"Body",width:"fill_container",height:"fill_container",gap:16});
+const left=Fr(body,{name:"Left",layout:"vertical",width:"fill_container",gap:16});
+const at=Card(left,{width:"fill_container",stroke:"#f1e2c4",fill:"#fffdf8"});
+CardHead(at,"Needs attention","1 capture failed",null);
+let r=Fr(at,{name:"Failed row",width:"fill_container",padding:[12,18],gap:12,alignItems:"center"});Thumb(r,"#e1e7f0",40,"facebook");const t=Fr(r,{name:"Text",layout:"vertical",gap:3,width:"fill_container"});T(t,"Facebook session expired",{fontSize:13.5,fontWeight:"600"});T(t,"facebook.com/share/r/1AbX… · failed at Media · attempt 2 · 14 min ago",{fontSize:12,fill:C.mut,textGrowth:"fixed-width",width:"fill_container"});Btn(r,"Fix connection",{ghost:1});Btn(r,"Retry",{icon:"rotate-ccw"});
+const cl=Card(left,{width:"fill_container"});
+CardHead(cl,"Captures","Click a row to inspect its stages",h=>Select(h,"All statuses",140));
+const Track=(p,n,fail)=>{const tr=Fr(p,{name:"Tracker",gap:3,alignItems:"center"});for(let i=0;i<5;i++)Insert(tr,{type:"rectangle",name:"Step",width:18,height:4,cornerRadius:2,fill:i<n?C.g:i===n&&!fail?"#9fc3ab":"#e4e4e7"});};
+const rows=[["Pastel de nata: the bakery locals actually queue for","Instagram reel · 1 min ago",3,"Transcribing · 0:42","#f1e6d6",1],["How I plan my whole week in 20 minutes","Instagram reel · 2 min ago",1,"Finding post","#e1e7f0"],["instagram.com/p/DA7kq2…","Instagram · just now",0,"Queued","#f4f4f5"],["Zone 2 cardio, explained without the jargon","Instagram reel · 18 min ago",5,"Saved · 1m 12s","#e6e9df"],["One-pan miso salmon in 15 minutes","Facebook · 1 hour ago",5,"Saved · 58s","#f0e1e1"]];
+rows.forEach(([ti,me,n,s,c,sel],i)=>{const r=Fr(cl,{name:"Row "+(i+1),width:"fill_container",padding:[11,18],gap:12,alignItems:"center",...(sel?{fill:"#f6f8f6"}:{}),...(i<rows.length-1?{stroke:"#f0f0f1",strokeWidth:{bottom:1}}:{})});Thumb(r,c,36);const t=Fr(r,{name:"Text",layout:"vertical",gap:2,width:"fill_container"});T(t,ti,{fontSize:13,fontWeight:"600"});T(t,me,{fontSize:11.5,fill:C.mut});const rt=Fr(r,{name:"Progress",layout:"vertical",gap:5,alignItems:"end",width:130});Track(rt,n);T(rt,s,{fontSize:11.5,fill:n===5?C.mut:C.g,fontWeight:"500"});});
+const ins=Card(body,{width:320,height:"fill_container"});
+const ih=Fr(ins,{name:"Inspector header",layout:"vertical",width:"fill_container",padding:[16,18],gap:4,stroke:"#f0f0f1",strokeWidth:{bottom:1}});T(ih,"Pastel de nata: the bakery locals actually queue for",{fontSize:14,fontWeight:"600",textGrowth:"fixed-width",width:"fill_container",lineHeight:1.35});T(ih,"Instagram reel · @lisbonfoodie",{fontSize:12,fill:C.mut});
+const sg=Fr(ins,{name:"Stages",layout:"vertical",width:"fill_container",padding:[14,18],gap:12});
+for(const [l,s,d] of [["Added","done","0.2s"],["Found post","done","2.1s"],["Downloaded media","done","8.4s"],["Transcribing","active","0:42"],["Filed in knowledge base","todo",""]]){const r=Fr(sg,{name:l,width:"fill_container",gap:10,alignItems:"center"});if(s==="done")I(r,"circle-check",16,C.g);else if(s==="active")I(r,"loader-circle",16,C.g);else I(r,"circle",16,"#d4d4d8");T(r,l,{fontSize:13,fontWeight:s==="active"?"600":"500",fill:s==="todo"?"#a1a1aa":C.ink,textGrowth:"fixed-width",width:"fill_container"});T(r,d,{fontSize:12,fill:C.mut});}
+const lg=Fr(ins,{name:"Log",layout:"vertical",width:"fill_container",height:"fill_container",padding:[12,18],gap:7,fill:"#fafafa",stroke:"#f0f0f1",strokeWidth:{top:1}});T(lg,"PROCESSING LOG",{fontSize:10.5,fontWeight:"700",letterSpacing:1,fill:"#a1a1aa"});
+for(const l of ["14:02:11  Capture added","14:02:13  Post found · 48s reel","14:02:21  Media downloaded · 6.2 MB","14:02:22  Transcription started"])T(lg,l,{fontSize:11.5,fontFamily:"JetBrains Mono",fill:C.mut2});
+const lf=Fr(ins,{name:"Inspector footer",width:"fill_container",padding:[12,18],stroke:"#f0f0f1",strokeWidth:{top:1}});Btn(lf,"Copy safe logs",{icon:"copy"});

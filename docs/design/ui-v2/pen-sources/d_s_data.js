@@ -1,0 +1,12 @@
+const [w,scr]=Wrap(PX,"14 · Settings: Data & export","Preferences are plain switches with one line of explanation each. Export is framed as ownership: what you'll get, how big it is, and your previous downloads.",PY,880);
+wS4=w;
+SB(scr,"settings","Data & export");
+const col=Page(scr,"SETTINGS  /  WORKSPACE","Data & export","How notes are written, and a portable copy of everything you've saved.");
+const l=Section(col,"Language","Applies to new captures. Existing notes keep their language.");
+let r=Row(l,"Note language","Summaries, takeaways, and topics are written in this language.");Select(r,"English",180);
+r=Row(l,"Translate transcripts","Keep the original transcript and add a translation when a post is in another language.");Toggle(r,true);
+r=Row(l,"Detect source language","Recognise the spoken language automatically before transcribing.",{last:1});Toggle(r,true);
+const e=Section(col,"Export your archive","Yours to keep. Exports include source links so every note stays attributed.");
+r=Row(e,"Full archive","Markdown notes, metadata, transcripts, and media · about 1.4 GB",{lead:x=>IconBox(x,"archive","#e8f0ea",C.g)});Btn(r,"Export archive",{primary:1,icon:"download"});
+r=Row(e,"12 Oct 2026, 09:14","2,481 files · 1.38 GB · ready",{lead:x=>IconBox(x,"file-archive",C.sub,C.mut2,28)});Btn(r,"Download",{icon:"download"});
+r=Row(e,"3 Sep 2026, 18:02","2,104 files · 1.12 GB · expires in 2 days",{last:1,lead:x=>IconBox(x,"file-archive",C.sub,C.mut2,28)});Btn(r,"Download",{icon:"download"});

@@ -232,6 +232,12 @@ npm run test:e2e
 
 Playwright builds the UI and starts a disposable loopback-only Fastify server on port 4185 automatically. Self-contained tests also start their own synthetic SQLite fixture servers. The archive test requires a separately running synthetic deployment and `E2E_USERNAME`/`E2E_PASSWORD`; absent credentials intentionally skip it. Never use production data.
 
+For a full local UI run, including the four authenticated journeys otherwise
+skipped, run `npx tsx scripts/ui-e2e.ts`. This seeds the disposable QA server from
+`scripts/ui-fixture.ts` and uses deterministic Ask responses. It requires no real
+provider credentials and refuses an external `E2E_BASE_URL`. Chromium must be
+installed; on the development VM, source `~/.cache/sk-browser/env.sh` first.
+
 Agents may run these commands autonomously for authorized local QA. Keep test data synthetic and do not submit real messages, calls, or production writes. Retain failure traces/screenshots outside Git; report failed and skipped tests explicitly. Browser caches are shared per host, while dependencies are installed per worktree.
 
 ### Guided Shortcut setup
