@@ -247,6 +247,7 @@
 
 .activity-attention-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 12px 17px 11px;
@@ -259,7 +260,7 @@
 
 .activity-attention-copy {
   display: flex;
-  flex: 1;
+  flex: 1 1 260px;
   flex-direction: column;
   gap: 3px;
   min-width: 0;
@@ -283,6 +284,21 @@
   color: var(--muted);
   font-size: var(--type-metadata);
   overflow-wrap: anywhere;
+}
+
+.activity-attention-copy .activity-attention-reason {
+  color: var(--amber-ink);
+  font-weight: var(--weight-medium);
+}
+
+.activity-attention-actions {
+  display: flex;
+  flex: none;
+  margin-left: auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .activity-attention-copy:focus-visible,
@@ -382,6 +398,31 @@
   background: var(--amber);
 }
 
+.activity-row-next {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--placeholder);
+  font-size: var(--type-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-rows > li.has-action {
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+}
+
+.activity-rows > li.has-action .activity-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.activity-row-action {
+  flex: none;
+  margin-right: 17px;
+}
+
 .activity-row-status {
   max-width: 100%;
   overflow: hidden;
@@ -406,6 +447,98 @@
 /* Inspector */
 .activity-inspector {
   min-height: 0;
+}
+
+.activity-inspector:focus {
+  outline: none;
+}
+
+.activity-inspector-back {
+  display: none;
+}
+
+.activity-inspector-head .activity-inspector-summary {
+  margin-top: 6px;
+  color: var(--ink-soft);
+  line-height: var(--leading-row-help);
+}
+
+.activity-inspector-summary.live {
+  color: var(--green-ink);
+}
+
+.activity-inspector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.activity-inspector-source {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  color: var(--green-ink);
+  font-size: var(--type-metadata);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+}
+
+.activity-inspector-source:hover {
+  text-decoration: underline;
+}
+
+.activity-disclosure {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 11px 17px;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--muted-strong);
+  font: inherit;
+  font-size: var(--type-metadata);
+  font-weight: var(--weight-medium);
+  text-align: left;
+  cursor: pointer;
+}
+
+.activity-disclosure:hover {
+  color: var(--ink);
+}
+
+.activity-disclosure:focus-visible,
+.activity-inspector-back:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: -2px;
+}
+
+.activity-disclosure svg {
+  transition: transform 120ms ease;
+}
+
+.activity-disclosure[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.activity-troubleshooting {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.activity-troubleshooting[hidden] {
+  display: none;
+}
+
+.activity-log .activity-attempts {
+  color: var(--muted-strong);
 }
 
 .activity-inspector-head {
@@ -602,6 +735,10 @@
   .activity-check.active svg {
     animation: none;
   }
+
+  .activity-disclosure svg {
+    transition: none;
+  }
 }
 
 /*
@@ -640,6 +777,28 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .activity-inspector {
+    scroll-margin-top: 72px;
+  }
+
+  .activity-inspector-back {
+    display: inline-flex;
+    align-self: flex-start;
+    align-items: center;
+    gap: 5px;
+    min-height: 32px;
+    margin: -6px 0 4px -6px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--green-ink);
+    font: inherit;
+    font-size: var(--type-metadata);
+    font-weight: var(--weight-semibold);
+    cursor: pointer;
+  }
+
   .activity-log ol {
     max-height: 280px;
   }
@@ -672,6 +831,28 @@
     gap: 10px;
   }
 
+  /* Compact counts so the first capture starts above the fold on phones. */
+  .activity-stat {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 9px 12px;
+  }
+
+  .activity-stat strong {
+    font-size: 1.125rem;
+    letter-spacing: -0.3px;
+  }
+
+  .activity-rows > li.has-action {
+    flex-wrap: wrap;
+  }
+
+  .activity-row-action {
+    margin: 0 13px 10px 61px;
+  }
+
   .activity-card-head,
   .activity-attention-item,
   .activity-row,
@@ -691,7 +872,9 @@
     flex-basis: calc(100% - 52px);
   }
 
-  .activity-attention-copy + .ui-btn {
+  .activity-attention-actions {
+    flex-basis: calc(100% - 52px);
+    justify-content: flex-start;
     margin-left: 52px;
   }
 
@@ -700,7 +883,7 @@
   }
 
   .activity-row-progress {
-    width: 96px;
+    width: 118px;
   }
 
   .activity-tracker-step {

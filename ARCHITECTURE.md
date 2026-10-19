@@ -68,6 +68,19 @@ colours and geometry defined in `web/design-tokens.css`; page styles remain next
 to the corresponding modules in `web/`. Account administration and Shortcut setup
 retain their focused modules, using the shared settings controls.
 
+App navigation keeps settings topics in browser history and runs the shared
+`web/unsaved-changes.ts` guard before leaving editable settings. Account changes
+clear transient private state and advance a session generation so delayed reads,
+mutations, and event callbacks cannot populate the next account's workspace.
+Inbox layout preference is scoped to the account in browser storage; switching
+Rows/Tiles preserves the loaded query results and browsing position.
+
+Ask binds its source panel to an individual answer through `ask-format.ts`, which
+also maps persisted failure codes to controlled recovery messages. The thread
+tracks whether the reader is following incoming text and preserves citation focus
+and reading position across capture-note navigation. Settings setup progression
+lives in `web/ai-setup-progress.tsx`; saved configuration remains authoritative.
+
 ## Data and trust boundaries
 
 - Every account-owned job, capture, connection, export, API key, and OAuth grant is scoped to a user.

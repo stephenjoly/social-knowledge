@@ -7,17 +7,21 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { ArrowLeft, RotateCcw } from "lucide-react";
 import type {
   ActivityJob,
   ActivityDetails,
   ActivityCounts,
   ActivityPage,
+  AiProviderState,
   FailedActivityPage,
   AppTab,
   PlatformConnection,
   SettingsTopic,
 } from "./shared/types";
 import { api } from "./shared/api";
+import { confirmDiscardUnsaved } from "./unsaved-changes";
+import { ActionButton } from "./components/ui/primitives";
 import { Auth, ProviderOnboarding } from "./pages/auth";
 import { InboxPage } from "./pages/inbox";
 import { Detail } from "./pages/capture-detail";
@@ -30,9 +34,18 @@ import {
   Sidebar,
   appDestinations,
 } from "./pages/app-shell";
-import { CaptureDialog } from "./components/capture-dialog";
+import {
+  CaptureDialog,
+  captureOutcome,
+  type CaptureReceipt,
+} from "./components/capture-dialog";
 import { CommandPalette } from "./components/command-palette";
-import { ActivityView } from "./pages/activity";
+import {
+  ActivityView,
+  jobIdentity,
+  type ActivityFilter,
+  type ActivityNotice,
+} from "./pages/activity";
 import type { AccountUser } from "./account-settings";
 import "./styles.css";
 import "./auth-redesign.css";
@@ -53,9 +66,54 @@ function tabFromLocation(): AppTab {
     : "inbox";
 }
 
+const settingsTopicValues: SettingsTopic[] = [
+  "overview",
+  "ai",
+  "connections",
+  "api",
+  "data",
+  "account",
+  "people",
+  "all",
+];
+
+function validTopic(value: unknown): SettingsTopic | null {
+  return typeof value === "string" && (settingsTopicValues as string[]).includes(value)
+    ? (value as SettingsTopic)
+    : null;
+}
+
+/** The Settings topic lives in history state so Back and Forward move between topics. */
+function topicFromLocation(): SettingsTopic {
+  return (
+    validTopic(new URLSearchParams(window.location.search).get("topic")) ??
+    validTopic((window.history.state as { settingsTopic?: unknown } | null)?.settingsTopic) ??
+    "account"
+  );
+}
+
 function captureFromLocation() {
   const params = new URLSearchParams(window.location.search);
   return params.get("tab") === "capture" || params.has("capture");
+}
+
+/**
+ * Where a recovery detour from Activity or Capture should lead back to. The
+ * job is the safe Activity projection, so banners show only its identity.
+ */
+type ReturnContext =
+  | { kind: "connection"; job: ActivityJob }
+  | { kind: "setup"; job: ActivityJob };
+
+function platformOf(url: string) {
+  try {
+    const host = new URL(url).hostname.replace(/^(www|m)\./, "");
+    if (host === "instagram.com") return "Instagram";
+    if (host === "facebook.com" || host === "fb.watch") return "Facebook";
+  } catch {
+    // Unparseable links have no platform to name.
+  }
+  return null;
 }
 
 function isTypingTarget(target: EventTarget | null) {
@@ -83,13 +141,24 @@ function App() {
     return token;
   });
   const [tab, setTab] = useState<AppTab>(tabFromLocation);
-  const [settingsTopic, setSettingsTopic] = useState<SettingsTopic>("account");
+  const [settingsTopic, setSettingsTopic] = useState<SettingsTopic>(topicFromLocation);
   const lastArchiveTab = useRef<AppTab>(tab === "settings" ? "inbox" : tab);
   const [captureOpen, setCaptureOpen] = useState(captureFromLocation);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [inboxRefresh, setInboxRefresh] = useState(0);
-  const [connectionsNeedAttention, setConnectionsNeedAttention] = useState(false);
-  const highlightedJob = new URLSearchParams(window.location.search).get("job");
+  const [connections, setConnections] = useState<PlatformConnection[]>([]);
+  const connectionsNeedAttention = connections.some(
+    (item) => item.status === "needs_attention",
+  );
+  const [aiReadiness, setAiReadiness] = useState<AiProviderState["readiness"] | null>(null);
+  const [returnContext, setReturnContext] = useState<ReturnContext | null>(null);
+  const [returnFeedback, setReturnFeedback] = useState("");
+  const [returnRetrying, setReturnRetrying] = useState(false);
+  const [shortcutGuideRequest, setShortcutGuideRequest] = useState(0);
+  const unsavedSettings = useRef<string | null>(null);
+  const [linkedJob, setLinkedJob] = useState(() => new URLSearchParams(window.location.search).get("job"));
+  const [focusJob, setFocusJob] = useState<string | null>(null);
+  const highlightedJob = focusJob ?? linkedJob;
   const [activityJobs, setActivityJobs] = useState<ActivityJob[]>([]);
   const [activityNextCursor, setActivityNextCursor] = useState<string | null>(
     null,
@@ -116,12 +185,15 @@ function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [captureUrl, setCaptureUrl] = useState("");
   const [note, setNote] = useState("");
-  const [message, setMessage] = useState("");
+  const [notice, setNotice] = useState<ActivityNotice | null>(null);
+  const setMessage = (text: string) => setNotice(text ? { text } : null);
   const [captureMessage, setCaptureMessage] = useState("");
   const [captureError, setCaptureError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [captureSubmitted, setCaptureSubmitted] = useState(false);
-  const [activityFilter, setActivityFilter] = useState<"active" | "all">("all");
+  const [captureReceipt, setCaptureReceipt] = useState<CaptureReceipt | null>(null);
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
+  const activityFilterRef = useRef(activityFilter);
+  activityFilterRef.current = activityFilter;
   const [expandedJobId, setExpandedJobId] = useState<string | null>(highlightedJob);
   const [jobDetails, setJobDetails] = useState<ActivityDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
@@ -130,21 +202,84 @@ function App() {
   const lastNewestActive = useRef<string | null>(null);
   const [retryPending, setRetryPending] = useState(false);
   const [retryingIds, setRetryingIds] = useState<string[]>([]);
+  const [archivingIds, setArchivingIds] = useState<string[]>([]);
+  const sessionGeneration = useRef(0);
+  const activeOwnerId = useRef<string | null>(null);
+  const [detailsReload, setDetailsReload] = useState(0);
+  /** Clear private transient data before another account can use this SPA. */
+  function resetAccountState() {
+    sessionGeneration.current += 1;
+    activityRequest.current += 1;
+    failedRequest.current += 1;
+    detailsRequest.current += 1;
+    if (liveRefreshTimer.current) clearTimeout(liveRefreshTimer.current);
+    liveRefreshTimer.current = null;
+    setActivityJobs([]);
+    setActivityNextCursor(null);
+    setActivityCounts({ active: 0, queued: 0, failed: 0, savedToday: 0, recentEvents: 0 });
+    setActivityLoading(false);
+    setActivityLoadingMore(false);
+    setActivityError(null);
+    setFailedJobs([]);
+    setFailedNextCursor(null);
+    setFailedTotal(0);
+    setFailedError(false);
+    setFailedLoadingMore(false);
+    setConnections([]);
+    setAiReadiness(null);
+    setReturnContext(null);
+    setReturnFeedback("");
+    setReturnRetrying(false);
+    setFocusJob(null);
+    setLinkedJob(null);
+    setExpandedJobId(null);
+    setJobDetails(null);
+    setDetailsLoading(false);
+    setDetailsError(false);
+    setActivityFilter("all");
+    activityFilterRef.current = "all";
+    lastNewestActive.current = null;
+    setDetail(null);
+    setCaptureUrl("");
+    setNote("");
+    setCaptureReceipt(null);
+    setCaptureMessage("");
+    setCaptureError(false);
+    setSubmitting(false);
+    setCaptureOpen(false);
+    setPaletteOpen(false);
+    setMobileMenuOpen(false);
+    setNotice(null);
+    setRetryPending(false);
+    setRetryingIds([]);
+    setArchivingIds([]);
+    setShortcutGuideRequest(0);
+    unsavedSettings.current = null;
+  }
   async function check() {
+    const generation = sessionGeneration.current;
     try {
       const result = await api<{ user: AccountUser }>("/api/auth/me");
+      if (generation !== sessionGeneration.current) return;
+      if (activeOwnerId.current && activeOwnerId.current !== result.user.id)
+        resetAccountState();
+      activeOwnerId.current = result.user.id;
       setUser(result.user);
       setAuthState("ready");
     } catch (e) {
+      if (generation !== sessionGeneration.current) return;
+      if (activeOwnerId.current) resetAccountState();
+      activeOwnerId.current = null;
       setUser(null);
       const err = e as { body?: { setupRequired?: boolean } };
       setAuthState(err.body?.setupRequired ? "setup" : "login");
     }
   }
   async function loadActivityPage(
-    filter: "active" | "all" = activityFilter,
+    filter: ActivityFilter = activityFilter,
     append = false,
   ) {
+    if (!activeOwnerId.current) return;
     const requestId = ++activityRequest.current;
     const cursor = append ? activityNextCursor : null;
     if (append && !cursor) return;
@@ -186,6 +321,7 @@ function App() {
     }
   }
   async function loadFailedJobs(append = false) {
+    if (!activeOwnerId.current) return;
     const requestId = ++failedRequest.current;
     const cursor = append ? failedNextCursor : null;
     if (append && !cursor) return;
@@ -217,20 +353,31 @@ function App() {
     }
   }
   async function loadConnectionAttention() {
+    if (!activeOwnerId.current) return;
+    const generation = sessionGeneration.current;
     try {
       const result = await api<{ connections: PlatformConnection[] }>(
         "/api/v1/platform-connections",
       );
-      setConnectionsNeedAttention(
-        result.connections.some((item) => item.status === "needs_attention"),
-      );
+      if (generation === sessionGeneration.current) setConnections(result.connections);
     } catch {
-      setConnectionsNeedAttention(false);
+      if (generation === sessionGeneration.current) setConnections([]);
+    }
+  }
+  async function loadAiReadiness() {
+    if (!activeOwnerId.current) return;
+    const generation = sessionGeneration.current;
+    try {
+      const result = await api<AiProviderState>("/api/v1/ai-providers");
+      if (generation === sessionGeneration.current) setAiReadiness(result.readiness);
+    } catch {
+      if (generation === sessionGeneration.current) setAiReadiness(null);
     }
   }
   async function load() {
+    if (!activeOwnerId.current) return;
     setInboxRefresh((current) => current + 1);
-    await Promise.all([loadActivityPage(), loadFailedJobs()]);
+    await Promise.all([loadActivityPage(activityFilterRef.current), loadFailedJobs()]);
   }
   function scheduleLiveRefresh() {
     if (liveRefreshTimer.current) return;
@@ -245,8 +392,12 @@ function App() {
   useEffect(() => {
     if (authState !== "ready") return;
     void loadConnectionAttention();
+    void loadAiReadiness();
+    const generation = sessionGeneration.current;
     const stream = new EventSource("/api/v1/events");
-    stream.onmessage = () => scheduleLiveRefresh();
+    stream.onmessage = () => {
+      if (generation === sessionGeneration.current) scheduleLiveRefresh();
+    };
     return () => {
       stream.close();
       if (liveRefreshTimer.current) {
@@ -254,15 +405,15 @@ function App() {
         liveRefreshTimer.current = null;
       }
     };
-  }, [authState]);
+  }, [authState, user?.id]);
   useEffect(() => {
     if (authState !== "ready") return;
     void loadActivityPage(activityFilter);
-  }, [authState, activityFilter]);
+  }, [authState, user?.id, activityFilter]);
   useEffect(() => {
     if (authState !== "ready") return;
     void loadFailedJobs();
-  }, [authState]);
+  }, [authState, user?.id]);
   const visibleActivityJobs = useMemo(
     () =>
       [...activityJobs].sort(
@@ -282,14 +433,15 @@ function App() {
   const newestActiveId = inProgressJobs[0]?.id ?? queuedJobs[0]?.id ?? null;
   const attentionTotal = Math.max(activityCounts.failed, failedTotal);
   useEffect(() => {
-    const keepLinkedJob = lastNewestActive.current === null && highlightedJob;
+    const keepLinkedJob =
+      (lastNewestActive.current === null && linkedJob) || focusJob;
     if (newestActiveId && newestActiveId !== lastNewestActive.current && !keepLinkedJob) {
       setExpandedJobId(newestActiveId);
     }
     lastNewestActive.current = newestActiveId;
   }, [newestActiveId]);
   useEffect(() => {
-    if (!expandedJobId || tab !== "activity") return;
+    if (authState !== "ready" || !activeOwnerId.current || !expandedJobId || tab !== "activity") return;
     const requestId = ++detailsRequest.current;
     setDetailsLoading(true);
     setDetailsError(false);
@@ -306,22 +458,78 @@ function App() {
     return () => {
       detailsRequest.current += 1;
     };
-  }, [expandedJobId, tab, activityJobs.find((job) => job.id === expandedJobId)?.updatedAt]);
-  async function retryJob(job: ActivityJob) {
-    if (retryPending || retryingIds.includes(job.id)) return;
+  }, [authState, user?.id, expandedJobId, detailsReload, tab, activityJobs.find((job) => job.id === expandedJobId)?.updatedAt]);
+  /** Returns null on success, otherwise the user-facing reason it did not run. */
+  async function retryJob(job: ActivityJob): Promise<string | null> {
+    const generation = sessionGeneration.current;
+    if (!activeOwnerId.current) return "Sign in to retry this capture.";
+    if (retryPending || retryingIds.includes(job.id)) return "Already retrying.";
     setRetryingIds((current) => [...current, job.id]);
     try {
       setMessage("Retrying capture…");
       await api(`/api/v1/jobs/${job.id}/retry`, { method: "POST" });
-      setMessage("Capture re-queued successfully.");
+      if (generation !== sessionGeneration.current) return "Your account changed.";
+      setMessage("Capture re-queued. Progress shows below.");
       await load();
-    } catch {
-      setMessage("Retry failed. Check the capture setup and try again.");
+      return null;
+    } catch (e) {
+      if (generation !== sessionGeneration.current) return "Your account changed.";
+      const status = (e as { status?: number }).status;
+      const reason =
+        status === 428
+          ? "AI setup isn’t finished yet. Save a transcription and analysis model in AI & models, then retry."
+          : status === 409
+            ? "This capture can’t be retried in its current state."
+            : "Retry failed. Check the capture setup and try again.";
+      setMessage(reason);
+      return reason;
     } finally {
-      setRetryingIds((current) => current.filter((id) => id !== job.id));
+      if (generation === sessionGeneration.current)
+        setRetryingIds((current) => current.filter((id) => id !== job.id));
+    }
+  }
+  async function setArchived(job: ActivityJob, archived: boolean, undoable = true) {
+    const generation = sessionGeneration.current;
+    if (!activeOwnerId.current) return;
+    if (archivingIds.includes(job.id)) return;
+    setArchivingIds((current) => [...current, job.id]);
+    try {
+      const result = await api<{ job: ActivityJob }>(
+        `/api/v1/jobs/${job.id}/${archived ? "archive" : "restore"}`,
+        { method: "POST" },
+      );
+      if (generation !== sessionGeneration.current) return;
+      setJobDetails((current) =>
+        current?.job.id === result.job.id ? { ...current, job: result.job } : current,
+      );
+      const identity = jobIdentity(result.job);
+      setNotice(
+        archived
+          ? {
+              text: `Bookmark archived: ${identity}. Find it under Archived.`,
+              ...(undoable ? { undo: () => void setArchived(result.job, false, false) } : {}),
+            }
+          : { text: `Bookmark restored: ${identity}. It’s back in Needs attention.` },
+      );
+      await load();
+    } catch (e) {
+      if (generation !== sessionGeneration.current) return;
+      const status = (e as { status?: number }).status;
+      setMessage(
+        status === 409
+          ? "Only bookmarks for unsupported sites can be archived."
+          : status === 404
+            ? "That capture is no longer available."
+            : `Couldn’t ${archived ? "archive" : "restore"} the bookmark. Try again.`,
+      );
+    } finally {
+      if (generation === sessionGeneration.current)
+        setArchivingIds((current) => current.filter((id) => id !== job.id));
     }
   }
   async function retryAll() {
+    const generation = sessionGeneration.current;
+    if (!activeOwnerId.current) return;
     if (retryPending || attentionTotal === 0) return;
     setRetryPending(true);
     setMessage("Retrying failed captures…");
@@ -330,37 +538,46 @@ function App() {
         "/api/v1/jobs/retry-failed",
         { method: "POST" },
       );
+      if (generation !== sessionGeneration.current) return;
       setMessage(`${result.retried} captures re-queued.`);
       await load();
     } catch {
+      if (generation !== sessionGeneration.current) return;
       setMessage("Retry all failed. Check the capture setup and try again.");
     } finally {
-      setRetryPending(false);
+      if (generation === sessionGeneration.current) setRetryPending(false);
     }
   }
   const navigateRef = useRef<(nextTab: AppTab) => void>(() => undefined);
   const writeLocation = (
     update: (params: URLSearchParams) => void,
     historyMode: "push" | "replace",
+    /** Settings topic for this entry; null clears it, undefined keeps the current state. */
+    topic?: SettingsTopic | null,
   ) => {
     const nextUrl = new URL(window.location.href);
     update(nextUrl.searchParams);
     const path = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
-    if (
-      path !==
-      `${window.location.pathname}${window.location.search}${window.location.hash}`
-    ) {
-      window.history[historyMode === "replace" ? "replaceState" : "pushState"](
-        window.history.state,
-        "",
-        path,
-      );
-    }
+    const current = (window.history.state ?? {}) as { settingsTopic?: unknown };
+    const samePath =
+      path ===
+      `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    const sameTopic = topic === undefined || (current.settingsTopic ?? null) === topic;
+    if (samePath && sameTopic) return;
+    const state = topic === undefined ? window.history.state : { ...current, settingsTopic: topic };
+    window.history[historyMode === "replace" ? "replaceState" : "pushState"](state, "", path);
+  };
+  const topicRef = useRef(settingsTopic);
+  topicRef.current = settingsTopic;
+  /** Records a topic switch as its own history entry. */
+  const pushSettingsTopic = (topic: SettingsTopic) => {
+    if (topic !== topicRef.current) writeLocation(() => undefined, "push", topic);
+    setSettingsTopic(topic);
   };
   const openCapture = () => {
     setCaptureMessage("");
     setCaptureError(false);
-    setCaptureSubmitted(false);
+    setCaptureReceipt(null);
     setMobileMenuOpen(false);
     setPaletteOpen(false);
     setCaptureOpen(true);
@@ -370,15 +587,39 @@ function App() {
     setCaptureOpen(false);
     writeLocation((params) => params.delete("capture"), "replace");
   };
+  /** Settings reports unsaved edits; leaving or switching topic asks first. */
+  const leaveSettingsAllowed = () => {
+    if (tab !== "settings") return true;
+    if (!confirmDiscardUnsaved(unsavedSettings.current)) return false;
+    unsavedSettings.current = null;
+    return true;
+  };
+  const changeSettingsTopic = (topic: SettingsTopic) => {
+    if (topic !== settingsTopic && !leaveSettingsAllowed()) return false;
+    pushSettingsTopic(topic);
+    setMobileMenuOpen(false);
+    return true;
+  };
   const navigateTo = (
     nextTab: AppTab,
     historyMode: "push" | "replace" = "push",
+    topic?: SettingsTopic,
   ) => {
     if (nextTab === "capture") {
       openCapture();
-      return;
+      return true;
     }
-    if (nextTab === "settings" && tab !== "settings") setSettingsTopic("account");
+    const topicChanges =
+      nextTab === "settings" && tab === "settings" && topic !== undefined && topic !== settingsTopic;
+    if ((nextTab !== "settings" || topicChanges) && !leaveSettingsAllowed()) return false;
+    const nextTopic =
+      nextTab === "settings" ? (topic ?? (tab === "settings" ? settingsTopic : "account")) : null;
+    if (nextTopic) setSettingsTopic(nextTopic);
+    else {
+      setReturnContext(null);
+      setReturnFeedback("");
+    }
+    if (nextTab !== "activity") setFocusJob(null);
     if (nextTab !== "settings") lastArchiveTab.current = nextTab;
     setDetail(null);
     setTab(nextTab);
@@ -388,23 +629,52 @@ function App() {
       params.delete("capture");
       if (nextTab === "inbox") params.delete("tab");
       else params.set("tab", nextTab);
-    }, historyMode);
+    }, historyMode, nextTopic);
+    return true;
   };
   navigateRef.current = navigateTo;
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("tab") === "capture")
       writeLocation((params) => {
         params.delete("tab");
         params.set("capture", "1");
       }, "replace");
-    const restore = () => {
+    if (tabFromLocation() === "settings") writeLocation(() => undefined, "replace", topicRef.current);
+    const restore = (event: PopStateEvent) => {
       const nextCapture = captureFromLocation();
+      const nextTab = tabFromLocation();
+      const nextTopic =
+        nextTab === "settings"
+          ? (validTopic((event.state as { settingsTopic?: unknown } | null)?.settingsTopic) ?? "account")
+          : null;
+      const leavingTopic =
+        tabRef.current === "settings" && (nextTab !== "settings" || nextTopic !== topicRef.current);
+      if (leavingTopic) {
+        if (!confirmDiscardUnsaved(unsavedSettings.current)) {
+          // Stay on the edited topic and put its address and state back.
+          const stay = new URL(window.location.href);
+          stay.searchParams.delete("capture");
+          stay.searchParams.set("tab", "settings");
+          window.history.pushState(
+            { ...((event.state ?? {}) as object), settingsTopic: topicRef.current },
+            "",
+            `${stay.pathname}${stay.search}${stay.hash}`,
+          );
+          return;
+        }
+        unsavedSettings.current = null;
+      }
+      if (nextTopic) setSettingsTopic(nextTopic);
       if (nextCapture) {
-        setCaptureSubmitted(false);
+        setCaptureReceipt(null);
         setCaptureMessage("");
       }
-      const nextTab = tabFromLocation();
-      if (nextTab !== "settings") lastArchiveTab.current = nextTab;
+      if (nextTab !== "settings") {
+        lastArchiveTab.current = nextTab;
+        setReturnContext(null);
+      }
       setTab(nextTab);
       setCaptureOpen(nextCapture);
     };
@@ -445,12 +715,18 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [authState]);
   useEffect(() => {
-    if (authState === "ready" && tab === "settings") void loadConnectionAttention();
+    if (authState !== "ready") return;
+    if (tab === "settings" || tab === "activity") void loadConnectionAttention();
+    if (tab === "inbox") void loadAiReadiness();
   }, [authState, tab, settingsTopic]);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
   const paletteNavigate = useCallback((nextTab: AppTab) => navigateRef.current(nextTab), []);
   const paletteCapture = useCallback(() => navigateRef.current("capture"), []);
   const signOut = async () => {
+    resetAccountState();
+    activeOwnerId.current = null;
+    setUser(null);
+    setAuthState("loading");
     try {
       await api("/api/auth/logout", { method: "POST" });
     } finally {
@@ -487,6 +763,8 @@ function App() {
     );
   async function submit(event: FormEvent) {
     event.preventDefault();
+    const generation = sessionGeneration.current;
+    if (!activeOwnerId.current) return;
     setSubmitting(true);
     setCaptureError(false);
     setCaptureMessage("Submitting…");
@@ -499,19 +777,35 @@ function App() {
         method: "POST",
         body: JSON.stringify({ url: captureUrl, note: note || undefined }),
       });
-      setCaptureMessage(
-        result.retried
-          ? "The previous failure was re-queued."
-          : result.created
-            ? "Added to the processing queue."
-            : `Already captured · ${result.job.status}`,
-      );
+      if (generation !== sessionGeneration.current) return;
+      setCaptureMessage("");
       setCaptureUrl("");
       setNote("");
-      setCaptureSubmitted(true);
+      setCaptureReceipt({
+        outcome: captureOutcome(result),
+        created: result.created,
+        job: result.job,
+      });
       await load();
     } catch (e) {
-      const errorCode = (e as { body?: { error?: string } }).body?.error;
+      if (generation !== sessionGeneration.current) return;
+      const body = (e as {
+        body?: { error?: string; created?: boolean; retried?: boolean; job?: ActivityJob };
+      }).body;
+      const errorCode = body?.error;
+      // Missing AI setup still retains the link server-side and returns its job.
+      if (body?.job && typeof body.created === "boolean") {
+        setCaptureMessage("");
+        setCaptureUrl("");
+        setNote("");
+        setCaptureReceipt({
+          outcome: captureOutcome({ created: body.created, retried: body.retried, job: body.job }),
+          created: body.created,
+          job: body.job,
+        });
+        void load();
+        return;
+      }
       const providerRequired = [
         "ai_provider_required",
         "analysis_provider_required",
@@ -531,15 +825,66 @@ function App() {
                   ? e.message
                   : "Submission failed",
       );
-      if (providerRequired) {
-        navigateTo("settings", "replace");
-        setSettingsTopic("ai");
-      }
+      if (providerRequired) navigateTo("settings", "replace", "ai");
     } finally {
-      setSubmitting(false);
+      if (generation === sessionGeneration.current) setSubmitting(false);
     }
   }
+  /** Opens Activity on one capture, switching to the list that contains it. */
+  const openActivityFor = (job: ActivityJob, historyMode: "push" | "replace" = "push") => {
+    const nextFilter: ActivityFilter = job.archivedAt
+      ? "archived"
+      : activityFilter === "archived" ||
+          (activityFilter === "active" && (job.status === "failed" || job.status === "complete"))
+        ? "all"
+        : activityFilter;
+    if (!navigateTo("activity", historyMode)) return false;
+    setActivityFilter(nextFilter);
+    setFocusJob(job.id);
+    setExpandedJobId(job.id);
+    return true;
+  };
+  const fixConnection = (job: ActivityJob) => {
+    if (!navigateTo("settings", "push", "connections")) return;
+    setReturnContext({ kind: "connection", job });
+    setReturnFeedback("");
+  };
+  const setUpAi = (job: ActivityJob | null) => {
+    if (!navigateTo("settings", "push", "ai")) return;
+    if (job) setReturnContext({ kind: "setup", job });
+    setReturnFeedback("");
+  };
+  const setUpIphone = () => {
+    if (!navigateTo("settings", "push", "api")) return;
+    setShortcutGuideRequest((current) => current + 1);
+  };
+  const backToCapture = () => {
+    if (!returnContext) return;
+    openActivityFor(returnContext.job);
+  };
+  async function retryFromBanner() {
+    if (!returnContext) return;
+    const generation = sessionGeneration.current;
+    setReturnRetrying(true);
+    setReturnFeedback("");
+    const failure = await retryJob(returnContext.job);
+    if (generation !== sessionGeneration.current) return;
+    setReturnRetrying(false);
+    if (failure) {
+      setReturnFeedback(failure);
+      return;
+    }
+    const job = { ...returnContext.job, status: "queued", errorCode: null };
+    if (!openActivityFor(job))
+      setReturnFeedback("Retried. Your link is queued; open Activity to follow it.");
+  }
+  const showReturnBanner =
+    tab === "settings" &&
+    returnContext !== null &&
+    ((returnContext.kind === "connection" && settingsTopic === "connections") ||
+      (returnContext.kind === "setup" && settingsTopic === "ai"));
   const liveWork = activityCounts.active + activityCounts.queued > 0;
+  const renderedGeneration = sessionGeneration.current;
   return (
     <div className={`app-frame${tab === "settings" ? " app-frame-settings" : ""}`}>
       <Sidebar
@@ -555,17 +900,16 @@ function App() {
         mobileOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}
         onNavigate={navigateTo}
-        onSettingsTopic={(topic) => {
-          setSettingsTopic(topic);
-          setMobileMenuOpen(false);
-        }}
+        onSettingsTopic={changeSettingsTopic}
         onBack={() => navigateTo(lastArchiveTab.current)}
         onCapture={openCapture}
         onOpenPalette={() => {
           setMobileMenuOpen(false);
           setPaletteOpen(true);
         }}
-        onSignOut={() => void signOut()}
+        onSignOut={() => {
+          if (leaveSettingsAllowed()) void signOut();
+        }}
       />
       {mobileMenuOpen && (
         <div
@@ -574,16 +918,25 @@ function App() {
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
-      <section className="app-workspace">
+      <section className="app-workspace" key={user?.id}>
         <MobileTopbar
           menuOpen={mobileMenuOpen}
           onOpenMenu={() => setMobileMenuOpen(true)}
           onCapture={openCapture}
         />
         <main className="shell" id="main-content">
-          {detail && <Detail id={detail} from={tab} onClose={() => setDetail(null)} />}
+          {detail && <Detail id={detail} from={tab} restoreFocus={tab !== "ask"} onClose={() => setDetail(null)} />}
           {tab === "inbox" && (
-            <InboxPage refreshToken={inboxRefresh} onOpen={setDetail} />
+            <InboxPage
+              refreshToken={inboxRefresh}
+              onOpen={setDetail}
+              userId={user?.id ?? null}
+              captureReady={aiReadiness?.capture ?? null}
+              pendingWork={activityCounts.active + activityCounts.queued}
+              onCapture={openCapture}
+              onSetUpAi={() => setUpAi(null)}
+              onViewActivity={() => navigateTo("activity")}
+            />
           )}
           {tab === "activity" && (
             <ActivityView
@@ -595,7 +948,10 @@ function App() {
               nextCursor={activityNextCursor}
               onLoadMore={() => void loadActivityPage(activityFilter, true)}
               filter={activityFilter}
-              onFilterChange={setActivityFilter}
+              onFilterChange={(filter) => {
+                setFocusJob(null);
+                setActivityFilter(filter);
+              }}
               failedJobs={failedJobs}
               attentionTotal={attentionTotal}
               failedError={failedError}
@@ -604,25 +960,104 @@ function App() {
               onLoadMoreFailed={() => void loadFailedJobs(true)}
               onReloadFailed={() => void loadFailedJobs()}
               selectedJobId={expandedJobId}
-              onSelectJob={setExpandedJobId}
+              onSelectJob={(id) => {
+                setExpandedJobId(id);
+                setDetailsReload((current) => current + 1);
+              }}
               jobDetails={jobDetails}
               detailsLoading={detailsLoading}
               detailsError={detailsError}
               highlightedJobId={highlightedJob}
-              message={message}
+              notice={notice}
               retryPending={retryPending}
               retryingIds={retryingIds}
+              archivingIds={archivingIds}
+              connections={connections}
               onRetry={(job) => void retryJob(job)}
               onRetryAll={() => void retryAll()}
-              onFixConnection={() => {
-                setSettingsTopic("connections");
-                navigateTo("settings");
-              }}
+              onFixConnection={fixConnection}
+              onSetUpAi={setUpAi}
+              onArchive={(job) => void setArchived(job, true)}
+              onRestore={(job) => void setArchived(job, false)}
             />
           )}
           {tab === "library" && <Library onOpen={setDetail} />}
-          {tab === "ask" && <AskAI onOpen={setDetail} />}
-          {tab === "settings" && <Settings user={user} onUserChange={setUser} onSignOut={signOut} topic={settingsTopic} onTopicChange={setSettingsTopic} />}
+          {tab === "ask" && (
+            <AskAI
+              onOpen={setDetail}
+              onOpenSettings={(topic) => navigateTo("settings", "push", topic)}
+              onCapture={openCapture}
+            />
+          )}
+          {showReturnBanner && returnContext && (
+            <section
+              className="app-return-banner"
+              aria-label={
+                returnContext.kind === "connection"
+                  ? "Return to capture"
+                  : "Saved link waiting for AI setup"
+              }
+            >
+              <div className="app-return-banner-text">
+                <strong>
+                  {returnContext.kind === "connection"
+                    ? `Reconnect ${platformOf(returnContext.job.normalizedUrl) ?? "the account"} for “${jobIdentity(returnContext.job)}”`
+                    : `“${jobIdentity(returnContext.job)}” is saved and waiting for AI setup`}
+                </strong>
+                <span>
+                  {returnContext.kind === "connection"
+                    ? "Reconnecting doesn’t retry the capture by itself. When the session shows Connected, go back and choose Retry."
+                    : aiReadiness?.capture
+                      ? "AI setup is ready. Retry the saved link now."
+                      : "Save a transcription and an analysis model below, then retry the saved link."}
+                </span>
+                {returnFeedback && (
+                  <span className="app-return-banner-feedback" role="status">
+                    {returnFeedback}
+                  </span>
+                )}
+              </div>
+              <div className="app-return-banner-actions">
+                {returnContext.kind === "setup" && (
+                  <ActionButton
+                    variant={aiReadiness?.capture ? "primary" : "default"}
+                    icon={RotateCcw}
+                    disabled={returnRetrying}
+                    onClick={() => void retryFromBanner()}
+                  >
+                    {returnRetrying ? "Retrying…" : "Retry saved link"}
+                  </ActionButton>
+                )}
+                <ActionButton icon={ArrowLeft} variant="ghost" onClick={backToCapture}>
+                  Back to capture
+                </ActionButton>
+              </div>
+            </section>
+          )}
+          {tab === "settings" && (
+            <Settings
+              user={user}
+              onUserChange={(next) => {
+                if (renderedGeneration === sessionGeneration.current && activeOwnerId.current === next.id)
+                  setUser(next);
+              }}
+              onSignOut={async () => {
+                if (renderedGeneration === sessionGeneration.current && activeOwnerId.current === user?.id)
+                  await signOut();
+              }}
+              topic={settingsTopic}
+              onTopicChange={pushSettingsTopic}
+              onUnsavedChange={(summary: string | null) => {
+                if (renderedGeneration === sessionGeneration.current && activeOwnerId.current === user?.id)
+                  unsavedSettings.current = summary;
+              }}
+              shortcutGuideRequest={shortcutGuideRequest}
+              onAiReadinessChange={(readiness: AiProviderState["readiness"]) => {
+                if (renderedGeneration === sessionGeneration.current && activeOwnerId.current === user?.id)
+                  setAiReadiness(readiness);
+              }}
+            />
+          )}
         </main>
         <MobileTabBar tab={tab} live={liveWork} onNavigate={navigateTo} />
       </section>
@@ -636,16 +1071,18 @@ function App() {
           }}
           onNoteChange={setNote}
           submitting={submitting}
-          submitted={captureSubmitted}
+          receipt={captureReceipt}
           message={captureMessage}
           error={captureError}
           onSubmit={submit}
           onClose={closeCapture}
           onCaptureAnother={() => {
-            setCaptureSubmitted(false);
+            setCaptureReceipt(null);
             setCaptureMessage("");
           }}
-          onViewActivity={() => navigateTo("activity", "replace")}
+          onViewActivity={(job) => openActivityFor(job, "replace")}
+          onSetUpAi={setUpAi}
+          onSetUpIphone={setUpIphone}
         />
       )}
       {paletteOpen && (

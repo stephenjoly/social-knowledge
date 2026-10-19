@@ -220,8 +220,17 @@ test.describe.serial("account profile and access management", () => {
     await page.getByRole("button", { name: "Invite someone" }).click();
     const inviteDialog = page.getByRole("dialog", { name: "Invite someone" });
     await expect(inviteDialog.getByLabel("Invitation role")).toHaveValue("member");
+    await expect(inviteDialog).toContainText("inviting someone never shares yours");
+    await expect(inviteDialog).toContainText("can’t manage accounts or invitations");
+    await inviteDialog.getByLabel("Invitation role").selectOption("admin");
+    await expect(inviteDialog).toContainText("still can’t open anyone else’s archive");
+    await inviteDialog.getByLabel("Invitation role").selectOption("member");
+    const createdResponse = page.waitForResponse((response) => response.url().endsWith("/api/v1/admin/invitations") && response.request().method() === "POST");
     await inviteDialog.getByRole("button", { name: "Create invitation" }).click();
     await expect(page.getByText("Invitation created.")).toBeVisible();
+    const createdInvitation = await (await createdResponse).json() as { invitationUrl: string };
+    const oldToken = new URL(createdInvitation.invitationUrl).hash.slice("#invite=".length);
+    expect((await page.request.post(baseUrl + "/api/auth/invitations/inspect", { data: { token: oldToken } })).status()).toBe(200);
     await expect(page.locator('input[value*="#invite="]')).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText("#invite=");
     await inviteDialog.getByRole("button", { name: "Copy link" }).click();
@@ -237,8 +246,16 @@ test.describe.serial("account profile and access management", () => {
     await openTopic(page, "people", "People & access");
     invitation = page.locator(".ui-card-row").filter({ hasText: "Member invite" });
     await expect(invitation.getByRole("button", { name: "Copy link" })).toHaveCount(0);
+    await expect(invitation).toContainText("New link replaces the earlier link");
+    await expect(invitation.getByRole("button", { name: "New link" })).toHaveAttribute("title", /earlier link stops working immediately/);
+    const regeneratedResponse = page.waitForResponse((response) => response.url().endsWith("/regenerate") && response.request().method() === "POST");
     await invitation.getByRole("button", { name: "New link" }).click();
-    await expect(page.getByText("New invitation link created.")).toBeVisible();
+    const regenerated = await (await regeneratedResponse).json() as { invitationUrl: string };
+    const newToken = new URL(regenerated.invitationUrl).hash.slice("#invite=".length);
+    expect(newToken).not.toBe(oldToken);
+    expect((await page.request.post(baseUrl + "/api/auth/invitations/inspect", { data: { token: oldToken } })).status()).toBe(400);
+    expect((await page.request.post(baseUrl + "/api/auth/invitations/inspect", { data: { token: newToken } })).status()).toBe(200);
+    await expect(page.getByText("New invitation link created. Copy it now; the previous link no longer works.")).toBeVisible();
     await expect(invitation.getByRole("button", { name: "Copy link" })).toBeVisible();
     await expect(page.locator('input[value*="#invite="]')).toHaveCount(0);
     await page.evaluate(() => {
@@ -278,6 +295,18 @@ test.describe.serial("account profile and access management", () => {
       return response.status;
     });
     expect(forbidden).toBe(403);
+    for (const [method, endpoint, data] of [
+      ["GET", "/api/v1/admin/invitations", undefined],
+      ["POST", "/api/v1/admin/invitations", { role: "admin" }],
+      ["POST", "/api/v1/admin/invitations/not-owned/regenerate", {}],
+      ["POST", "/api/v1/admin/invitations/not-owned/revoke", {}],
+    ] as const) {
+      const status = await page.evaluate(async ({ method, endpoint, data }) => {
+        const response = await fetch(endpoint, { method, ...(data ? { headers: { "content-type": "application/json" }, body: JSON.stringify(data) } : {}) });
+        return response.status;
+      }, { method, endpoint, data });
+      expect(status).toBe(403);
+    }
 
     await openTopic(page, "people", "My account");
     await expect(page.getByRole("button", { name: "Invite someone" })).toHaveCount(0);

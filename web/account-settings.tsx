@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Copy,
   Ellipsis,
+  Languages,
   Link as LinkIcon,
   Lock,
   LogOut,
@@ -36,6 +37,7 @@ import {
   formatShortDate,
   formatUntil,
 } from "./settings-ui";
+import { confirmDiscardUnsaved, useUnsavedChanges } from "./unsaved-changes";
 
 export type AccountUser = {
   id: string;
@@ -132,17 +134,27 @@ export function MyAccount({
   onUserChange,
   onSignOut,
   onOpenData,
+  onOpenLanguage,
+  noteLanguage = null,
+  onUnsavedChange,
 }: {
   user: AccountUser;
   onUserChange: (user: AccountUser) => void;
   onSignOut: () => Promise<void>;
   onOpenData: () => void;
+  /** Opens Data & export at the note language setting. */
+  onOpenLanguage?: () => void;
+  noteLanguage?: string | null;
+  /** Receives a summary of unsaved profile edits, or null. */
+  onUnsavedChange?: (summary: string | null) => void;
 }) {
   const [displayName, setDisplayName] = useState(user.displayName || "");
   const [username, setUsername] = useState(user.username);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [messageIsError, setMessageIsError] = useState(false);
+  const [avatarMessage, setAvatarMessage] = useState("");
+  const [avatarMessageIsError, setAvatarMessageIsError] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [avatarPending, setAvatarPending] = useState(false);
   const session = describeSession(navigator.userAgent);
@@ -153,6 +165,12 @@ export function MyAccount({
   const report = (text: string, error = false) => {
     setMessage(text);
     setMessageIsError(error);
+    if (text) setAvatarMessage("");
+  };
+  const reportAvatar = (text: string, error = false) => {
+    setAvatarMessage(text);
+    setAvatarMessageIsError(error);
+    if (text) setMessage("");
   };
   const saveProfile = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -183,16 +201,23 @@ export function MyAccount({
   const chooseColour = async (colour: string) => {
     if (avatarPending || colour === user.avatarColor) return;
     setAvatarPending(true);
-    report("");
+    reportAvatar("");
     try {
       const result = await request<{ user: AccountUser }>(
         "/api/v1/account/profile",
         { method: "PATCH", body: JSON.stringify({ avatarColor: colour }) },
       );
       onUserChange(result.user);
-      report("Avatar colour saved.");
+      reportAvatar(
+        dirty
+          ? "Avatar colour saved. Your name changes still need Save."
+          : "Avatar colour saved.",
+      );
     } catch (error) {
-      report(readableError(error, "Avatar colour could not be saved."), true);
+      reportAvatar(
+        readableError(error, "Avatar colour could not be saved."),
+        true,
+      );
     } finally {
       setAvatarPending(false);
     }
@@ -201,6 +226,10 @@ export function MyAccount({
     displayName.trim() !== (user.displayName || "") ? "display name" : null,
     username.trim().toLowerCase() !== user.username ? "username" : null,
   ].filter(Boolean);
+  useUnsavedChanges(
+    dirty ? `Your ${changes.join(" and ")} changes aren’t saved.` : null,
+    onUnsavedChange,
+  );
   return (
     <>
       <SettingsPageHeader
@@ -210,6 +239,7 @@ export function MyAccount({
       />
       <SettingsSection
         title="Profile"
+        description="Name changes apply when you save. Avatar colour saves as soon as you pick one."
         after={
           <>
             {dirty ? (
@@ -271,12 +301,31 @@ export function MyAccount({
           </CardRow>
           <CardRow
             title={<span id="account-avatar-colour">Avatar colour</span>}
+            description={
+              <>
+                <span id="account-avatar-hint">
+                  Saves immediately. No need to press Save.
+                </span>
+                {avatarMessage && (
+                  <span
+                    className={cx(
+                      "st-inline-status",
+                      avatarMessageIsError && "st-feedback-error",
+                    )}
+                    role={avatarMessageIsError ? "alert" : "status"}
+                  >
+                    {avatarMessage}
+                  </span>
+                )}
+              </>
+            }
             last
           >
             <div
               className="st-swatches"
               role="group"
               aria-labelledby="account-avatar-colour"
+              aria-describedby="account-avatar-hint"
             >
               {avatarColours.map((colour) => {
                 const selected = user.avatarColor === colour.value;
@@ -319,12 +368,39 @@ export function MyAccount({
           last
         >
           <StatusPill tone="ok">This device</StatusPill>
-          <ActionButton icon={LogOut} onClick={() => void onSignOut()}>
+          <ActionButton
+            icon={LogOut}
+            onClick={() => {
+              if (
+                confirmDiscardUnsaved(
+                  dirty
+                    ? `Your ${changes.join(" and ")} changes aren’t saved.`
+                    : null,
+                )
+              )
+                void onSignOut();
+            }}
+          >
             Sign out
           </ActionButton>
         </CardRow>
       </SettingsSection>
       <SettingsSection title="Your archive">
+        {onOpenLanguage && (
+          <CardRow
+            leading={<IconBox icon={Languages} size={30} />}
+            title="Note language"
+            description={
+              noteLanguage
+                ? `New captures are written in ${noteLanguage}. Existing notes keep their language.`
+                : "Choose the language new notes are written in. Existing notes keep their language."
+            }
+          >
+            <ActionButton icon={ArrowRight} onClick={onOpenLanguage}>
+              Change language
+            </ActionButton>
+          </CardRow>
+        )}
         <CardRow
           leading={<IconBox icon={Archive} size={30} />}
           title="Exports and downloads"
@@ -545,8 +621,8 @@ function InviteDialog({
       title="Invite someone"
       description={
         link
-          ? "Copy this link now. It cannot be shown again once you close this dialog."
-          : "Create a single-use link and share it with the person you want to invite."
+          ? "Copy this link now. It can’t be shown again after you close this dialog; if it’s lost, use New link to replace it."
+          : "Create a single-use link for one new account. They get their own private, empty archive; inviting someone never shares yours."
       }
       onClose={onClose}
       closeDisabled={pending}
@@ -622,8 +698,8 @@ function InviteDialog({
             </Select>
             <small>
               {role === "admin"
-                ? "Admins can invite people, change roles, and suspend access."
-                : "Members cannot manage other accounts or invitations."}
+                ? "Admins can also invite people, change roles, and suspend access. They still can’t open anyone else’s archive."
+                : "Members have their own private archive. They can’t see yours, and can’t manage accounts or invitations."}
             </small>
           </div>
           {role === "admin" && (
@@ -786,7 +862,7 @@ export function PeopleAccess({ currentUser }: { currentUser: AccountUser }) {
       />
       <SettingsSection
         title="Members"
-        description={`${users.length} ${users.length === 1 ? "person" : "people"}`}
+        description={`${users.length} ${users.length === 1 ? "person" : "people"} · roles control who manages access; every archive stays private to its owner`}
         actions={
           <Input
             icon={Search}
@@ -893,7 +969,7 @@ export function PeopleAccess({ currentUser }: { currentUser: AccountUser }) {
       </SettingsSection>
       <SettingsSection
         title="Open invitations"
-        description="Links expire after 24 hours. Anyone with the link can create one account."
+        description="Links expire after 24 hours and create one account each. A link is shown once; New link replaces it, and the earlier link stops working."
         after={
           <>
             {fallbackUrl && (
@@ -918,7 +994,7 @@ export function PeopleAccess({ currentUser }: { currentUser: AccountUser }) {
               key={invitation.id}
               leading={<IconBox icon={admin ? Shield : LinkIcon} size={30} />}
               title={admin ? "Admin invite" : "Member invite"}
-              description={`Created by ${creatorName(invitation.createdByUserId)} · expires ${formatUntil(invitation.expiresAt, now)}`}
+              description={`Created by ${creatorName(invitation.createdByUserId)} · expires ${formatUntil(invitation.expiresAt, now)} · ${link ? "copy it now; it’s shown only once" : "New link replaces the earlier link"}`}
             >
               {admin && <StatusPill tone="warn">Admin</StatusPill>}
               {link ? (
@@ -943,7 +1019,7 @@ export function PeopleAccess({ currentUser }: { currentUser: AccountUser }) {
                 <ActionButton
                   icon={RefreshCw}
                   disabled={busy}
-                  title="Links are shown once. Create a new link to share it again; the old one stops working."
+                  title="Creates a new link for this invitation. The earlier link stops working immediately."
                   onClick={() => void runInvitationAction(invitation, "regenerate")}
                 >
                   New link

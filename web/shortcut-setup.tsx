@@ -1,17 +1,51 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Copy, Download, KeyRound, PlugZap, Smartphone } from "lucide-react";
 import { ActionButton, CardRow, IconBox, Input } from "./components/ui/primitives";
 import { shortcutDownloads } from "./shortcut-downloads";
 
 export { shortcutDownloads };
 
-export function ShortcutSetup({ onCreated, keyIds }: { onCreated: () => Promise<void>; keyIds: string[] }) {
+export function ShortcutSetup({
+  onCreated,
+  keyIds,
+  openGuide = false,
+  onGuideOpened,
+}: {
+  onCreated: () => Promise<void>;
+  keyIds: string[];
+  /** Expands the setup guide, scrolls it into view, and focuses its toggle. */
+  openGuide?: boolean;
+  onGuideOpened?: () => void;
+}) {
   const [credential, setCredential] = useState<{ id: string; token: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const titleId = useId();
+  const regionRef = useRef<HTMLDivElement>(null);
+  const onGuideOpenedRef = useRef(onGuideOpened);
+  onGuideOpenedRef.current = onGuideOpened;
+  useEffect(() => {
+    if (!openGuide) return;
+    setOpen(true);
+    // After Settings moves focus to the topic heading, bring the guide forward.
+    let inner = 0;
+    const outer = window.requestAnimationFrame(() => {
+      inner = window.requestAnimationFrame(() => {
+        const region = regionRef.current;
+        region?.scrollIntoView({ block: "start", behavior: "smooth" });
+        region
+          ?.querySelector<HTMLButtonElement>("button[aria-controls]")
+          ?.focus({ preventScroll: true });
+        onGuideOpenedRef.current?.();
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(outer);
+      window.cancelAnimationFrame(inner);
+    };
+  }, [openGuide]);
   const active = credential && keyIds.includes(credential.id);
   async function create() {
     setBusy(true);
@@ -64,7 +98,12 @@ export function ShortcutSetup({ onCreated, keyIds }: { onCreated: () => Promise<
     } finally { setBusy(false); }
   }
   return (
-    <div className="st-shortcut" role="region" aria-labelledby={titleId}>
+    <div
+      ref={regionRef}
+      className="st-shortcut"
+      role="region"
+      aria-labelledby={titleId}
+    >
       <CardRow
         leading={<IconBox icon={Smartphone} tone="green" />}
         title={<span id={titleId}>Social Knowledge Shortcut</span>}

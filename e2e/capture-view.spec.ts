@@ -55,12 +55,12 @@ test("keeps invalid links in the capture dialog and confirms submission", async 
   await expect(dialog.getByText("Instagram reel detected")).toBeVisible();
   await dialog.getByRole("button", { name: "Save to archive" }).click();
   await expect(
-    page.getByRole("dialog", { name: "Post submitted" }),
+    page.getByRole("dialog", { name: "Post queued" }),
   ).toBeVisible();
   await expect(page.getByRole("status")).toContainText(
-    "Added to the processing queue.",
+    "Queued for processing",
   );
   expect(submissions).toBe(2);
-  await page.getByRole("button", { name: "View activity" }).click();
+  await page.getByRole("button", { name: "View progress", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
 });

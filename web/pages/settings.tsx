@@ -15,6 +15,7 @@ import {
   KeyRound,
   MessageCircle,
   Plus,
+  Smartphone,
   Sparkles,
   Upload,
   type LucideIcon,
@@ -32,6 +33,8 @@ import {
 } from "../components/ui/primitives";
 import { MyAccount, PeopleAccess, type AccountUser } from "../account-settings";
 import { ShortcutSetup } from "../shortcut-setup";
+import { AiSetupProgress, nextAiSetupStep, type AiSetupStep } from "../ai-setup-progress";
+import { confirmDiscardUnsaved, useUnsavedChanges } from "../unsaved-changes";
 import {
   DisclosureRow,
   FacebookIcon,
@@ -280,7 +283,28 @@ function matchesCurrentTestSelection(
     (result.selection as AiAnalysisSelection).thinkingLevel;
 }
 
-export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: setTopic }: { user: AccountUser | null; onUserChange: (user: AccountUser) => void; onSignOut: () => Promise<void>; topic: SettingsTopic; onTopicChange: (topic: SettingsTopic) => void }) {
+export function Settings({
+  user,
+  onUserChange,
+  onSignOut,
+  topic,
+  onTopicChange,
+  onUnsavedChange,
+  shortcutGuideRequest = 0,
+  onAiReadinessChange,
+}: {
+  user: AccountUser | null;
+  onUserChange: (user: AccountUser) => void;
+  onSignOut: () => Promise<void>;
+  topic: SettingsTopic;
+  onTopicChange: (topic: SettingsTopic) => void;
+  /** Receives a plain-language summary of unsaved edits, or null, so navigation can ask first. */
+  onUnsavedChange?: (summary: string | null) => void;
+  /** Each increment opens API keys with the iPhone Shortcut setup guide expanded. */
+  shortcutGuideRequest?: number;
+  /** Called whenever the saved AI setup readiness is known or changes. */
+  onAiReadinessChange?: (readiness: { capture: boolean; ask: boolean }) => void;
+}) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -716,6 +740,7 @@ export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: 
       setVerifyingProvider(false);
     }
   }
+  const setTopic = onTopicChange;
   const [keyDialogOpen, setKeyDialogOpen] = useState(false);
   const [cookiePlatform, setCookiePlatform] = useState<
     PlatformConnection["platform"] | null
@@ -771,6 +796,96 @@ export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: 
     aiState && !sameAiSelections(currentAiSelections, aiState.selections),
   );
   const aiTestBlocked = aiSettingsDirty || savingAiSelections;
+  const [accountUnsaved, setAccountUnsaved] = useState<string | null>(null);
+  const unsavedSummary =
+    view === "account"
+      ? accountUnsaved
+      : view === "ai" && aiSettingsDirty && aiState
+        ? `AI & models: ${describeAiChanges(aiState.selections, currentAiSelections, configuredAiProviders)}.`
+        : null;
+  useUnsavedChanges(unsavedSummary, onUnsavedChange);
+  /** Topic changes started inside Settings ask before discarding edits too. */
+  const goToTopic = (next: SettingsTopic) => {
+    if (!confirmDiscardUnsaved(unsavedSummary)) return;
+    setTopic(next);
+  };
+  // Unsaved task model choices belong to AI & models; leaving it discards them,
+  // which navigation has already confirmed.
+  const previousAiView = useRef(view);
+  useEffect(() => {
+    const wasAi = previousAiView.current === "ai";
+    previousAiView.current = view;
+    if (wasAi && view !== "ai" && aiStateRef.current) {
+      setDraftSelections(aiStateRef.current.selections);
+      setProviderMessage("");
+    }
+  }, [view]);
+  useEffect(() => {
+    if (aiState) onAiReadinessChange?.(aiState.readiness);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiState?.readiness.capture, aiState?.readiness.ask]);
+  const [guideOpenPending, setGuideOpenPending] = useState(
+    shortcutGuideRequest > 0,
+  );
+  const handledGuideRequest = useRef(0);
+  useEffect(() => {
+    if (shortcutGuideRequest <= handledGuideRequest.current) return;
+    handledGuideRequest.current = shortcutGuideRequest;
+    setGuideOpenPending(true);
+    if (topic !== "api") setTopic("api");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shortcutGuideRequest]);
+  const taskModelsRef = useRef<HTMLDivElement>(null);
+  // "Change language" from My account lands on the language control itself.
+  const languageFocusPending = useRef(false);
+  useEffect(() => {
+    if (view !== "data" || loading || !languageFocusPending.current) return;
+    languageFocusPending.current = false;
+    let inner = 0;
+    const outer = window.requestAnimationFrame(() => {
+      inner = window.requestAnimationFrame(() => {
+        const select = document.getElementById("note-language");
+        select?.scrollIntoView({ block: "center" });
+        select?.focus({ preventScroll: true });
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(outer);
+      window.cancelAnimationFrame(inner);
+    };
+  }, [view, loading]);
+  const aiSetupStep =
+    aiState
+      ? nextAiSetupStep(aiState, currentAiSelections, aiSettingsDirty, testStates)
+      : null;
+  const runAiSetupStep = (step: AiSetupStep) => {
+    if (step.id === "credentials") {
+      const broken = aiState?.providers.find(
+        (provider) => !provider.connected && provider.status === "needs_attention",
+      );
+      openProviderDialog(broken?.id ?? "openai");
+    } else if (step.id === "tasks") {
+      if (step.action === "Connect OpenAI") {
+        openProviderDialog("openai");
+        return;
+      }
+      const target = taskModelsRef.current;
+      target?.scrollIntoView({ block: "start", behavior: "smooth" });
+      // The anchor is a scroll target; the controls live in its following section.
+      const empty = target?.nextElementSibling?.querySelector<HTMLSelectElement>(
+        currentAiSelections.transcription
+          ? 'select[aria-label="Analysis provider"]'
+          : 'select[aria-label="Transcription provider"]',
+      );
+      empty?.focus({ preventScroll: true });
+    } else if (step.id === "save") {
+      const bar = document.querySelector<HTMLElement>(".st-savebar");
+      bar?.scrollIntoView({ block: "center", behavior: "smooth" });
+      bar?.querySelector<HTMLButtonElement>(".st-savebar-save")?.focus({
+        preventScroll: true,
+      });
+    } else openTestDialog();
+  };
   const exportPending = libraryExports.some((item) => item.status === "pending");
   const cookieConnection = platformConnections.find(
     (connection) => connection.platform === cookiePlatform,
@@ -876,6 +991,37 @@ export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: 
     </div>
   ) : null;
   const workspaceCrumb = "SETTINGS  /  WORKSPACE";
+  const cookieHelp = (
+    <>
+      <p className="st-help-note">
+        <Smartphone size={14} aria-hidden="true" />
+        <span>
+          <strong>On a phone?</strong> This guide uses Chrome or Firefox on a
+          computer to export the file. Once uploaded, every device, including your
+          iPhone Shortcut, uses the saved session. If the file is already
+          on this phone, for example in Files, you can upload it here.
+        </span>
+      </p>
+      <ol className="st-steps">
+        <li>
+          On a computer, sign in to Instagram or Facebook in Chrome or Firefox.
+        </li>
+        <li>
+          Use a trusted cookies.txt exporter extension to save the cookies for
+          that site only, in Netscape format.
+        </li>
+        <li>
+          Open Settings › Connections on that computer, choose Connect or
+          Reconnect, and upload the file. Cookies for other sites are discarded
+          before encryption. Passwords are never requested or stored.
+        </li>
+        <li>
+          Sessions usually last about a month. When one expires, Activity
+          says so; repeat these steps, then retry the affected captures.
+        </li>
+      </ol>
+    </>
+  );
   return (
     <div className="sk-settings settings-workspace">
       <div className="st-column">
@@ -884,7 +1030,14 @@ export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: 
             user={user}
             onUserChange={onUserChange}
             onSignOut={onSignOut}
-            onOpenData={() => setTopic("data")}
+            onOpenData={() => goToTopic("data")}
+            onOpenLanguage={() => {
+              if (!confirmDiscardUnsaved(unsavedSummary)) return;
+              languageFocusPending.current = true;
+              setTopic("data");
+            }}
+            noteLanguage={loading || loadError ? null : defaultLanguage}
+            onUnsavedChange={setAccountUnsaved}
           />
         )}
         {view === "people" && user && <PeopleAccess currentUser={user} />}
@@ -906,6 +1059,13 @@ export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: 
             />
             {stateCard ?? (
               <>
+                {aiState && (
+                  <AiSetupProgress
+                    step={aiSetupStep}
+                    ready={aiState.readiness.capture && aiState.readiness.ask}
+                    onAction={runAiSetupStep}
+                  />
+                )}
                 <SettingsSection
                   title="Providers"
                   description="Credentials available to transcription and analysis."
@@ -956,9 +1116,10 @@ export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: 
                     );
                   })}
                 </SettingsSection>
+                <div ref={taskModelsRef} className="st-anchor" />
                 <SettingsSection
                   title="Task models"
-                  description="Each step can use a different connected provider."
+                  description="Each step can use a different connected provider. Choices apply after you save."
                   after={
                     !providerDialogOpen && (
                       <Feedback error={providerMessageKind === "error"}>
@@ -1235,30 +1396,10 @@ export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: 
                   <DisclosureRow
                     icon={Info}
                     title="How to export browser cookies"
-                    description="Step-by-step for Safari, Chrome, and Firefox."
+                    description="A manual setup guide using Chrome or Firefox on a computer. Upload an existing file from your phone."
                     last
                   >
-                    <ol className="st-steps">
-                      <li>
-                        Sign in to Instagram or Facebook in a desktop browser.
-                      </li>
-                      <li>
-                        <strong>Chrome or Firefox:</strong> use a trusted
-                        cookies.txt exporter extension to save the cookies for
-                        that site in Netscape format.
-                      </li>
-                      <li>
-                        <strong>Safari:</strong> Safari cannot export
-                        cookies.txt files. Sign in with Chrome or Firefox for
-                        this step instead.
-                      </li>
-                      <li>
-                        Upload the file here. Social Knowledge discards every
-                        cookie that does not belong to that platform before
-                        encrypting the connection. Passwords are never
-                        requested or stored.
-                      </li>
-                    </ol>
+                    {cookieHelp}
                   </DisclosureRow>
                 </SettingsSection>
                 <SettingsSection
@@ -1395,6 +1536,8 @@ export function Settings({ user, onUserChange, onSignOut, topic, onTopicChange: 
                   <ShortcutSetup
                     onCreated={() => load()}
                     keyIds={keys.map((key) => key.id)}
+                    openGuide={guideOpenPending}
+                    onGuideOpened={() => setGuideOpenPending(false)}
                   />
                   <DisclosureRow
                     icon={Code}
@@ -1438,13 +1581,13 @@ curl -X POST -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
             <SettingsPageHeader
               crumb={workspaceCrumb}
               title="Data & export"
-              description="How notes are written, and a portable copy of everything you've saved."
+              description="The language new notes are written in, and a portable copy of everything you’ve saved."
             />
             {stateCard ?? (
               <>
                 <SettingsSection
                   title="Language"
-                  description="Applies to new captures. Existing notes keep their language."
+                  description="Changes save immediately and apply to captures saved from now on. Existing notes keep their language."
                   after={
                     <Feedback error={preferenceError}>{preferenceMessage}</Feedback>
                   }
@@ -1877,6 +2020,10 @@ curl -X POST -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
               ? `${cookieConnection.cookieCount} ${platformLooks[cookiePlatform].label} cookies are stored encrypted. A new file replaces them.`
               : "Without a session, Social Knowledge still tries public downloads."}
           </p>
+          <details className="st-help-details">
+            <summary>How do I get a cookies.txt file?</summary>
+            {cookieHelp}
+          </details>
           <Feedback>{platformMessage}</Feedback>
         </SettingsDialog>
       )}

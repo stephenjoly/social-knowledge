@@ -26,9 +26,16 @@ Social Knowledge turns Facebook and Instagram media a person deliberately submit
 
 Inbox opens directly into capture search, filters, sorting, and a compact list. It has no top summary cards. The loaded capture count remains beside the collection controls; account-wide summary APIs remain available to existing clients.
 
+Rows are the default. The Rows/Tiles choice keeps the current search, filters,
+sort, loaded results, and browsing anchor. The preference is stored per signed-in
+account in that browser, not synchronized across devices. Tiles use stored
+thumbnails with a stable fallback and retain titles, creators, and source platform;
+phone layouts keep each tile readable in a single column. Empty archives offer a
+first capture and a way to resume incomplete AI setup.
+
 The sidebar groups Inbox, Activity, and Knowledge base under Library, with Ask in
 a separate Assistant group. Its capture button opens a dialog over the current
-page. The search control and Command/Ctrl+K open a destination palette; this is
+page. The Go to control and Command/Ctrl+K open a destination palette; this is
 navigation, not archive search. The G then I/A/K/Q shortcuts open Inbox, Activity,
 Knowledge base, and Ask. The processing card shows live account-owned work and
 links to Activity; on mobile it remains available inside the menu.
@@ -40,11 +47,36 @@ archive destination. There is no Overview page or second settings sidebar.
 
 ## Activity behavior
 
-Activity follows screen 04 of the UI v2 contract. Four stat cards show captures processing, queued, needing attention, and saved in the viewer's local day. Needs attention lists failed captures in failure-priority order with their failure, the stage it failed at, and the attempt; each offers Retry (except unsupported-platform bookmarks), and expired platform sessions also offer Fix connection, which opens Settings › Connections. Retry all failed re-queues every account-owned failed capture, including failures outside the loaded page, and shows pending feedback. The Captures list shows all statuses by default, or only in-progress work, with a five-step tracker (Added, Found, Media, Text, Saved) and the current status on every row, and more history through pagination. Selecting a row or failure opens it in the inspector on the right: a stage checklist with durations (running stages show a clock), the processing log, failure guidance for failed captures, and Copy safe logs. The newest active capture is selected automatically when it starts; a `?job=` link selects and highlights that capture instead. Processing logs expose only known-safe event copy and timestamps, never raw diagnostics or internal paths. The account trigger opens a compact menu; its adjacent gear opens Settings directly on desktop.
+Activity follows screen 04 with the approved UX addendum. Four stat cards show
+processing, queued, needing attention, and saved in the viewer's local day. Rows
+emphasize the post, current status, and next action. Needs attention gives failure
+guidance without duplicating the full explanation in the capture list. Selecting
+an item opens its inspector; timing, stage history, attempts, and logs are revealed
+through Show timing and logs. Copy safe logs exposes only controlled event copy
+and timestamps, never raw diagnostics or internal paths.
+
+Fix connection opens Settings › Connections and retains the affected capture as
+return context. It explains reconnecting first, then retrying. Missing AI setup
+similarly retains the submitted link, opens AI & models, and offers retry after
+saved setup. A queued receipt describes queued work; duplicate receipts distinguish
+queued, processing, completed, unsupported, and archived outcomes. Only new or
+requeued work displays the processing steps. Capture's iPhone tip opens guided
+Shortcut setup in API keys.
+
+Terminal unsupported bookmarks can be archived with an undo action and restored
+from Activity's Archived filter. Archiving removes them from normal lists and
+attention counts while preserving their URL and complete event history. Restoring
+does not queue a download. Other failures remain visible and actionable. Retry all
+failed covers eligible account-owned failures beyond the loaded page, excluding
+archived and unsupported bookmarks. The newest active capture is selected when it
+starts; a `?job=` link or a recovery return selects its specific capture instead.
 
 Logs retain previous attempts when a capture was retried. When persisted history supports it, each event includes an attempt number and each failure explains its controlled failure category and recovery guidance. Automatic retry scheduling and manual retry requests are labeled separately; the attention count explicitly counts manual retries. Known AI credential, quota, rate-limit, and model-availability failures have specific recovery guidance. Unknown legacy causes are identified as unavailable. Their action labels are derived from known pipeline statuses, so changes in display wording cannot hide valid success events. Historical failures remain visible as failures alongside a later saved outcome.
 
-On wide screens Activity fills the viewport: the work column scrolls on its own and the inspector runs to the bottom edge, with its log scrolling inside it with keyboard access. Below 1100px the inspector stacks under the lists and selecting a row scrolls it into view.
+On wide screens Activity fills the viewport: the work column scrolls on its own
+and the inspector runs to the bottom edge. Expanded logs scroll with keyboard
+access. Below 1100px the inspector stacks under the lists; selecting an item scrolls
+it into view, and its return action goes back to that item.
 
 Activity uses the shared application sidebar and the v2 app page gutters (40px by 56px).
 
@@ -69,9 +101,33 @@ The footer's Test connection action opens explicit transcription, structured-ana
 
 Settings topics share their layout and reserve scrollbar space to avoid horizontal shifts when switching between short and long pages. Provider verification confirms credentials; it does not replace live model and capture acceptance before production.
 
+Setup guidance distinguishes connecting credentials, assigning tasks, saving draft
+changes, and explicitly testing saved settings. Task assignments and Save remain
+discoverable on phones. Connection help describes the manual cookie-file workflow
+and transferring a file to a phone; it does not imply one-click social sign-in.
+
+## Ask behavior
+
+Ask remains a conversational view with one composer. Each answer's source cards
+identify the question they support; a follow-up without citations does not inherit
+older cards. Earlier evidence remains available through its answer. Citations open
+saved notes and return to the answer's reading position. Streaming follows new text
+while the reader is at the bottom, and stops following when the reader scrolls up.
+
+Reopened failed answers use persisted, controlled failure reasons and relevant
+recovery actions. Unknown historical reasons use generic safe copy. Missing AI
+configuration links directly to AI & models. Empty archives explain that saved
+posts are needed and offer capture instead of suggesting questions about nonexistent
+content. Model configuration stays in Settings.
+
 ## Account settings and access administration
 
 My account manages the signed-in person's display name, username, initials-avatar color, password, and session. Password changes require the current password and sign out existing browser sessions. The archive shortcut opens Data & export; account-owned captures, credentials, and API keys remain private.
+
+Avatar colour saves immediately; profile fields require Save changes. Navigation
+warns before discarding unsaved edits. Language preferences are discoverable from
+My account and remain in Data & export, where changes explicitly apply to new
+captures only and retain save/error feedback.
 
 People & access is a separate administrator-only settings topic. Administrators can search accounts, change another person's role, and suspend or restore sign-in and credential access. Suspension preserves the person's archive and credentials. The server prevents self-demotion, self-suspension, and removing the last active administrator. Administration never grants access to another person's archive or credentials.
 

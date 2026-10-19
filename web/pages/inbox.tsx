@@ -1,11 +1,16 @@
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowDownWideNarrow,
+  Bookmark,
+  LayoutGrid,
+  List,
   ListFilter,
+  Plus,
   Search,
+  Settings2,
   X,
 } from "lucide-react";
-import type { Capture, CaptureFacets, InboxSortKey } from "../shared/types";
+import type { Capture, CaptureFacets, InboxSortKey, InboxView } from "../shared/types";
 import { api, assetUrl } from "../shared/api";
 import { ActionButton, Chip, cx } from "../components/ui/primitives";
 import { useDialogFocus } from "../components/use-dialog-focus";
@@ -76,7 +81,7 @@ function CaptureRow({ capture, onOpen }: { capture: Capture; onOpen: (id: string
   const topic = capture.categoryLabel || capture.topics[0] || null;
   const meta = [creatorHandle(capture.creator), captureKind(capture), relativeTime(capture.createdAt)].filter(Boolean);
   return (
-    <li className="inbox-row">
+    <li className="inbox-row" data-capture-id={capture.id}>
       <button type="button" className="inbox-row-button" onClick={() => onOpen(capture.id)}>
         <span className="inbox-thumb" style={{ background: tintFor(topic ?? capture.platform) }} aria-hidden="true">
           {thumb && !imageFailed && (
@@ -98,6 +103,104 @@ function CaptureRow({ capture, onOpen }: { capture: Capture; onOpen: (id: string
       </button>
     </li>
   );
+}
+
+function PlatformMark({ platform }: { platform: string }) {
+  const common = {
+    width: 22,
+    height: 22,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+    focusable: false,
+  };
+  if (platform === "instagram")
+    return (
+      <svg {...common}>
+        <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+        <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+      </svg>
+    );
+  if (platform === "facebook")
+    return (
+      <svg {...common}>
+        <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+      </svg>
+    );
+  return <Bookmark size={22} aria-hidden="true" focusable="false" />;
+}
+
+function CaptureTile({ capture, onOpen }: { capture: Capture; onOpen: (id: string) => void }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const thumb = capture.assets.find((asset) => asset.kind === "thumbnail" || asset.kind === "image");
+  const topic = capture.categoryLabel || capture.topics[0] || null;
+  const creator = creatorHandle(capture.creator);
+  const showImage = Boolean(thumb) && !imageFailed;
+  return (
+    <li className="inbox-tile" data-capture-id={capture.id}>
+      <button type="button" className="inbox-tile-button" onClick={() => onOpen(capture.id)}>
+        <span
+          className={cx("inbox-tile-media", !showImage && "inbox-tile-fallback")}
+          style={{ background: tintFor(topic ?? capture.platform) }}
+          aria-hidden="true"
+        >
+          {showImage ? (
+            <img src={assetUrl(capture.id, thumb!.id)} alt="" loading="lazy" onError={() => setImageFailed(true)} />
+          ) : (
+            <PlatformMark platform={capture.platform} />
+          )}
+        </span>
+        <span className="inbox-tile-text">
+          <strong className="inbox-tile-title">{capture.title}</strong>
+          <span className="inbox-tile-meta">
+            {creator && <span className="inbox-tile-creator">{creator}</span>}
+            <span>
+              {captureKind(capture)} · <time dateTime={capture.createdAt}>{relativeTime(capture.createdAt)}</time>
+            </span>
+          </span>
+          {topic && <Chip className="inbox-tile-topic">{topic}</Chip>}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+const inboxViewKey = (userId: string) => `social-knowledge:inbox-view:${userId}`;
+
+/** The layout choice is remembered per account in this browser only. */
+function readInboxView(userId: string | null): InboxView {
+  if (!userId) return "rows";
+  try {
+    return window.localStorage.getItem(inboxViewKey(userId)) === "tiles" ? "tiles" : "rows";
+  } catch {
+    return "rows";
+  }
+}
+
+function writeInboxView(userId: string | null, view: InboxView) {
+  if (!userId) return;
+  try {
+    window.localStorage.setItem(inboxViewKey(userId), view);
+  } catch {
+    // Storage can be unavailable (private mode); the choice then lasts this visit.
+  }
+}
+
+/** The first capture whose card is at least partly below the top of the viewport. */
+function browsingAnchor(list: HTMLElement | null) {
+  if (!list) return null;
+  const topbar = document.querySelector<HTMLElement>(".app-topbar");
+  const top = topbar && getComputedStyle(topbar).position === "sticky" ? topbar.getBoundingClientRect().bottom : 0;
+  for (const item of list.querySelectorAll<HTMLElement>("[data-capture-id]")) {
+    const rect = item.getBoundingClientRect();
+    if (rect.bottom > top + 4) return { id: item.dataset.captureId!, top: rect.top };
+  }
+  return null;
 }
 
 function FilterDialog({
@@ -206,10 +309,42 @@ function LoadingRows() {
 export function InboxPage({
   refreshToken,
   onOpen,
+  userId,
+  captureReady,
+  pendingWork,
+  onCapture,
+  onSetUpAi,
+  onViewActivity,
 }: {
   refreshToken: number;
   onOpen: (id: string) => void;
+  userId: string | null;
+  /** Whether new captures can be processed; null while unknown. */
+  captureReady: boolean | null;
+  pendingWork: number;
+  onCapture: () => void;
+  onSetUpAi: () => void;
+  onViewActivity: () => void;
 }) {
+  const [view, setView] = useState<InboxView>(() => readInboxView(userId));
+  const listRef = useRef<HTMLDivElement>(null);
+  const pendingAnchor = useRef<{ id: string; top: number } | null>(null);
+  useEffect(() => setView(readInboxView(userId)), [userId]);
+  const chooseView = (next: InboxView) => {
+    if (next === view) return;
+    pendingAnchor.current = browsingAnchor(listRef.current);
+    writeInboxView(userId, next);
+    setView(next);
+  };
+  useLayoutEffect(() => {
+    const anchor = pendingAnchor.current;
+    pendingAnchor.current = null;
+    if (!anchor) return;
+    const item = listRef.current?.querySelector<HTMLElement>(
+      `[data-capture-id="${CSS.escape(anchor.id)}"]`,
+    );
+    if (item) window.scrollBy({ top: item.getBoundingClientRect().top - anchor.top, behavior: "instant" });
+  }, [view]);
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [total, setTotal] = useState<number | null>(null);
@@ -351,6 +486,26 @@ export function InboxPage({
             ])}
           </select>
         </label>
+        <div className="inbox-layout" role="group" aria-label="Layout">
+          <button
+            type="button"
+            className="inbox-layout-option"
+            aria-pressed={view === "rows"}
+            onClick={() => chooseView("rows")}
+          >
+            <List size={15} aria-hidden="true" />
+            <span className="inbox-layout-label">Rows</span>
+          </button>
+          <button
+            type="button"
+            className="inbox-layout-option"
+            aria-pressed={view === "tiles"}
+            onClick={() => chooseView("tiles")}
+          >
+            <LayoutGrid size={15} aria-hidden="true" />
+            <span className="inbox-layout-label">Tiles</span>
+          </button>
+        </div>
       </div>
       {filterOpen && (
         <FilterDialog
@@ -402,21 +557,64 @@ export function InboxPage({
           </span>
         )}
       </div>
-      {loading ? (
-        <LoadingRows />
-      ) : captures.length > 0 ? (
-        <ul className="inbox-list" aria-labelledby="captures-heading">
-          {captures.map((capture) => (
-            <CaptureRow capture={capture} onOpen={onOpen} key={capture.id} />
-          ))}
-        </ul>
-      ) : !error ? (
-        <div className="inbox-empty">
-          <h3>{hasFilters ? "No captures found" : "Your inbox is ready"}</h3>
-          <p>{hasFilters ? "Try another search or clear your filters." : "Completed captures will appear here."}</p>
-          {hasFilters && <ActionButton onClick={clearFilters}>Clear filters</ActionButton>}
-        </div>
-      ) : null}
+      <div ref={listRef} className="inbox-results">
+        {loading ? (
+          <LoadingRows />
+        ) : captures.length > 0 ? (
+          view === "tiles" ? (
+            <ul className="inbox-tiles" aria-labelledby="captures-heading">
+              {captures.map((capture) => (
+                <CaptureTile capture={capture} onOpen={onOpen} key={capture.id} />
+              ))}
+            </ul>
+          ) : (
+            <ul className="inbox-list" aria-labelledby="captures-heading">
+              {captures.map((capture) => (
+                <CaptureRow capture={capture} onOpen={onOpen} key={capture.id} />
+              ))}
+            </ul>
+          )
+        ) : !error ? (
+          hasFilters ? (
+            <div className="inbox-empty">
+              <h3>No captures found</h3>
+              <p>Try another search or clear your filters.</p>
+              <ActionButton onClick={clearFilters}>Clear filters</ActionButton>
+            </div>
+          ) : (
+            <div className="inbox-empty">
+              <h3>{captureReady === false ? "Finish setup to fill your archive" : "Your inbox is ready"}</h3>
+              <p>
+                {captureReady === false
+                  ? "AI setup is needed before posts can be transcribed and filed here. Links you save now are kept until then."
+                  : "Save an Instagram or Facebook post and it appears here once it’s processed."}
+              </p>
+              {pendingWork > 0 && (
+                <p className="inbox-empty-pending">
+                  {pendingWork === 1 ? "1 capture is" : `${pendingWork} captures are`} queued or processing.{" "}
+                  <button type="button" className="inbox-inline-action" onClick={onViewActivity}>
+                    View activity
+                  </button>
+                </p>
+              )}
+              <div className="inbox-empty-actions">
+                {captureReady === false && (
+                  <ActionButton variant="primary" icon={Settings2} onClick={onSetUpAi}>
+                    Finish AI setup
+                  </ActionButton>
+                )}
+                <ActionButton
+                  variant={captureReady === false ? "default" : "primary"}
+                  icon={Plus}
+                  onClick={onCapture}
+                >
+                  Capture your first post
+                </ActionButton>
+              </div>
+            </div>
+          )
+        ) : null}
+      </div>
       {error && (
         <div className={cx("inbox-feedback")} role="alert">
           <span>{error}</span>

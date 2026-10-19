@@ -177,6 +177,8 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(page.locator(".activity-row").first()).toBeVisible();
   await expect(page.locator(".activity-tracker").first()).toBeVisible();
   await page.locator(".activity-row[aria-pressed='false']").first().click();
+  await expect(page.locator(".activity-log")).toBeHidden();
+  await page.getByRole("button", { name: "Show timing and logs", exact: true }).click();
   await expect(page.locator(".activity-log")).toBeVisible();
   await expect(page.locator(".activity-row").first()).not.toContainText(
     "Command failed with exit code",

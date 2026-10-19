@@ -4,6 +4,7 @@ import { hash } from "@node-rs/argon2";
 import type { AppConfig } from "../src/config.js";
 import { JobStore } from "../src/db.js";
 import type { AnalysisResult } from "../src/types.js";
+import { normalizeSubmissionUrl } from "../src/url.js";
 
 export const fixtureAccount = {
   username: "stephen",
@@ -373,7 +374,7 @@ export async function seedUiFixture(store: JobStore, config: AppConfig) {
       ownerUserId: user.id,
       sourceUrl,
       normalizedUrl: sourceUrl,
-      sourceHash: `fixture-${seed.slug}`,
+      sourceHash: normalizeSubmissionUrl(sourceUrl).hash,
       userNote: "",
     });
     const notePath = `Social Knowledge/Captures/${seed.slug}.md`;
@@ -385,6 +386,16 @@ export async function seedUiFixture(store: JobStore, config: AppConfig) {
         .map((line) => `- ${line}`)
         .join("\n")}\n`,
     );
+    // Two local synthetic images exercise stored-thumbnail delivery; the rest
+    // deliberately have no image so fallback coverage remains deterministic.
+    const thumbnail = captures.indexOf(seed) < 2
+      ? `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><rect width="240" height="160" fill="${seed.slug === "pastel-de-nata" ? "#e6bd73" : "#628d91"}"/><circle cx="120" cy="80" r="46" fill="#674b35"/></svg>`
+      : null;
+    const thumbnailPath = path.join(config.mediaDir, `${seed.slug}-thumbnail.svg`);
+    if (thumbnail) {
+      await mkdir(config.mediaDir, { recursive: true });
+      await writeFile(thumbnailPath, thumbnail);
+    }
     const capture = store.createCapture({
       job,
       sourceType: seed.sourceType,
@@ -408,7 +419,10 @@ export async function seedUiFixture(store: JobStore, config: AppConfig) {
       publishedAt: null,
       durationSeconds: seed.durationSeconds || null,
       notePath,
-      assets: [],
+      assets: thumbnail ? [{
+        kind: "thumbnail", path: thumbnailPath, mimeType: "image/svg+xml",
+        sizeBytes: Buffer.byteLength(thumbnail), position: 0,
+      }] : [],
     })!;
     store.database
       .prepare("UPDATE captures SET created_at=? WHERE id=?")
@@ -432,7 +446,7 @@ export async function seedUiFixture(store: JobStore, config: AppConfig) {
     ownerUserId: user.id,
     sourceUrl: "https://www.facebook.com/share/r/fixture-failed/",
     normalizedUrl: "https://www.facebook.com/share/r/fixture-failed/",
-    sourceHash: "fixture-failed",
+    sourceHash: normalizeSubmissionUrl("https://www.facebook.com/share/r/fixture-failed/").hash,
     userNote: "",
   }).job;
   store.setStatus(failed.id, "downloading");
@@ -452,7 +466,7 @@ export async function seedUiFixture(store: JobStore, config: AppConfig) {
     ownerUserId: user.id,
     sourceUrl: "https://www.instagram.com/p/fixture-queued/",
     normalizedUrl: "https://www.instagram.com/p/fixture-queued/",
-    sourceHash: "fixture-queued",
+    sourceHash: normalizeSubmissionUrl("https://www.instagram.com/p/fixture-queued/").hash,
     userNote: "",
   });
   await tick();
@@ -461,7 +475,7 @@ export async function seedUiFixture(store: JobStore, config: AppConfig) {
     ownerUserId: user.id,
     sourceUrl: "https://www.instagram.com/reel/fixture-downloading/",
     normalizedUrl: "https://www.instagram.com/reel/fixture-downloading/",
-    sourceHash: "fixture-downloading",
+    sourceHash: normalizeSubmissionUrl("https://www.instagram.com/reel/fixture-downloading/").hash,
     userNote: "",
   }).job;
   store.setDisplayTitle(downloading.id, "How I plan my whole week in 20 minutes");
@@ -472,7 +486,7 @@ export async function seedUiFixture(store: JobStore, config: AppConfig) {
     ownerUserId: user.id,
     sourceUrl: "https://www.instagram.com/reel/fixture-in-flight/",
     normalizedUrl: "https://www.instagram.com/reel/fixture-in-flight/",
-    sourceHash: "fixture-in-flight",
+    sourceHash: normalizeSubmissionUrl("https://www.instagram.com/reel/fixture-in-flight/").hash,
     userNote: "",
   }).job;
   store.setDisplayTitle(

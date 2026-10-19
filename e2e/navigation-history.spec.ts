@@ -61,7 +61,7 @@ test("restores page and dialog navigation with browser history", async ({
   await question.fill("gi");
   await expect(page).toHaveURL(/tab=ask/);
   await page.keyboard.press("Control+k");
-  const palette = page.getByRole("dialog", { name: "Search or ask", exact: true });
+  const palette = page.getByRole("dialog", { name: "Go to", exact: true });
   const search = palette.getByRole("combobox");
   await expect(search).toBeFocused();
   await search.fill("Knowledge");

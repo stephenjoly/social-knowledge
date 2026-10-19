@@ -579,9 +579,22 @@
 }
 
 .app-palette-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   padding: 18px 10px;
   color: var(--muted);
   font-size: var(--type-control);
+  line-height: 1.45;
+}
+
+.app-palette-empty strong {
+  color: var(--ink-soft);
+  font-weight: var(--weight-semibold);
+}
+
+.app-palette-empty span {
+  font-size: var(--type-metadata);
 }
 
 /* Capture dialog */
@@ -816,8 +829,69 @@
   font-weight: var(--weight-medium);
 }
 
+.capture-dialog-confirmation {
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-icon-box);
+  background: var(--process-bg);
+}
+
+.capture-dialog-confirmation > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.capture-receipt-label {
+  font-weight: var(--weight-semibold);
+}
+
+.capture-receipt-link {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--type-metadata);
+  font-weight: var(--weight-regular);
+  overflow-wrap: anywhere;
+}
+
 .capture-dialog-confirmation svg {
+  flex: none;
+  margin-top: 1px;
   color: var(--green);
+}
+
+.capture-dialog-confirmation.info {
+  background: var(--canvas);
+  color: var(--ink-soft);
+}
+
+.capture-dialog-confirmation.info svg {
+  color: var(--muted-strong);
+}
+
+.capture-dialog-confirmation.warn {
+  border-color: var(--amber-border);
+  background: var(--amber-row);
+  color: var(--amber-ink);
+}
+
+.capture-dialog-confirmation.warn svg {
+  color: var(--amber);
+}
+
+.capture-url-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-strong);
+  font-size: var(--type-metadata);
+  font-weight: var(--weight-medium);
+}
+
+.capture-url-note svg {
+  flex: none;
 }
 
 .capture-dialog-foot {
@@ -842,6 +916,81 @@
 .capture-dialog-tip svg {
   flex: none;
   color: var(--placeholder);
+}
+
+.capture-dialog .capture-dialog-tip-link {
+  margin: -4px 0;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--type-metadata);
+  text-align: left;
+  cursor: pointer;
+}
+
+.capture-tip-action {
+  color: var(--green-ink);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.capture-dialog-tip-link:hover .capture-tip-action {
+  text-decoration: underline;
+}
+
+.capture-dialog-tip-link:focus-visible {
+  border-radius: var(--radius-badge-sm);
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+/* Return route shown above Settings during a recovery detour. */
+.app-return-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-sizing: border-box;
+  max-width: 780px;
+  margin: 0 0 24px;
+  padding: 12px 14px 12px 16px;
+  border: 1px solid var(--amber-border);
+  border-radius: var(--radius-card);
+  background: var(--amber-row);
+  color: var(--ink);
+  line-height: normal;
+}
+
+.app-return-banner-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.app-return-banner-text strong {
+  font-size: var(--type-control);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.app-return-banner-text span {
+  color: var(--muted-strong);
+  font-size: var(--type-metadata);
+  line-height: 1.4;
+}
+
+.app-return-banner-text .app-return-banner-feedback {
+  color: var(--amber-ink);
+  font-weight: var(--weight-medium);
+}
+
+.app-return-banner-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .capture-dialog .ui-btn {
@@ -1013,6 +1162,26 @@
   }
 
   .capture-dialog-foot .ui-btn {
+    flex: 1;
+  }
+
+  /* Keep the dialog near the top so the on-screen keyboard does not cover it. */
+  .capture-scrim {
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+
+  .capture-dialog-tip-link {
+    min-height: 32px;
+  }
+
+  .app-return-banner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .app-return-banner-actions .ui-btn {
     flex: 1;
   }
 }

@@ -81,12 +81,17 @@ function render(overrides: Partial<ActivityViewProps> = {}) {
     detailsLoading: false,
     detailsError: false,
     highlightedJobId: null,
-    message: "",
+    notice: null,
     retryPending: false,
     retryingIds: [],
+    archivingIds: [],
+    connections: [],
     onRetry: noop,
     onRetryAll: noop,
     onFixConnection: noop,
+    onSetUpAi: noop,
+    onArchive: noop,
+    onRestore: noop,
     ...overrides,
   };
   return renderToStaticMarkup(<ActivityView {...props} />);
@@ -107,8 +112,8 @@ describe("Activity page", () => {
     const bookmark = job("bookmark", "failed", { failedAt: "added", errorCode: "unsupported_platform", url: "https://www.tiktok.com/@a/video/1", title: null });
     const html = render({ failedJobs: [session, bookmark], attentionTotal: 2 });
     expect(html).toContain("Facebook session expired");
-    expect(html).toContain("failed at Media");
-    expect(html.match(/Fix connection/g)).toHaveLength(1);
+    expect(html).toContain("Reconnect Facebook first, then retry.");
+    expect(html.match(/>Reconnect Facebook</g)).toHaveLength(1);
     expect(html.match(/>Retry</g)).toHaveLength(1);
     expect(html).toContain("tiktok.com/@a/video/1");
   });
@@ -136,7 +141,9 @@ describe("Activity page", () => {
     });
     expect(html).toMatch(/class="activity-row selected"[^>]*aria-pressed="true"/);
     expect(html).toContain('class="activity-row highlighted"');
-    expect(html).toContain("Transcribing · 0:42");
+    expect(html).toContain("Transcribing. No action needed; it appears in Inbox when saved.");
+    expect(html).toContain("Show timing and logs");
+    expect(html).toMatch(/id="activity-troubleshooting"[^>]*hidden=""/);
     expect(html).toContain("Downloaded media");
     expect(html).toContain("Queued · Capture accepted");
     expect(html).toContain("Processing media");

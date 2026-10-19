@@ -64,7 +64,7 @@ test("Activity inspects safe logs, complete failure counts, and compact account 
   const retried: string[] = [];
 
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.route("**/api/auth/me", (route) => route.fulfill({ contentType: "application/json", body: '{"user":{"id":"fixture-user","username":"Stephen","role":"admin"}}' }));
+  await page.route("**/api/auth/me", (route) => route.fulfill({ contentType: "application/json", body: '{"user":{"id":"fixture-user","username":"stephen","displayName":"Stephen","role":"admin"}}' }));
   await page.route("**/api/v1/capture-facets", (route) => route.fulfill({ contentType: "application/json", body: '{"categories":[],"topics":[]}' }));
   await page.route("**/api/v1/captures**", (route) => route.fulfill({ contentType: "application/json", body: '{"captures":[],"nextCursor":null}' }));
   await page.route("**/api/v1/events", (route) => route.abort());
@@ -120,6 +120,10 @@ test("Activity inspects safe logs, complete failure counts, and compact account 
   await expect(page.locator(".activity-row.selected")).toContainText("Newest capture");
   const inspector = page.getByRole("region", { name: "Capture details" });
   await expect(inspector.getByRole("heading", { name: "Newest capture" })).toBeVisible();
+  await expect(inspector.locator(".activity-log")).toBeHidden();
+  await expect(inspector.locator(".activity-check.active")).not.toContainText("0:01");
+  await inspector.getByRole("button", { name: "Show timing and logs", exact: true }).click();
+  await expect(inspector.getByRole("button", { name: "Hide timing and logs", exact: true })).toHaveAttribute("aria-expanded", "true");
   await expect(inspector.locator(".activity-log")).toContainText("Capture accepted");
   await expect(inspector.locator(".activity-log")).not.toContainText("secret=value");
   await expect(inspector.locator(".activity-log")).not.toContainText("/private/internal");
@@ -139,14 +143,22 @@ test("Activity inspects safe logs, complete failure counts, and compact account 
   await page.locator(".activity-row").filter({ hasText: "Newest capture" }).click();
   await page.getByRole("button", { name: "Copy safe logs" }).click();
   await expect(inspector.getByRole("status")).toContainText("Safe logs copied.");
+  const copiedSafeLogs = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copiedSafeLogs).toContain("Capture accepted");
+  expect(copiedSafeLogs).not.toContain("secret=value");
+  expect(copiedSafeLogs).not.toContain("/private/internal");
 
   const attention = page.locator(".activity-attention-item");
   await expect(attention).toHaveCount(2);
-  await expect(page.locator(".activity-attention")).toContainText("2 captures failed");
+  await expect(page.locator(".activity-attention")).toContainText("2 captures need a decision from you");
   await expect(attention.first()).toContainText("Instagram session expired");
-  await expect(attention.first()).toContainText("failed at Found · attempt 3");
-  await expect(page.getByRole("button", { name: "Fix connection" })).toHaveCount(1);
-  await expect(attention.getByRole("button", { name: "Retry", exact: true })).toHaveCount(2);
+  await expect(attention.first()).toContainText("Reconnect account");
+  await expect(attention.first()).not.toContainText(/failed at|attempt 3/);
+  await expect(attention.getByRole("button", { name: "Reconnect Instagram", exact: true })).toHaveCount(1);
+  await expect(attention.getByRole("button", { name: /^Retry / })).toHaveCount(2);
+  await attention.first().locator(".activity-attention-copy").click();
+  await expect(inspector.getByText("Download attempts this run: 2", { exact: true })).toBeVisible();
+  await expect(page.locator(".activity-row").filter({ hasText: "Reconnect account" })).not.toContainText("Instagram session expired");
   await attention.nth(1).locator(".activity-attention-copy").click();
   await expect(inspector).toContainText("The post downloaded, but its video or audio could not be processed.");
 
@@ -180,6 +192,8 @@ test("Activity inspects safe logs, complete failure counts, and compact account 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole("button", { name: "Copy safe logs" }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Saved");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Attempt 2");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Manual retry requested");
 
   await page.getByLabel("Filter captures").selectOption("active");
   await expect(page.locator(".activity-row")).toHaveCount(3);
@@ -219,7 +233,7 @@ test("Activity inspects safe logs, complete failure counts, and compact account 
   await page.route(/\/api\/v1\/jobs\/failed\?/, (route) => route.fulfill({ status: 503, body: "{}" }));
   await page.reload();
   await page.getByRole("button", { name: "Activity", exact: true }).click();
-  await expect(page.locator(".activity-attention")).toContainText("2 captures failed");
+  await expect(page.locator(".activity-attention")).toContainText("2 captures need a decision from you");
   await expect(page.getByRole("button", { name: "Retry all failed" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Retry list" })).toBeVisible();
 });
@@ -227,7 +241,7 @@ test("Activity inspects safe logs, complete failure counts, and compact account 
 
 test("unsupported URL bookmarks stay visible without misleading retry or platform labels", async ({ page }) => {
   const bookmark = { ...job("bookmark", "failed", "2026-10-03T12:00:00.000Z", { errorCode: "unsupported_platform" }), normalizedUrl: "https://www.tiktok.com/@example/video/123", displayTitle: null };
-  await page.route("**/api/auth/me", (route) => route.fulfill({ contentType: "application/json", body: '{"user":{"id":"fixture-user","username":"Stephen","role":"admin"}}' }));
+  await page.route("**/api/auth/me", (route) => route.fulfill({ contentType: "application/json", body: '{"user":{"id":"fixture-user","username":"stephen","displayName":"Stephen","role":"admin"}}' }));
   await page.route("**/api/v1/capture-facets", (route) => route.fulfill({ contentType: "application/json", body: '{"categories":[],"topics":[]}' }));
   await page.route("**/api/v1/captures**", (route) => route.fulfill({ contentType: "application/json", body: '{"captures":[],"nextCursor":null}' }));
   await page.route("**/api/v1/events", (route) => route.abort());
@@ -245,9 +259,10 @@ test("unsupported URL bookmarks stay visible without misleading retry or platfor
   await expect(attention).toContainText("tiktok.com/@example/video/123");
   await expect(attention).toContainText("URL saved; platform not supported");
   await expect(attention).not.toContainText("Facebook");
-  await expect(attention.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
-  await expect(attention.getByRole("button", { name: "Fix connection" })).toHaveCount(0);
-  await expect(page.locator(".activity-row")).toContainText("Failed at Added");
+  await expect(attention.getByRole("button", { name: /^Retry / })).toHaveCount(0);
+  await expect(attention.getByRole("button", { name: /^Reconnect / })).toHaveCount(0);
+  await expect(page.locator(".activity-row")).toContainText("Bookmark");
+  await expect(page.locator(".activity-row")).not.toContainText("Failed at Added");
   await expect(page.locator(".activity-row")).toContainText("www.tiktok.com");
   await expect(page.getByRole("region", { name: "Capture details" })).toContainText("Your URL is retained here");
 });

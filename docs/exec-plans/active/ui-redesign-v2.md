@@ -142,13 +142,22 @@ same region concurrently.
 - [x] Implemented additive, owner-scoped unsupported-bookmark archive/restore;
   independent QA passed 21 new contract tests and 41 combined archive/Activity/database
   tests. Typechecks passed; committed checkpoint `5d9d184`.
-- [ ] Capture, Activity, Inbox, palette, and setup entry points implemented and
+- [x] Capture, Activity, Inbox, palette, and setup entry points implemented and
   independently exercised.
-- [ ] Ask evidence/reading continuity and Settings clarity implemented and
+- [x] Ask evidence/reading continuity and Settings clarity implemented and
   independently exercised.
 - [ ] Final CX review confirms every addendum item with evidence; resolve findings.
 - [ ] Full checks, changed-screen comparison, live build identity and journeys,
   documentation completion, PR #50 ready.
+
+Focused independent browser acceptance passed 13/13 for A and 13/13 for B.
+A tested the initial stable build; B tested the final rebuilt Ask failure-copy
+and citation-return fixes. The final combined check passed docs, types, and build:
+249 unit tests passed, 3 skipped, and six failed solely because python3 is absent.
+The complete seeded browser suite passed 33/33 on the final build, including both
+QA streams and existing journeys. The parent is completing responsive captures;
+a fresh visible GPT-6.1-Sol high worker owns the independent functional CX review.
+Exact visual acceptance and final live-preview verification remain open.
 
 ## Verification
 

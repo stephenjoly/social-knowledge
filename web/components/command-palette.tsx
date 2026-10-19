@@ -2,9 +2,8 @@ import { useMemo, useRef, useState } from "react";
 import {
   CornerDownLeft,
   Plus,
-  Search,
+  Compass,
   Settings as SettingsIcon,
-  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import type { AppTab } from "../shared/types";
@@ -37,7 +36,6 @@ export function CommandPalette({
   const items = useMemo<PaletteItem[]>(
     () => [
       { id: "capture", label: "Capture a post", group: "Actions", icon: Plus, run: onCapture },
-      { id: "ask-action", label: "Ask your archive", group: "Actions", icon: Sparkles, run: () => onNavigate("ask") },
       ...appDestinations.map((item) => ({
         id: item.tab,
         label: item.label,
@@ -67,19 +65,19 @@ export function CommandPalette({
         className="app-palette"
         role="dialog"
         aria-modal="true"
-        aria-label="Search or ask"
+        aria-label="Go to"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <label className="app-palette-search">
-          <Search size={15} aria-hidden="true" />
-          <span className="sr-only">Search destinations and actions</span>
+          <Compass size={15} aria-hidden="true" />
+          <span className="sr-only">Filter pages and actions</span>
           <input
             data-autofocus
             role="combobox"
             aria-expanded="true"
             aria-controls="app-palette-list"
             aria-activedescendant={visible[active] ? `palette-${visible[active].id}` : undefined}
-            placeholder="Search or ask…"
+            placeholder="Go to a page or action…"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -100,8 +98,13 @@ export function CommandPalette({
           />
           <Keycap aria-hidden="true">Esc</Keycap>
         </label>
-        <ul className="app-palette-list" id="app-palette-list" role="listbox" aria-label="Results">
-          {visible.length === 0 && <li className="app-palette-empty">No matching destinations</li>}
+        <ul className="app-palette-list" id="app-palette-list" role="listbox" aria-label="Pages and actions">
+          {visible.length === 0 && (
+            <li className="app-palette-empty">
+              <strong>No matching pages or actions</strong>
+              <span>This menu only moves around the app. Search saved posts in Inbox, or ask a question in Ask.</span>
+            </li>
+          )}
           {visible.map((item, index) => {
             const Icon = item.icon;
             const showGroup = index === 0 || visible[index - 1]!.group !== item.group;

@@ -99,10 +99,13 @@ export function Detail({
   id,
   onClose,
   from = "inbox",
+  restoreFocus = true,
 }: {
   id: string;
   onClose: () => void;
   from?: AppTab;
+  /** Ask restores its own source trigger and reading position on return. */
+  restoreFocus?: boolean;
 }) {
   const [capture, setCapture] = useState<CaptureNote | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -155,7 +158,8 @@ export function Detail({
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
-      requestAnimationFrame(() => previous?.isConnected && previous.focus());
+      if (restoreFocus)
+        requestAnimationFrame(() => previous?.isConnected && previous.focus());
     };
   }, []);
 

@@ -59,6 +59,8 @@ export type ActivityJob = {
   errorCode: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Set when a terminal unsupported bookmark is hidden from attention views. */
+  archivedAt?: string | null;
   reachedStages: ActivityStageName[];
   stages: ActivityStage[];
 };
@@ -136,7 +138,7 @@ export type CaptureFacets = {
   }>;
   topics: Array<{ label: string; count: number }>;
 };
-export type InboxView = "tiles" | "table";
+export type InboxView = "rows" | "tiles";
 export type InboxSortKey = "title" | "savedAt" | "source" | "category" | "topic";
 export type OAuthConnection = {
   clientId: string;

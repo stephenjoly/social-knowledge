@@ -15,6 +15,12 @@ await mkdir(path.dirname(config.databasePath), { recursive: true });
 const store = new JobStore(config.databasePath);
 let syntheticAsk: Pick<AskService, "answer"> | undefined;
 if (process.env.E2E_UI_FIXTURE === "true") {
+  // The disposable browser server must never reach a real provider, even if a
+  // newly added journey accidentally triggers an outbound network boundary.
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = input instanceof Request ? input.url : String(input);
+    throw new Error(`Synthetic UI fixture blocked outbound fetch to ${new URL(url).origin}`);
+  }) as typeof fetch;
   const user = await seedUiFixture(store, config);
   // The existing smoke role enables deterministic streaming/cancel/retry probes.
   store.database.prepare("UPDATE users SET role='smoke' WHERE id=?").run(user.id);

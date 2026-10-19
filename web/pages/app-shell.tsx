@@ -13,7 +13,7 @@ import {
   LogOut,
   Menu,
   Plus,
-  Search,
+  Compass,
   Settings as SettingsIcon,
   Sparkles,
   UserRound,
@@ -393,9 +393,9 @@ export function Sidebar(props: SidebarProps) {
               <Plus size={16} aria-hidden="true" />
             </button>
           </div>
-          <button type="button" className="app-command" aria-label="Search or ask (⌘K)" aria-haspopup="dialog" onClick={props.onOpenPalette}>
-            <Search size={15} aria-hidden="true" />
-            <span className="app-command-label">Search or ask…</span>
+          <button type="button" className="app-command" aria-label="Go to a page or action (⌘K)" aria-haspopup="dialog" onClick={props.onOpenPalette}>
+            <Compass size={15} aria-hidden="true" />
+            <span className="app-command-label">Go to…</span>
             <Keycap className="app-command-keycap" aria-hidden="true">
               <Command size={9} strokeWidth={2.4} />K
             </Keycap>

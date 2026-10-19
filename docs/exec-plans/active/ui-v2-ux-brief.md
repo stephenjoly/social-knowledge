@@ -27,9 +27,12 @@ No secrets, raw diagnostics, untrusted instructions, or cross-owner access.
 - Backend QA Worker (Codex medium): `test/ui-v2-ux-backend.test.ts` and the existing
   Activity API safe-field assertion; independent migration/ownership/recovery tests
   and review. Completed: 21 independent tests, 41 combined tests passed.
-- UI QA Worker, staged when a slot opens (Codex medium): `e2e/**`, `scripts/**`,
-  and specifically assigned UI unit tests. Independent journeys for every item,
-  no runtime edits. Coordinate deterministic fixtures with implementation.
+- UI QA A (Codex medium): `scripts/**` and `e2e/**` except QA B's files below.
+  Independent A journeys; no runtime edits. Final focused browser QA passed 13/13.
+- UI QA B (Codex medium): `e2e/ui-ux-b.spec.ts`, `e2e/account-management.spec.ts`,
+  `e2e/provider-settings.spec.ts`, `test/ask-format.test.tsx`, and
+  `test/ui-v2-ux-ask.test.ts`. Independent B journeys, no runtime edits. Coordinate
+  shared fixture changes through QA A. Starts after QA A's preparation turn ends.
 - Parent: documentation, integration, git, preview, final checks; no concurrent
   runtime edits. All agents visible in workspace `wks_8862c7d8167ac752`.
 
@@ -69,5 +72,27 @@ local missing-python3 failures; no other unexplained failures are acceptable.
 
 ## Evidence ledger
 
-Implementation and QA pending. Final CX pending. No acceptance inferred from
-screenshots alone or from workers' self-assessment.
+- Backend complete: 21 new independent tests / 41 combined tests pass; checkpoint
+  `5d9d184`.
+- UI A's Claude session ended at its provider limit (reset 03:30 UTC); its partial
+  changes and selector report are preserved. UI B reported implementation complete.
+- At Stephen's request, visible GPT-6.1-Sol high worker
+  `c9cf1a23-b4e6-415e-ad26-e88bff0aa61e` now owns functional TypeScript changes in
+  `web/**`, taking over both stopped UI workers. No simultaneous UI file editors.
+  Host policy still reserves CSS/layout/visual-fidelity work for Claude; that gate
+  remains open. Parent fixed only the type-only NodeNext import in ask-format.
+- Final combined check passed documentation, typecheck, and build. Units: 249
+  passed, 3 skipped, and only the six known missing-python3 failures. All 46
+  focused Activity/Ask tests pass.
+- QA A passed 13/13 browser scenarios on the initial stable build, including
+  exact-job mobile recovery and delayed old-owner responses after same-document
+  account switching. QA B passed 13/13 on the final rebuilt ID15/16 delta,
+  including strict citation focus and reading-position restoration. Both suites
+  released their servers and build slots. A did not rerun the B-only delta;
+  parent subsequently ran the combined suite against the final build: 33/33
+  passed in 48.4 seconds, closing that evidence gap.
+- Fresh independent GPT-6.1-Sol high CX reviewer
+  `e74c329f-90c8-4ccd-a78e-87beaa6244aa` reviews every acceptance item against
+  code and independent evidence. Its scope excludes visual-fidelity judgments.
+- Final CX and visual acceptance pending. No acceptance inferred from screenshots
+  alone or workers' self-assessment; no physical-phone evidence yet.
