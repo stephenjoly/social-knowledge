@@ -10,6 +10,14 @@
     }
   },
   "scripts": {
+    "Website preview": {
+      "type": "service",
+      "command": "APP_URL=\"$PASEO_SERVICE_WEBSITE_PREVIEW_URL\" npx tsx scripts/qa-server.ts"
+    },
+    "Landing preview": {
+      "type": "service",
+      "command": "python3 -m http.server \"$PASEO_PORT\" --bind 0.0.0.0 --directory designs/landing"
+    },
     "App": {
       "type": "service",
       "command": "PORT=\"$PASEO_PORT\" APP_URL=\"$PASEO_SERVICE_APP_URL\" npm start"

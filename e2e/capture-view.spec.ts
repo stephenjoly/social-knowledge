@@ -32,7 +32,7 @@ test("keeps invalid links in the capture dialog and confirms submission", async 
     });
   });
 
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByLabel("Username").fill(username!);
   await page.getByLabel("Password").fill(password!);
   await page.getByRole("button", { name: "Continue" }).click();

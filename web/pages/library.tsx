@@ -760,7 +760,7 @@ function LibraryHome({
             <div className="kb-card-head-text">
               <h2>Recently filed</h2>
             </div>
-            <a className="kb-link" href="/">View all</a>
+            <a className="kb-link" href="/app">View all</a>
           </div>
           {recentError ? (
             <p className="kb-empty" role="alert">Recent notes could not be loaded.</p>

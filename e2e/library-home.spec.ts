@@ -93,7 +93,7 @@ test("shows a useful library home and opens category, topic, and capture", async
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`http://127.0.0.1:${port}`);
+  await page.goto(`http://127.0.0.1:${port}/app`);
   await page.getByLabel("Username").fill("library-user");
   await page.getByLabel("Password").fill("a-strong-library-password");
   await page.getByRole("button", { name: "Continue" }).click();

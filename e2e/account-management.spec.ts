@@ -18,7 +18,7 @@ let store: JobStore;
 let app: ReturnType<typeof buildApp>;
 
 async function signIn(page: Page, username: string, password: string) {
-  await page.goto(`${baseUrl}/?tab=settings`);
+  await page.goto(`${baseUrl}/app?tab=settings`);
   await page.getByLabel("Username").fill(username);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Continue" }).click();

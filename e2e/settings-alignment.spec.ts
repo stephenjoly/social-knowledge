@@ -39,7 +39,7 @@ const openTopic = async (page: import("@playwright/test").Page, topic: string, h
 
 test("settings topics share one content column and reflow without horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1020 });
-  await page.goto(`http://127.0.0.1:${port}/?tab=settings`);
+  await page.goto(`http://127.0.0.1:${port}/app?tab=settings`);
   await page.getByLabel("Username").fill("qa-user");
   await page.getByLabel("Password").fill("a-strong-qa-password");
   await page.getByRole("button", { name: "Continue" }).click();
@@ -70,7 +70,7 @@ test("settings topics share one content column and reflow without horizontal ove
 
 
 test("signed-in users can download the signed Shortcut from API key settings", async ({ page }) => {
-  await page.goto(`http://127.0.0.1:${port}`);
+  await page.goto(`http://127.0.0.1:${port}/app`);
   await expect(page.getByRole("link", { name: "Add to iPhone" })).toHaveCount(0);
   await page.getByLabel("Username").fill("qa-user");
   await page.getByLabel("Password").fill("a-strong-qa-password");

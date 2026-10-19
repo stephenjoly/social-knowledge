@@ -7,7 +7,7 @@ import { browserApi } from "./ui-qa-api.js";
 test.skip(process.env.E2E_UI_FIXTURE !== "true", "Run with scripts/ui-e2e.ts");
 
 async function login(page: Page, account = fixtureAccount) {
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByLabel("Username").fill(account.username);
   await page.getByLabel("Password", { exact: true }).fill(account.password);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
