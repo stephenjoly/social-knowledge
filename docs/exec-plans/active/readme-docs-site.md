@@ -1,10 +1,52 @@
 # Short README and public documentation site
-Status: active; approved by Stephen on 2026-10-21.
+Status: paused at Stephen's explicit request on 2026-10-21; scope previously approved.
 Owner: Codex foreman
 Date: 2026-10-21
 Workspace: wks_9f559aba7544e83d
 Current branch: codex/docs-reader, created from origin/staging on 2026-10-21.
 Prior README/guide checkpoint shipped through #61 and release #62.
+Draft PR: https://github.com/stephenjoly/social-knowledge/pull/63 (base staging).
+
+## Resume handover
+
+Work is committed and pushed on `codex/docs-reader`; implementation checkpoint
+`b11c3119bb5e4a87bc950e10644d0488899477ad`. No active worker or automatic restart
+is pending. A future agent should resume this existing branch/PR, not redo the
+shipped README or reuse closed PR #61. If this workspace was archived, check out
+the remote branch in a new workspace. Fetch and inspect divergence first;
+preserve any newer work and merge current staging when needed.
+
+Completed: nine public Markdown guides (already shipped), explicit publication
+manifest, Markdown/anchor/link validation, search index and client behavior,
+anonymous `/docs/` routes, build/Docker wiring, and auth/publication tests.
+Missing: `docs-site/template.mjs` and `docs-site/assets/docs.css`. There is no
+finished visual preview. Use the approved scope and frozen interface below.
+
+Verification: 25 focused tests pass under Node 22. CI run 39640126558 passed docs,
+landing consistency, TypeScript, and the app build, then failed with ENOENT for
+`docs-site/assets/docs.css`; this is a known incomplete implementation, not a
+passing full build. The template is absent too. Do not merge this draft yet.
+
+Restart steps:
+1. Read AGENTS.md, run preflight, and read this plan plus docs-site/manifest.json.
+2. Check current provider availability. Prior Opus attempts hit a session limit
+   on October 21; the reported 13:50 reset was historical, not a future promise.
+3. Per laptop policy, assign design ONLY to claude/claude-opus-5-5, high; use
+   codex/gpt-6.1-sol, medium, standard speed for logic if delegation is needed.
+   Use Worker profiles and disjoint file ownership. The custom scope is already
+   approved. No stock theme, extra dependency, or alternate design was selected.
+4. Implement the two missing visual files, respecting the frozen API/selectors.
+5. Run Node 22 `npm run check`; exercise all nine pages, search, anchors,
+   mobile navigation, themes, overflow, and anonymous/auth boundaries in a
+   disposable synthetic preview. Use scripts/qa-server.ts, never production data.
+6. Supply one working preview link and walkthrough (Overview -> Getting started
+   -> search MCP -> Self-hosting/Security), then commit/push and update #63.
+   Keep PR draft until checks and visual acceptance pass. Do not merge/deploy
+   without renewed authorization; the previous release approval covered #62.
+
+No new hostname, service, DNS, schema, credentials, or app UI changes. Only
+explicitly allowlisted static guidance/assets may be published. Preserve the
+existing README, logo, framed screenshots, and their raw source captures.
 
 ## Outcome
 Stephen explicitly requested continuing the unfinished website on a separate
@@ -37,9 +79,12 @@ No data/schema changes, external search service, analytics, new domain, app UI r
 - [x] Static build, public route, and focused tests (25 pass with fixture renderer; production template/CSS pending).
 - [ ] Documentation visual shell and mobile navigation.
 - [ ] Integrated build, browser acceptance, and final review.
-- [ ] Commit, push, update draft PR and verify CI.
+- [x] Preserve implementation checkpoint on separate branch and draft PR #63.
+- [ ] Final implementation push and green full CI after visual integration.
 
-## Integration checkpoint — 2026-10-21
+## Earlier integration history — 2026-10-21
+The paragraphs in this section describe earlier checkpoints; the current saved
+state and restart instructions are in Resume handover above.
 Content migration is independently ready for the existing draft PR. Only README.md
 and the nine docs/guide Markdown files are included in that checkpoint; the
 unfinished website integration remains local. Parent review passed TypeScript,
@@ -66,10 +111,10 @@ from staging while preserving these local changes; do not reuse the closed PR.
 
 The assigned Opus designer hit its session limit, reported to reset at 13:50
 America/Toronto. docs-site/template.mjs and docs-site/assets/docs.css are missing.
-Stephen has been asked whether to use a standard documentation theme (potential
-build dependency) now or retain custom Opus styling after reset; no choice has
-been received. Do not substitute a custom design from another model, push the
-incomplete build wiring, or claim full check/browser acceptance has passed.
+Stephen was offered a standard documentation theme (potential build dependency)
+or custom Opus styling after reset; neither alternative changed the approved
+custom scope. The incomplete integration was later explicitly preserved in draft
+PR #63. Do not claim full check/browser acceptance has passed.
 
 ## Shared worker brief and file ownership
 Content worker: README.md and docs/guide/*.md ONLY.
@@ -122,4 +167,6 @@ All 19 former README sections have mapped guide destinations; all 30 original co
 
 ## Current blocker
 
-The Opus design worker hit its session usage limit, resetting at 1:50 p.m. Toronto time. No production docs template/CSS was created. User choice is pending between a standard prebuilt docs theme now (potential build dependency) and custom styling after reset. Build/routing and content work continue independently; no alternative is implemented without the choice.
+Paused by Stephen. The missing template/CSS remain the implementation blocker.
+The Opus worker was provider-limited on October 21; recheck availability when
+resuming. No work continues automatically and no alternative theme was approved.
