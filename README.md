@@ -2,280 +2,41 @@
 
 # Social Knowledge
 
-## Turn saved reels into knowledge you can actually use.
+Turn saved reels into knowledge you can actually use.
 
-Save a supported Facebook or Instagram video from the Share Sheet or your browser. Social Knowledge keeps the media and source, extracts transcripts and takeaways, and makes your archive searchable—so you can find the recommendation, revisit the explanation, or ask a follow-up later.
+Social Knowledge is a private, self-hosted archive for people who save useful Facebook and Instagram videos and want to find the ideas again. Submit a link from your browser or Apple Share Sheet. Keep the original media and source alongside transcripts, takeaways, and recommendations, then search your collection or ask a follow-up question.
 
-*The screenshots below show the current app with synthetic demo content. The Ask response is a seeded sample, not a live model result.*
+![Social Knowledge Inbox with searchable saved clips and category filters, using synthetic demo content.](docs/screenshots/inbox-framed.png)
 
-### Find the clip you meant to come back to
+## What you can do
 
-Search your Inbox and narrow it by platform, category, or topic. Switch between rows and tiles while keeping your filters.
+- Find saved clips with search, categories, topics, and platform filters.
+- Read transcripts and extracted insights beside the original media and creator attribution.
+- Ask questions across your archive and follow citations back to saved notes.
+- Capture from Apple Shortcuts, export Markdown for Obsidian, or download a portable library backup.
+- Connect ChatGPT, Codex, and other agents through account-scoped, read-only MCP and Agent API access.
 
-![Social Knowledge Inbox showing searchable saved clips with titles, creators, and category filters, populated with synthetic demo content.](docs/screenshots/inbox-framed.png)
+Full media capture supports Facebook and Instagram. Other valid HTTPS links remain unsupported bookmarks in Activity. Downloads and metadata depend on platform availability; the service does not bypass access controls. Screenshots use synthetic content; the guide’s Ask screenshot contains a seeded sample answer.
 
-### Keep the useful parts and the original source
+## Try it privately with Docker
 
-Open a capture to review its takeaways, recommendations, and transcript alongside the saved media. Creator attribution and the original source link stay with the note, so you can check the context.
-
-![Capture detail showing a synthetic saved clip with its source, extracted takeaways, recommendations, and transcript controls.](docs/screenshots/capture-detail-framed.png)
-
-### Ask your archive, then follow the sources
-
-Ask questions about what you have saved and continue the conversation. Cited answers link back to the saved notes so you can inspect the evidence.
-
-![Ask conversation showing a seeded sample answer based on synthetic captures, with citations and source cards linking to saved notes.](docs/screenshots/ask-framed.png)
-
-Ready to try it? Start with [Requirements](#requirements) and the [Safe first test](#safe-first-test). Connect your archive to ChatGPT or Codex with [read-only MCP access](#chatgpt-and-codex-via-mcp).
-
-## How it works
-
-Social Knowledge turns supported Facebook and Instagram video links into a private, searchable media and knowledge archive. It is a single TypeScript service: the React dashboard, HTTP API, SQLite catalog, job queue, media pipeline, AI extraction, archive, and Obsidian exporter all run in one process and one container.
-
-## Pipeline
-
-1. Accept an authenticated link from an Apple Shortcut or another client.
-2. Normalize, allowlist, and persist the job in SQLite; after extraction, deduplicate alternate share URLs by the platform media ID.
-3. Download bounded media and best-effort metadata with `yt-dlp`.
-4. Extract mono audio and representative frames with FFmpeg.
-5. Transcribe audio with OpenAI.
-6. Detect the transcript language and, when enabled in the user's Settings, translate foreign-language clips into the user's default language while preserving the original transcript.
-7. Analyze the translated transcript when available, plus the caption, selected comments, and frames using strict structured output.
-8. Archive video/audio and atomically write a Markdown source note into the Obsidian vault.
-
-The worker retries transient failures and recovers interrupted jobs after a restart. Metadata and comments are nullable because social extractors cannot guarantee them.
-
-## Requirements
-
-- Node.js 22+
-- FFmpeg
-- `yt-dlp`
-- An account-scoped OpenAI connection for audio transcription; users may independently choose OpenAI or Cerebras for analysis
-
-Docker includes all runtime dependencies.
-
-## Safe first test
-
-The safest first run uses disposable project-local storage rather than your real Obsidian vault:
-
-1. Copy `.env.example` to `.env`.
-2. Put a long random value in `API_TOKEN`. Never commit `.env`. `API_TOKEN` is for legacy Shortcut capture and an encryption-compatibility fallback; it is not a browser sign-up credential.
-3. Set `DATA_DIR=/data`, `VAULT_DIR=/vault`, and `MEDIA_DIR=/media` for Docker.
-4. Create the local `data`, `vault`, and `media` directories.
-5. Run `docker compose up --build -d`.
-6. Keep the fresh application private until this step: open it and create the first administrator with a strong password, confirmation, and acknowledgement of administrator authority. The first successful registration is signed in immediately; an unclaimed, publicly reachable deployment can be claimed by its first visitor.
-7. In the onboarding step, connect provider keys. Capture requires an OpenAI connection for transcription and either OpenAI or Cerebras for analysis; Ask requires only an analysis selection. The app tests each key before encrypting and storing it.
-8. Submit one public Reel, watch Activity, then open the completed card in Inbox.
-
-Transcription and analysis are separate account-scoped selections. Provider definitions and routing live in `src/ai-providers.ts`. OpenAI supplies transcription and can also supply analysis; Cerebras supplies analysis only. `OPENAI_TRANSCRIPTION_MODEL`, `OPENAI_ANALYSIS_MODEL`, and `CEREBRAS_ANALYSIS_MODEL` define the supported model catalog, while credentials remain encrypted per user. The application does not require or fall back to a deployment-wide `OPENAI_API_KEY`.
-
-Provider credentials use versioned AES-256-GCM encryption. Set `AI_CREDENTIALS_KEY` to a stable random value of at least 32 characters. To rotate it, set the new value and temporarily list old values, comma-separated, in `AI_CREDENTIALS_PREVIOUS_KEYS` until users replace their stored credentials. Existing deployments fall back to `PLATFORM_CREDENTIALS_KEY`, then `API_TOKEN`.
-
-Ask AI stores each user and assistant turn with its role and uses a dedicated turn planner to resolve follow-ups. Formatting-only follow-ups reuse the prior answer's cited captures, while new subjects run archive search. When the conversation approaches `ASK_CONTEXT_BUDGET_TOKENS` (default `24000`), older turns are replaced in the model request by a persisted, untrusted checkpoint; the original transcript remains intact in SQLite. If the summarizer is temporarily unavailable, a bounded local checkpoint excerpt keeps the turn usable and is marked in retrieval diagnostics. Tune `ASK_COMPACTION_THRESHOLD` (default `0.7`) to compact earlier or later.
-
-Comment extraction is best-effort. When `FETCH_COMMENTS=true`, the archive keeps up to ten available comments, prioritizing pinned and highly liked responses; a platform returning no comments does not prevent the capture from completing.
-
-## Local development
+Install Docker with a Compose version supporting raw environment files, clone this repository, and run these commands from its root. Docker supplies Node.js, FFmpeg, and yt-dlp.
 
 ```bash
 cp .env.example .env
-npm install
-npm test
-npm run dev
 ```
 
-The checked-in Playwright flow covers login, Inbox/detail playback, and the responsive dashboard against a running deployment:
+Edit `.env`: replace `API_TOKEN` with a random value of at least 32 characters; add a separate stable `AI_CREDENTIALS_KEY` of at least 32 characters. Set `APP_URL=http://localhost:8787`; keep the Docker storage paths `/data`, `/vault`, and `/media`.
 
 ```bash
-E2E_BASE_URL=https://social-knowledge.example \
-E2E_USERNAME=your-test-user \
-E2E_PASSWORD=your-test-password \
-npm run test:e2e
+mkdir -p data vault media
+docker compose up --build -d
 ```
 
-Open the base URL for the public landing page, `/login` to sign in or claim a fresh instance, and `/app` for your private library. Signed-out app visits return to their requested location after login. Keep `APP_URL` at the origin, without an `/app` suffix.
+**Keep the fresh instance private until you create its first administrator at http://localhost:8787/login. The first successful registration claims administrator authority; an unclaimed public instance can be claimed by its first visitor.** Compose binds loopback by default. Use disposable storage first and never commit `.env`.
 
-The dashboard uses a desktop sidebar and mobile bottom navigation. Inbox has tile and table views, archive-wide sorting, and filters for search, platform, category, and topic. Capture opens a dialog on desktop or a mobile overlay; Activity separates failures, active processing, and completed jobs. Settings groups AI, connections, API keys, export/language, and account controls by topic. The app remembers the Inbox view on the current device.
+Connect provider keys in Settings → AI & models, assign and save Transcription and Analysis, then submit one public Reel. Capture requires OpenAI transcription and OpenAI or Cerebras analysis; provider usage may incur charges.
 
-Set a long random `API_TOKEN` and use disposable local directories for `VAULT_DIR` and `MEDIA_DIR` until the configuration has been validated. Keep a fresh local or preview deployment off public networks until its first administrator has registered.
+## Documentation
 
-### Non-production demo accounts
-
-Staging and pull-request previews can show one-click synthetic member and administrator accounts on the login page. Set `DEMO_ACCOUNTS_ENABLED=true` only on the non-production Dokploy Application. The default public credentials are `demo-member` / `DemoMember123!` and `demo-admin` / `DemoAdmin123!`; they can be changed with the corresponding `DEMO_MEMBER_*` and `DEMO_ADMIN_*` variables.
-
-The application creates missing demo users and reconciles their passwords and roles at every startup. Staging keeps these users in its dedicated volume. Each preview has a separate disposable database, so previews do not share users or data; they merely recreate the same credentials from inherited environment settings. Never enable demo accounts or store real information in them in production.
-
-Capture failures are stored as a stable category, friendly recovery guidance, and a separate bounded technical diagnostic. Activity keeps the diagnostic collapsed by default so normal users see what happened and what to do rather than raw downloader output.
-
-Language preferences live under Settings. Each user can select a default language and independently enable or disable translation of foreign-language captures. Both the original and translated transcript remain visible and searchable.
-
-## API
-
-Health does not require authentication:
-
-```http
-GET /health
-```
-
-`POST /api/v1/jobs` accepts a user-created bearer key for Apple Shortcuts. The same account-owned keys provide read-only agent access to search, traverse, inspect, and export that user's knowledge. Create and revoke named keys after signing in under Settings. Browser catalog, activity, retry, streaming, and event routes require an authenticated server-side session.
-
-```http
-POST /api/v1/jobs
-Content-Type: application/json
-
-{
-  "url": "https://www.instagram.com/reel/example/",
-  "note": "Potential Lisbon restaurants"
-}
-```
-
-The API returns `202` for a new job and `200` for an already-captured URL. The dashboard uses session-authenticated catalog, Activity, and account-wide Inbox analytics APIs; `GET /api/v1/inbox-analytics` returns total captures, captures created in the previous 24 hours and seven days, and currently failed imports without exposing job details. `GET /api/v1/captures` remains newest-first by default and additionally accepts `sort=title|savedAt|source|category|topic` plus `direction=asc|desc`; each listed capture includes `categoryLabel`, the top-level domain of its current library assignment or `null`. Sorted cursors are opaque and must be reused with the same sort; Source uses the normalized platform-and-creator pair, Category uses the top-level domain of the current library assignment, empty category/topic values sort last, and a multi-topic capture sorts by its lexicographically first normalized topic.
-
-Agent endpoints are documented by the OpenAPI 3.1 contract at `/openapi.json`:
-
-- `GET /api/v1/knowledge/search?q=...` for weighted FTS5 and taxonomy search.
-- `GET /api/v1/knowledge/captures` for stable `(created_at, id)` cursor pagination, up to 100 records per page.
-- `GET /api/v1/knowledge/captures/:id?include=transcript,comments` for structured detail; source text is opt-in.
-- `GET /api/v1/knowledge/topics` for taxonomy and facet discovery.
-- `POST /api/v1/knowledge/exports` plus the status and download routes for 24-hour gzip JSONL snapshots.
-
-Signed-in users can also create a complete portable backup under **Settings → Export library**. The resulting 24-hour `.tar.gz` contains account-owned structured metadata, transcripts, selected comments, generated Markdown notes, and every archived media asset. It excludes passwords, sessions, API keys, OAuth credentials, social-platform cookies, and server configuration. Full-library backups use session-authenticated `/api/v1/library-exports` routes and are intentionally unavailable to bearer-key clients.
-
-Search ranks the complete matching account archive before applying its stable result cursor. Agent responses contain source links and asset metadata but never archive filesystem paths or media-download URLs. The legacy deployment `API_TOKEN` remains capture-only and is never required for browser registration or login. Interrupted exports are marked `export_interrupted` during startup so clients can retry instead of polling forever; export records are streamed into gzip rather than assembled in memory.
-
-### Accounts and invitations
-
-The first successful registration creates the archive administrator. Once claimed, new accounts are created only from an administrator-issued invitation in **Settings → User management**. Invitations are single-use bearer links that expire after 24 hours; they can grant either member access or administrator access, and an administrator can revoke or regenerate them.
-
-Treat an invitation link like a password: send it only through a trusted private channel, do not place it in tickets or chat transcripts, and revoke it if it may have been exposed. Administrators manage accounts and invitations, but every archive, provider credential, connection, export, and API key remains scoped to its owning account.
-
-### ChatGPT and Codex via MCP
-
-The application exposes a private, read-only Streamable HTTP MCP server at `/mcp`. It provides `search_knowledge`, `get_capture`, `list_topics`, and `browse_category`; all results are scoped to the connected Social Knowledge account. Captions, comments, and transcripts are treated as untrusted source material and are never instructions.
-
-ChatGPT and other interactive clients can use OAuth 2.1 discovery, Dynamic Client Registration, Authorization Code with PKCE S256, refresh-token rotation, and the `knowledge:read` scope. Sign into Social Knowledge when redirected and approve the read-only consent screen. Connected clients can be reviewed and revoked under **Settings → AI Connections**.
-
-Codex can also use a named account API key. Store it outside the configuration file and add:
-
-```toml
-[mcp_servers.social_knowledge]
-url = "https://social-knowledge.example/mcp"
-bearer_token_env_var = "SOCIAL_KNOWLEDGE_API_KEY"
-```
-
-Then export `SOCIAL_KNOWLEDGE_API_KEY` in the environment that starts Codex. Example questions include “What Portugal recommendations have I saved?” and “Compare the Lisbon restaurants in my archive.”
-
-Troubleshooting: a `401` response means the OAuth connection or API key is missing/revoked; reconnect in the MCP client or create a replacement named key. A successful connection advertises exactly four read-only tools. The deployment workflow runs an authenticated MCP initialization and search smoke test after every release.
-
-## Apple Shortcut contract
-
-Download the token-free v6 shortcuts from [shortcuts/](shortcuts/README.md). Both variants passed native macOS tests against a local test server; actual iPhone/live-account acceptance remains separate. Sources, Apple-signed downloads, and validation evidence are versioned in the repository. v5 remains known broken.
-
-Generate an importable Share Sheet Shortcut without embedding a secret:
-
-```bash
-python3 scripts/build-shortcut.py --endpoint https://<service-name>/api/v1/jobs --output /tmp/save.shortcut
-shortcuts sign --mode anyone --input /tmp/save.shortcut --output /tmp/save-signed.shortcut
-```
-
-Import the signed file on your Apple device and enter an account API key from Settings. The Shortcut extracts the first URL from shared text. When run without a shared link (including the editor Run button), it asks you to paste a URL. It extracts a URL from that answer, converts it to text, and stops locally without a request if no URL is found. It submits JSON `{"url": "…"}` to `POST /api/v1/jobs` with `Authorization: Bearer <account-key>`, checks the server receipt, then polls `GET /api/v1/shortcut/jobs/:id` every five seconds for up to twelve checks. Completed jobs show archive success; failed jobs show the safe server response. If processing takes longer, the receipt points you to Activity; it does not claim completion. iOS can interrupt a running Share Sheet Shortcut, so polling is bounded feedback, not a guaranteed background callback. Server-side ntfy completion/failure notifications are available below.
-
-For a server predating the polling route, add `--receipt-only`. This version checks the submission response and directs you to Activity without polling. Keep the original Shortcut until the replacement is verified on-device. Test by sharing an Instagram/Facebook URL, an unsupported TikTok URL, and a copy with an invalid API key. Never publicly share a personalized Shortcut containing a token. `--personal-source` is only for private local repair of an existing Shortcut.
-
-Receipt contract:
-
-- Authenticated, valid HTTPS submissions persist the original URL as an account-owned job before AI configuration is required. `received: true` plus `job.id` confirms URL retention, not media capture.
-- Supported Facebook/Instagram links queue media capture. Unsupported HTTPS links (including TikTok) are retained in Activity with `unsupported_platform`; they never enter the downloader and cannot be retried. They are URL bookmarks, not completed captures in Inbox/Library.
-- Missing transcription/analysis configuration retains a failed job with `ai_setup_required`. The response remains HTTP 428 for compatibility, now including the persisted receipt. Configure AI in Settings, then retry or resubmit.
-- `invalid_request` means the JSON body is missing a nonempty string `url` (or otherwise fails the request schema); it does not mean the API key expired. The generated Shortcut checks empty input before POST.
-- Invalid/unsafe input and rejected authentication do not create jobs. HTTP 401 means the credential is invalid, revoked, or belongs to a suspended account; account API keys have no automatic expiry.
-- The status route accepts account API keys and the legacy `API_TOKEN`, enforces ownership, disables caching, and returns controlled failure copy without internal diagnostics. Browser job routes continue to require browser sessions.
-
-Prefer an internal route reachable over WireGuard. Do not expose this endpoint publicly without scoped authentication, request limits, and reverse-proxy hardening.
-
-## Dokploy
-
-Dokploy builds the root `Dockerfile` directly from the GitHub repository. GitHub Actions validates the source but does not publish deployment images. Production and staging are separate Dokploy Applications; pull-request previews are created only for collaborator-authorized PRs and use disposable container-local data plus preview-only credentials.
-
-Set a stable, randomly generated `PLATFORM_CREDENTIALS_KEY` of at least 32 characters in production. Signed-in users can upload platform-specific Netscape `cookies.txt` exports under **Settings → Facebook and Instagram**. Social Knowledge removes unrelated domains, encrypts the remaining cookies at rest, and never returns them through the API or includes them in backups. `API_TOKEN` is used as a compatibility fallback encryption key only when `PLATFORM_CREDENTIALS_KEY` is absent; set the dedicated key before storing UI-managed connections. It does not protect first-run browser registration.
-
-For a remote deployment, set `BIND_ADDRESS`, `APP_URL`, and `TRUSTED_PROXIES` explicitly. Keep the application bound to loopback or a private interface, terminate TLS at a trusted reverse proxy, and list only that proxy's address or CIDR in `TRUSTED_PROXIES`. Public static documentation does not require exposing the application itself.
-
-`compose.dokploy-managed.yaml` is the dashboard-managed deployment definition. It uses the already-built local image and declares the original sandbox volumes as external, allowing Dokploy to control service lifecycle without replacing or deleting existing data. Optional runtime variables such as `NTFY_*` are editable in the Dokploy service UI; AI credentials belong to users and are managed in the application.
-
-Set `NTFY_URL`, `NTFY_TOPIC`, and, when required by the ntfy server, `NTFY_TOKEN` to receive completion and final-failure pushes. Notifications contain only the platform, a bounded safe title, and a link to the authenticated Activity page.
-
-Set `DEPLOY_TARGET`, `DEPLOY_COMPOSE_DIR`, `DEPLOY_CONTAINER`, and `DEPLOY_BASE_URL`, then run:
-
-```bash
-scripts/deploy-dokploy.sh
-```
-
-It runs typechecking, tests, and the production build; takes a timestamped online SQLite backup; tags the current image as `social-knowledge:rollback-last`; deploys the new image; waits for health; and runs public, authenticated browser, and account-owned Agent API acceptance tests. Temporary users and keys are removed by a shell trap. `npm run smoke:live` can also be run independently.
-
-Facebook increasingly requires requests that look like a real browser session. The production image includes yt-dlp's `curl-cffi` support and applies `FACEBOOK_IMPERSONATE` only to Facebook URLs. Facebook and Instagram use independent optional cookie-file settings, and cookies are never passed across platforms. Treat cookie files as account credentials: never paste them into chat or commit them.
-
-Do not replace the sandbox vault volume with a host/NAS bind mount until its path, ownership, synchronization behavior, and backup coverage have been verified on the Dokploy host.
-
-## Storage
-
-- SQLite and transient work files: `DATA_DIR`
-- Obsidian Markdown notes: `VAULT_DIR/Inbox/Social/YYYY/MM`
-- Original video, audio, and thumbnail: `MEDIA_DIR/YYYY/MM/<job-id>`
-- Temporary knowledge and full-library exports: `DATA_DIR/exports/<user-id>`; snapshots expire after 24 hours.
-
-The original media is deliberately kept outside the vault so Obsidian synchronization does not ingest large files. Each note retains the archive paths and original source URL.
-
-When a platform does not provide a downloadable thumbnail, ingestion archives the first JPEG frame
-already extracted for visual analysis. Existing captures with a video but no thumbnail can be
-audited and repaired without re-downloading or rerunning AI processing:
-
-```bash
-npm run thumbnails:backfill -- --dry-run
-npm run thumbnails:backfill -- --apply
-npm run thumbnails:backfill -- --rollback /data/backups/thumbnail-backfill-<timestamp>.jsonl
-```
-
-Apply mode validates each source video and generated JPEG, never overwrites an existing thumbnail,
-and writes an append-only recovery manifest under `DATA_DIR/backups`. Run it as the same unprivileged
-user that owns the archive. Rollback removes only exact manifest-owned asset records and generated
-files whose checksums still match.
-
-## Security boundaries
-
-- Only HTTPS Facebook and Instagram hostnames are accepted.
-- Shell execution is never used; subprocess arguments are passed as arrays.
-- Playlists, overlong videos, and oversized downloads are rejected.
-- Cookie authentication is optional and must be mounted read-only.
-- The container runs unprivileged, drops Linux capabilities, and has a read-only root filesystem.
-- The source URL and creator attribution remain in every note.
-
-Do not use the service to bypass DRM, paywalls, access controls, or platform permissions.
-
-## Agent browser QA
-
-Paseo’s `paseo.json` worktree setup installs dependencies and matching browser binaries automatically. For existing checkouts, use Node.js 22+ and run:
-
-```bash
-npm ci
-npx playwright install
-npm run test:e2e
-```
-
-Playwright builds the UI and starts a disposable loopback-only Fastify server on port 4185 automatically. Self-contained tests also start their own synthetic SQLite fixture servers. The archive test requires a separately running synthetic deployment and `E2E_USERNAME`/`E2E_PASSWORD`; absent credentials intentionally skip it. Never use production data.
-
-For a full local UI run, including the four authenticated journeys otherwise
-skipped, run `npx tsx scripts/ui-e2e.ts`. This seeds the disposable QA server from
-`scripts/ui-fixture.ts` and uses deterministic Ask responses. It requires no real
-provider credentials and refuses an external `E2E_BASE_URL`. Chromium must be
-installed; on the development VM, source `~/.cache/sk-browser/env.sh` first.
-
-Agents may run these commands autonomously for authorized local QA. Keep test data synthetic and do not submit real messages, calls, or production writes. Retain failure traces/screenshots outside Git; report failed and skipped tests explicitly. Browser caches are shared per host, while dependencies are installed per worktree.
-
-### Guided Shortcut setup
-
-In Settings → API keys, choose **Create Shortcut key**, copy the key, and paste it when importing the signed download. These keys only submit links, check account-owned receipts, and call `GET /api/v1/shortcut/connection`; they cannot search or export knowledge. **Test connection** validates the bearer key from this browser and reports whether AI task configuration is saved. It creates no job and does not verify iPhone installation or live AI access. Existing general API keys keep their permissions.
-
-The key-creation API accepts optional `scope: "capture" | "full"` (default `full` for existing clients). The connection endpoint requires an active account bearer key, ignores browser cookies, returns `{ ok: true, scope, captureReady }`, and disables caching. Missing/revoked/suspended credentials receive 401.
-
-Before rolling back to code predating key scopes, revoke capture-only keys: old code would otherwise treat them as general keys.
+Start with [Getting started](docs/guide/getting-started.md), [Shortcuts](docs/guide/capture.md), or the [guide overview](docs/guide/index.md). The intended public [documentation site](https://social-knowledge.stephenjoly.net/docs/) will serve `/docs/` after accepted deployment; use these repository guides until then. Detailed configuration, API, security, backups, and development instructions live there.
