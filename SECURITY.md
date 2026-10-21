@@ -18,4 +18,4 @@ Store `API_TOKEN`, the OpenAI key, social-media cookie files, runtime databases,
 
 `DEMO_ACCOUNTS_ENABLED` intentionally publishes synthetic login credentials through the login page. It is disabled by default and must be enabled only for isolated preview or staging Applications containing no real user information. Preview databases are disposable and isolated from one another; they do not share accounts or archive data even when they inherit the same demo credentials.
 
-Public GitHub Pages documentation is separate from the running application and does not require making the application publicly reachable.
+The public GitHub Pages project homepage is separate from the running application and does not require making the application publicly reachable. Built documentation under `/docs/` is anonymous and shares the application instance’s network reachability. It contains only explicitly selected static project guidance; it must never include account data, private archives, credentials, or internal execution plans. Serving documentation does not change the private dashboard or API authentication rules.

@@ -2,9 +2,16 @@
 
 Social Knowledge is a single-process TypeScript application with a React browser client. The monolith is intentional: one deployable owns ingestion, processing, search, export, and the authenticated UI while keeping data local and operational complexity low.
 
-The same runtime serves the public Unfold landing at `/`, existing sign-in/first-account/invitation screens at `/login`, and the session-protected dashboard at `/app`. Signed-out app visits preserve their destination through login; signed-in login visits continue to the app or an allowlisted OAuth authorization URL. APIs, OAuth and MCP retain their origin-root paths. Old root tab/job/capture bookmarks redirect to `/app`, and a small public browser script forwards old fragment invitations to `/login` without putting tokens in HTTP requests. Unknown browser paths return 404 rather than the dashboard shell.
+The same runtime serves the public Unfold landing at `/`, public documentation under `/docs/`, existing sign-in/first-account/invitation screens at `/login`, and the session-protected dashboard at `/app`. Signed-out app visits preserve their destination through login; signed-in login visits continue to the app or an allowlisted OAuth authorization URL. APIs, OAuth and MCP retain their origin-root paths. Old root tab/job/capture bookmarks redirect to `/app`, and a small public browser script forwards old fragment invitations to `/login` without putting tokens in HTTP requests. Unknown browser paths return 404 rather than the dashboard shell.
 
 The build packages `site/` into `dist-ui/landing/`, separately from Vite assets, and adds instance sign-in/open-app links plus legacy-invitation handling. The links use `GET /api/auth/session`, an anonymous, non-cacheable endpoint that returns only an `authenticated` boolean. The standalone Pages bundle stays host-independent. Landing artwork and styling remain authored under `designs/landing/`.
+
+The documentation build publishes only the pages and assets explicitly listed in
+`docs-site/manifest.json` into `dist-ui/docs/`. User and operator guides live in
+`docs/guide/`; planning notes and the rest of the repository documentation tree
+are excluded from the public bundle. The documentation pages and local search
+index contain static project guidance, never account or archive data. `/docs/`
+is anonymous, while the existing `/app` authentication boundary is unchanged.
 
 ## System map
 
@@ -31,7 +38,7 @@ Apple Shortcut / browser / MCP client
 
 | Area | Primary files | Responsibility |
 |---|---|---|
-| HTTP and sessions | `src/app.ts`, `src/auth.ts`, `src/browser-routes.ts` | Input validation, authentication, ownership, response shaping and allowlisted browser return paths; `/`, `/login` and `/roadmap` serve public pages |
+| HTTP and sessions | `src/app.ts`, `src/auth.ts`, `src/browser-routes.ts` | Input validation, authentication, ownership, response shaping and allowlisted browser return paths; `/`, `/docs/`, `/login` and `/roadmap` serve public pages |
 | Capture queue | `src/worker.ts`, `src/failures.ts`, `src/events.ts` | Job lifecycle, retry, recovery, progress events |
 | Activity read model | `src/activity.ts`, `src/app.ts`, `src/db.ts` | Owner-scoped counts and pages, safe job and event projections, five-stage timing, bulk retry |
 | Acquisition | `src/url.ts`, `src/downloader.ts`, `src/media-processor.ts` | URL allowlisting, bounded download, metadata, audio and frames |
