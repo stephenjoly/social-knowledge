@@ -1,5 +1,33 @@
 # Social Knowledge
 
+## Turn saved reels into knowledge you can actually use.
+
+Save a supported Facebook or Instagram video from the Share Sheet or your browser. Social Knowledge keeps the media and source, extracts transcripts and takeaways, and makes your archive searchable—so you can find the recommendation, revisit the explanation, or ask a follow-up later.
+
+*The screenshots below show the current app with synthetic demo content. The Ask response is a seeded sample, not a live model result.*
+
+### Find the clip you meant to come back to
+
+Search your Inbox and narrow it by platform, category, or topic. Switch between rows and tiles while keeping your filters.
+
+![Social Knowledge Inbox showing searchable saved clips with titles, creators, and category filters, populated with synthetic demo content.](docs/screenshots/inbox.png)
+
+### Keep the useful parts and the original source
+
+Open a capture to review its takeaways, recommendations, and transcript alongside the saved media. Creator attribution and the original source link stay with the note, so you can check the context.
+
+![Capture detail showing a synthetic saved clip with its source, extracted takeaways, recommendations, and transcript controls.](docs/screenshots/capture-detail.png)
+
+### Ask your archive, then follow the sources
+
+Ask questions about what you have saved and continue the conversation. Cited answers link back to the saved notes so you can inspect the evidence.
+
+![Ask conversation showing a seeded sample answer based on synthetic captures, with citations and source cards linking to saved notes.](docs/screenshots/ask.png)
+
+Ready to try it? Start with [Requirements](#requirements) and the [Safe first test](#safe-first-test). Connect your archive to ChatGPT or Codex with [read-only MCP access](#chatgpt-and-codex-via-mcp).
+
+## How it works
+
 Social Knowledge turns supported Facebook and Instagram video links into a private, searchable media and knowledge archive. It is a single TypeScript service: the React dashboard, HTTP API, SQLite catalog, job queue, media pipeline, AI extraction, archive, and Obsidian exporter all run in one process and one container.
 
 ## Pipeline
