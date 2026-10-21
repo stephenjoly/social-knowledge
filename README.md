@@ -1,3 +1,5 @@
+<img src="docs/readme/social-knowledge-mark.svg" width="56" height="56" alt="Social Knowledge logo">
+
 # Social Knowledge
 
 ## Turn saved reels into knowledge you can actually use.
@@ -10,19 +12,19 @@ Save a supported Facebook or Instagram video from the Share Sheet or your browse
 
 Search your Inbox and narrow it by platform, category, or topic. Switch between rows and tiles while keeping your filters.
 
-![Social Knowledge Inbox showing searchable saved clips with titles, creators, and category filters, populated with synthetic demo content.](docs/screenshots/inbox.png)
+![Social Knowledge Inbox showing searchable saved clips with titles, creators, and category filters, populated with synthetic demo content.](docs/screenshots/inbox-framed.png)
 
 ### Keep the useful parts and the original source
 
 Open a capture to review its takeaways, recommendations, and transcript alongside the saved media. Creator attribution and the original source link stay with the note, so you can check the context.
 
-![Capture detail showing a synthetic saved clip with its source, extracted takeaways, recommendations, and transcript controls.](docs/screenshots/capture-detail.png)
+![Capture detail showing a synthetic saved clip with its source, extracted takeaways, recommendations, and transcript controls.](docs/screenshots/capture-detail-framed.png)
 
 ### Ask your archive, then follow the sources
 
 Ask questions about what you have saved and continue the conversation. Cited answers link back to the saved notes so you can inspect the evidence.
 
-![Ask conversation showing a seeded sample answer based on synthetic captures, with citations and source cards linking to saved notes.](docs/screenshots/ask.png)
+![Ask conversation showing a seeded sample answer based on synthetic captures, with citations and source cards linking to saved notes.](docs/screenshots/ask-framed.png)
 
 Ready to try it? Start with [Requirements](#requirements) and the [Safe first test](#safe-first-test). Connect your archive to ChatGPT or Codex with [read-only MCP access](#chatgpt-and-codex-via-mcp).
 
