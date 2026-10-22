@@ -2,9 +2,9 @@
 
 ## Provider connections and task selections
 
-Connect keys in Settings → AI & models, then assign tasks and save changes. Connecting a provider does not automatically assign it to a task. Transcription and Analysis are separate; Analysis also powers Ask. Supported thinking levels depend on the selected model. Queued captures retain their saved task selections.
+Connect keys in Settings → AI & models, then assign tasks and save changes. Connecting a provider does not automatically assign it to a task. Transcription, Analysis and Ask AI default are separate; an unset Ask default follows Analysis. Supported thinking levels depend on the selected model. Queued captures retain their saved task selections.
 
-Transcription and analysis are separate account-scoped selections. Provider definitions and routing live in `src/ai-providers.ts`. OpenAI supplies transcription and can also supply analysis; Cerebras supplies analysis only. `OPENAI_TRANSCRIPTION_MODEL`, `OPENAI_ANALYSIS_MODEL`, and `CEREBRAS_ANALYSIS_MODEL` define the supported model catalog, while credentials remain encrypted per user. The application does not require or fall back to a deployment-wide `OPENAI_API_KEY`.
+Transcription and analysis are separate account-scoped selections. Provider definitions and routing live in `src/ai-providers.ts`. OpenAI supplies transcription and can also supply analysis; Cerebras supplies analysis only. The curated OpenAI analysis/Ask catalog includes GPT-6 Luna, GPT-6.1 Sol and GPT-6 Astra, with GPT-5 mini and GPT-5 retained for existing choices. The new models offer Low, Medium and High in the app, plus the provider Default when no effort is set. Adding the models does not change saved selections or defaults. `OPENAI_TRANSCRIPTION_MODEL`, `OPENAI_ANALYSIS_MODEL`, and `CEREBRAS_ANALYSIS_MODEL` add deployment-configured choices; credentials remain encrypted per user. The application does not require or fall back to a deployment-wide `OPENAI_API_KEY`.
 
 Use **Test connection** after saving to explicitly test transcription, structured analysis, or streaming Ask. Transcription requires a short audio file you choose; analysis and Ask use synthetic text. These checks can incur provider usage, create no captures or conversations, and do not certify social downloads or the full capture pipeline.
 
