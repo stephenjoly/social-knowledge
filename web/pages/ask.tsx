@@ -1055,7 +1055,7 @@ export function AskAI({
     panelTouchedRef.current = true;
     setSourcesOpen(open);
     if (!open) setHighlight(null);
-    if (wideScreen() && open !== preferences.askSourcesPanel)
+    if (wideScreen())
       void onPreferencesChange?.({ askSourcesPanel: open }).catch(() => false);
   }
 
@@ -1457,11 +1457,7 @@ export function AskAI({
     try {
       const result = await api<AiProviderState>("/api/v1/ai-settings", {
         method: "PUT",
-        body: JSON.stringify({
-          transcription: aiState.selections.transcription,
-          analysis: aiState.selections.analysis,
-          ask: activeSelection,
-        }),
+        body: JSON.stringify({ ask: activeSelection }),
       });
       setAiState(result);
       onAiStateChange?.(result);
@@ -1908,6 +1904,9 @@ export function AskAI({
                                       >
                                         ·
                                       </span>
+                                    )}
+                                    {index > 0 && (
+                                      <span className="sr-only">, </span>
                                     )}
                                     {part}
                                   </span>

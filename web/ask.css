@@ -118,7 +118,7 @@ html:has(.ask-v2) {
 
 .ask-chips {
   display: flex;
-  max-width: 720px;
+  width: min(720px, 100%);
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
@@ -1429,7 +1429,8 @@ html:has(.ask-v2) {
     right: 0;
     bottom: 0;
     z-index: 60;
-    width: min(316px, 100vw);
+    width: 316px;
+    max-width: 100%;
     height: 100dvh;
     box-shadow: var(--shadow-dialog);
   }
@@ -1439,7 +1440,8 @@ html:has(.ask-v2) {
   }
 
   .ask-sources-inner {
-    width: min(316px, 100vw);
+    width: 316px;
+    max-width: 100%;
   }
 }
 
@@ -1467,6 +1469,10 @@ html:has(.ask-v2) {
     align-items: stretch;
   }
 
+  .ask-v2 .ask-suggestion {
+    min-width: 0;
+  }
+
   .ask-conversation {
     display: block;
     height: auto;
@@ -1476,9 +1482,17 @@ html:has(.ask-v2) {
     min-height: calc(100dvh - 134px);
   }
 
+  /* Stays reachable under the app's 56px sticky top bar. */
   .ask-chat-bar {
+    position: sticky;
+    top: 56px;
+    z-index: 20;
     gap: 6px;
     padding: 0 10px 0 16px;
+  }
+
+  .ask-message.assistant {
+    scroll-margin-top: 120px;
   }
 
   .ask-panel-toggle > svg {
@@ -1507,9 +1521,6 @@ html:has(.ask-v2) {
     scroll-margin-bottom: calc(190px + env(safe-area-inset-bottom));
   }
 
-  .ask-message.assistant {
-    scroll-margin-top: 12px;
-  }
 
   .ask-composer-wrap {
     position: sticky;
@@ -1520,12 +1531,18 @@ html:has(.ask-v2) {
   }
 
   .ask-v2 .ask-sources {
+    left: 0;
     z-index: 96;
-    width: 100vw;
+    width: auto;
+  }
+
+  .ask-v2 .ask-sources[hidden] {
+    left: auto;
+    width: 0;
   }
 
   .ask-sources-inner {
-    width: 100vw;
+    width: 100%;
   }
 
   .ask-callout {
