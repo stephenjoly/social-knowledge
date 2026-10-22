@@ -41,8 +41,8 @@ export function seedAskReviewFixture(store: JobStore, userId: string) {
   for (const [index, title] of titles.entries()) {
     const conversation = store.createConversation(userId, title)!;
     const attempt = store.beginConversationTurn(userId, conversation.id, index === 0 ? reviewQuestion : `What have I saved about ${title.toLowerCase()}?`, `ask-review-seed-${index}`);
-    if (index === 1) store.failConversationAttempt(userId, conversation.id, attempt.assistantId, "failed", "provider_error");
-    else if (index !== 9) store.completeConversationAttempt(userId, conversation.id, attempt.assistantId, reviewAnswer, sources, true);
+    if (index === 3) store.failConversationAttempt(userId, conversation.id, attempt.assistantId, "failed", "provider_error");
+    else if (index !== 1) store.completeConversationAttempt(userId, conversation.id, attempt.assistantId, reviewAnswer, sources, true);
     const date = new Date();
     date.setDate(date.getDate() - ages[index]!);
     date.setHours(index === 0 ? 14 : 12, 2, 0, 0);
@@ -99,6 +99,25 @@ export async function prepareAskReviewPreview(store: JobStore, config: AppConfig
     return user;
   })();
   if (!owner) return undefined;
+  // Upgrade only this fixture's original placeholders from the first PR build.
+  // Real turns and any seed turn the reviewer has retried remain untouched.
+  store.database.transaction(() => {
+    const oldSpinner = store.database.prepare(`SELECT m.id FROM conversation_messages m
+      JOIN conversations c ON c.id=m.conversation_id WHERE c.user_id=?
+      AND m.request_id='ask-review-seed-9' AND m.content='' AND m.role='assistant'
+      AND NOT EXISTS (SELECT 1 FROM conversation_messages r WHERE r.retry_of=m.id)`).get(owner.id);
+    if (!oldSpinner) return;
+    const first = store.database.prepare(`SELECT m.sources_json FROM conversation_messages m
+      JOIN conversations c ON c.id=m.conversation_id WHERE c.user_id=? AND m.request_id='ask-review-seed-0'`).get(owner.id) as { sources_json: string } | undefined;
+    if (!first) return;
+    store.database.prepare(`UPDATE conversation_messages SET content=?,sources_json=?,sufficient=1,status='complete',error_code=NULL
+      WHERE request_id='ask-review-seed-9' AND content='' AND conversation_id IN (SELECT id FROM conversations WHERE user_id=?)
+      AND NOT EXISTS (SELECT 1 FROM conversation_messages r WHERE r.retry_of=conversation_messages.id)`).run(reviewAnswer, first.sources_json, owner.id);
+    store.database.prepare(`UPDATE conversation_messages SET content='',sources_json='[]',sufficient=NULL,status='failed',error_code='provider_error'
+      WHERE request_id='ask-review-seed-3' AND content=? AND conversation_id IN (SELECT id FROM conversations WHERE user_id=?)
+      AND NOT EXISTS (SELECT 1 FROM conversation_messages r WHERE r.retry_of=conversation_messages.id)`).run(reviewAnswer, owner.id);
+    restoreAskReviewSpinner(store, owner.id);
+  })();
   if (!config.demoAccounts.some((account) => account.username === username))
     config.demoAccounts.push({ username, password: "synthetic-review-password", role: "member" });
   const synthetic = syntheticReviewAsk(store);
@@ -112,7 +131,7 @@ export async function prepareAskReviewPreview(store: JobStore, config: AppConfig
 /** Restore only the deliberate synthetic spinner after startup recovery. */
 export function restoreAskReviewSpinner(store: JobStore, userId: string) {
   store.database.prepare(`UPDATE conversation_messages SET status='pending',error_code=NULL
-    WHERE request_id='ask-review-seed-9' AND content='' AND role='assistant'
+    WHERE request_id='ask-review-seed-1' AND content='' AND role='assistant'
     AND conversation_id IN (SELECT id FROM conversations WHERE user_id=?)
     AND NOT EXISTS (SELECT 1 FROM conversation_messages retry WHERE retry.retry_of=conversation_messages.id)`).run(userId);
 }

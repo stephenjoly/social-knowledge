@@ -161,6 +161,8 @@ Suggested ownership so parallel workers never share a file:
 
 ## Progress
 
+- 2026-10-22: Original-author review completed on 2e6bd65. High design fidelity; authorization/migration boundaries approved. Assigned corrections to original workers: latest-only completed retries and superseded context, periodic stale-attempt recovery, streaming model event, approved model descriptors/suggestion patterns, bottom connection-test section and select chevrons, fixture status alignment. Lead also found/fixed null-thinking compatibility with six regression cases. Stephen decisions pending on disabled already-default action and last-topic Settings opening.
+
 - 2026-10-22: M1–M3 committed; full check passed 302 tests. Early visual states 2/6 checked; modal 900×660. Existing browser journeys: 26/27 clean batch, corrected stale setup-banner expectation then focused provider journey passed; no skips. New Ask acceptance 2/2 covers six states, default/send/retry, persisted panel and sidebar CRUD/export. Citation component-remount click loss and nested People-menu Escape fixed; preference PATCHes serialized.
 
 - 2026-10-22: Preflight clean; all six HTML states clicked in browser. Branch pushed; draft PR #64 targets staging.

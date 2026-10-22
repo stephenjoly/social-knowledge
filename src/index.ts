@@ -41,7 +41,10 @@ const events = new EventHub();
 const platformConnections = new PlatformConnectionService(store, config);
 const aiProviders = new AiProviderService(store, config);
 const review = await prepareAskReviewPreview(store, config, aiProviders);
-const app = buildApp(config, store, events, platformConnections, aiProviders, review?.service);
+const app = buildApp(
+  config, store, events, platformConnections, aiProviders, review?.service,
+  review ? () => restoreAskReviewSpinner(store, review.userId) : undefined,
+);
 const generationClient = aiProviders.routedClient();
 const worker = new JobWorker(
   config,
@@ -76,6 +79,5 @@ process.once("SIGINT", () => void shutdown("SIGINT"));
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
 await app.ready();
-if (review) restoreAskReviewSpinner(store, review.userId);
 await app.listen({ host: config.host, port: config.port });
 worker.start();
