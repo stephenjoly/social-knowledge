@@ -404,7 +404,8 @@ export function sameModel(
 /**
  * A selection is usable when its provider is connected and offers that model.
  * A null thinking level means the provider's default and is always allowed;
- * only an explicit level the model does not offer is rejected.
+ * an explicit level the model does not offer is rejected, as the server does
+ * (including any level for a model without thinking levels).
  */
 export function usableSelection(
   selection: AskSelection | null | undefined,
@@ -414,8 +415,6 @@ export function usableSelection(
   const option = options.find((item) => sameModel(item, selection));
   if (!option) return null;
   const thinkingLevel = selection.thinkingLevel ?? null;
-  if (!option.thinkingLevels.length)
-    return { ...selection, thinkingLevel: null };
   if (thinkingLevel === null) return { ...selection, thinkingLevel: null };
   return option.thinkingLevels.includes(thinkingLevel) ? selection : null;
 }
