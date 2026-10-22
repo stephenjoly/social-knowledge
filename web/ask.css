@@ -182,10 +182,60 @@ html:has(.ask-v2) {
 }
 
 .ask-v2 .ask-composer:focus-within {
-  border-color: var(--ask-ring);
   box-shadow:
     0 0 0 3px var(--green-tint),
     var(--shadow-floating);
+}
+
+/*
+ * A faint sage highlight travels clockwise along the composer's border while
+ * it is focused or an answer is being written. It is a masked ring drawn over
+ * the 1px border only: it never covers text or controls, takes no pointer
+ * events and does not change layout. The static focus ring above stays the
+ * keyboard cue; reduced motion keeps only that static border.
+ */
+@property --ask-border-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.ask-v2 .ask-composer::before {
+  position: absolute;
+  inset: -1px;
+  z-index: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--ask-border-angle),
+    transparent 0deg 250deg,
+    color-mix(in srgb, var(--green) 18%, transparent) 280deg,
+    color-mix(in srgb, var(--green) 70%, transparent) 338deg,
+    transparent 360deg
+  );
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms ease;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+
+.ask-v2 .ask-composer:focus-within::before,
+.ask-v2 .ask-composer.is-streaming::before {
+  opacity: 1;
+  animation: ask-border-travel 8s linear infinite;
+}
+
+@keyframes ask-border-travel {
+  to {
+    --ask-border-angle: 360deg;
+  }
 }
 
 .ask-v2 .ask-composer textarea {
@@ -1600,5 +1650,18 @@ html:has(.ask-v2) {
   .ask-v2 .ask-sources[hidden],
   .ask-source {
     transition: none;
+  }
+
+  /* No travelling highlight: the static focus border and ring remain. */
+  .ask-v2 .ask-composer::before,
+  .ask-v2 .ask-composer:focus-within::before,
+  .ask-v2 .ask-composer.is-streaming::before {
+    animation: none;
+    opacity: 0;
+  }
+
+  .ask-v2 .ask-composer:focus-within,
+  .ask-v2 .ask-composer.is-streaming {
+    border-color: var(--ask-ring);
   }
 }

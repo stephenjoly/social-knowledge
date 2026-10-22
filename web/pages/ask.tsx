@@ -829,7 +829,7 @@ function Composer({
   const sendHint = modEnter ? "⌘ Enter" : "Enter";
   return (
     <form
-      className={`ask-composer ask-composer-${variant}`}
+      className={`ask-composer ask-composer-${variant}${streaming ? " is-streaming" : ""}`}
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit();
