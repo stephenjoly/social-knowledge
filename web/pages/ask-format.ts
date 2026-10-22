@@ -58,8 +58,8 @@ const domainShortNames: Record<string, string> = {
 
 const fallbackSuggestions: AskSuggestion[] = [
   { text: "Summarise my recent saves", category: null },
-  { text: "Places I saved this month", category: "Travel" },
-  { text: "Tips I saved more than once", category: null },
+  { text: "Compare themes in my saves", category: null },
+  { text: "Find useful takeaways", category: null },
 ];
 
 /** Up to three short prompts built from the account's own categories and topics. */
