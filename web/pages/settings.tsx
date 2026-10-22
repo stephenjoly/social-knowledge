@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  Activity,
   Archive,
   Bot,
   Code,
@@ -288,6 +287,35 @@ function aiTestGuidance(code: AiTestCode) {
   return copy[code as Exclude<AiTestCode, "ok">];
 }
 
+/** `today at 13:40`, otherwise the full date and time. */
+function formatTestTime(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+  return date.toDateString() === today.toDateString()
+    ? `today at ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
+    : formatDateTime(value);
+}
+
+/** One line for the Last test row, from tests run in this session only. */
+function lastTestSummary(states: Record<AiTestTask, AiTestState>) {
+  const all = Object.values(states);
+  if (all.some((state) => state.status === "pending")) return "Testing…";
+  const done = all.filter((state) => state.status === "complete" && state.result);
+  if (done.length === 0)
+    return all.some((state) => state.status === "stale")
+      ? "Settings changed since the last test"
+      : "Not run yet";
+  const latest = done
+    .map((state) => state.result!.checkedAt)
+    .sort()
+    .at(-1)!;
+  const failed = done.filter((state) => !state.result!.ok).length;
+  const passed = ["", "One check passed", "Both passed", "All three passed"];
+  const summary =
+    failed === 0 ? passed[done.length] : `${failed} of ${done.length} failed`;
+  return `${summary} · ${formatTestTime(latest)}`;
+}
+
 function formatAiTestSelection(result: AiTestResult) {
   if (!result.selection) return "saved selection";
   const thinkingLevel = (result.selection as AiAnalysisSelection).thinkingLevel;
@@ -369,6 +397,10 @@ export function Settings({
     const opener =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const frame = window.requestAnimationFrame(() => heading.current?.focus());
+    // The page behind stays put while Settings is open.
+    const page = document.documentElement;
+    const previousOverflow = page.style.overflow;
+    page.style.overflow = "hidden";
     const onKey = (event: KeyboardEvent) => {
       const root = dialog.current;
       if (!root || root.querySelector('[aria-modal="true"]')) return;
@@ -403,6 +435,7 @@ export function Settings({
     return () => {
       window.cancelAnimationFrame(frame);
       window.removeEventListener("keydown", onKey);
+      page.style.overflow = previousOverflow;
       window.requestAnimationFrame(() => {
         if (opener?.isConnected) opener.focus();
       });
@@ -1209,15 +1242,6 @@ export function Settings({
               crumb={workspaceCrumb}
               title="AI & models"
               description="Connect a provider, then choose which model handles each step."
-              action={
-                <ActionButton
-                  icon={Activity}
-                  onClick={openTestDialog}
-                  disabled={savingAiSelections || !aiState}
-                >
-                  Test connection
-                </ActionButton>
-              }
             />
             {stateCard ?? (
               <>
@@ -1453,6 +1477,19 @@ export function Settings({
                       </CardRow>
                     );
                   })}
+                </SettingsSection>
+                <SettingsSection
+                  title="Test connection"
+                  description="Runs a tiny request on each saved choice. Nothing is added to your archive."
+                >
+                  <CardRow title="Last test" description={lastTestSummary(testStates)} last>
+                    <ActionButton
+                      onClick={openTestDialog}
+                      disabled={savingAiSelections || !aiState}
+                    >
+                      Run test
+                    </ActionButton>
+                  </CardRow>
                 </SettingsSection>
                 {aiSettingsDirty && aiState && (
                   <SaveBar

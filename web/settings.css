@@ -255,8 +255,39 @@
 }
 
 .sm-pane-body .st-row-controls .ui-select {
-  height: 30px;
   font-weight: var(--weight-regular);
+}
+
+/* Settings selects: 30px, 7px radius, one chevron-down (mockup .sel). */
+.sk-settings .ui-select {
+  height: 30px;
+  border-radius: var(--radius-control);
+}
+
+.sk-settings .ui-select-chevron {
+  display: none;
+}
+
+.sk-settings .ui-select::after {
+  position: absolute;
+  right: 8px;
+  width: 14px;
+  height: 14px;
+  background: var(--muted);
+  content: "";
+  pointer-events: none;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.sk-settings .ui-select-disabled::after {
+  background: var(--placeholder);
+}
+
+.sk-settings .ui-select-control {
+  padding-right: 28px;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .sm-pane-body .st-task-row .ui-select:nth-child(2) .ui-select-control {
