@@ -1221,7 +1221,7 @@ export function Settings({
             />
             {stateCard ?? (
               <>
-                {aiState && !(aiState.readiness.capture && aiState.readiness.ask && !aiSettingsDirty) && (
+                {aiState && !(aiState.readiness.capture && aiState.readiness.ask) && (
                   <AiSetupProgress
                     step={aiSetupStep}
                     ready={aiState.readiness.capture && aiState.readiness.ask}

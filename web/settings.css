@@ -1447,13 +1447,28 @@
     white-space: nowrap;
   }
 
+  /* Title and close first, then the section strip, then the topic. */
   .sm-pane {
-    min-height: 0;
+    display: contents;
   }
 
   .sm-pane-head {
+    order: 0;
     height: 52px;
     padding: 0 8px 0 16px;
+  }
+
+  .sm-nav {
+    order: 1;
+    scrollbar-width: none;
+  }
+
+  .sm-pane-body {
+    order: 2;
+  }
+
+  .sm-savebar-slot {
+    order: 3;
   }
 
   .sm-pane-body {
