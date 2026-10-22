@@ -249,6 +249,137 @@ describe("chat-first API", () => {
     });
   });
 
+  it.each(["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"])(
+    "persists %s defaults/chat and snapshots one-off retry with strict owner/effort validation",
+    async (model) => {
+      const { app, store, owner, other, headers, otherHeaders, analysis } =
+        await fixture();
+      const selection = {
+        provider: "openai" as const,
+        model,
+        thinkingLevel: "low" as const,
+      };
+      const saved = await app.inject({
+        method: "PUT",
+        url: "/api/v1/ai-settings",
+        headers,
+        payload: {
+          analysis: selection,
+          ask: { ...selection, thinkingLevel: null },
+        },
+      });
+      expect(saved.statusCode).toBe(200);
+      expect(saved.json().selections).toMatchObject({
+        analysis: selection,
+        ask: { ...selection, thinkingLevel: null },
+      });
+      expect(store.aiTaskSelections(other.id).analysisModel).toBeNull();
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/conversations",
+        headers,
+        payload: { selection: { ...selection, thinkingLevel: "medium" } },
+      });
+      expect(created.statusCode).toBe(201);
+      const chat = created.json().conversation;
+      const url = `/api/v1/conversations/${chat.id}`;
+      const sent = await app.inject({
+        method: "POST",
+        url: `${url}/messages`,
+        headers,
+        payload: { message: "Summarise saved posts" },
+      });
+      expect(sent.body).toContain("event: completed");
+      const answer = store.getConversation(owner.id, chat.id)!.messages.at(-1)!;
+      expect(answer).toMatchObject({
+        provider: "openai",
+        model,
+        thinkingLevel: "medium",
+        status: "complete",
+      });
+      const retry = { ...selection, thinkingLevel: "high" as const };
+      const retryUrl = `${url}/messages/${answer.id}/retry`;
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: retryUrl,
+            headers: otherHeaders,
+            payload: { selection: retry },
+          })
+        ).statusCode,
+      ).toBe(404);
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: retryUrl,
+            headers,
+            payload: { selection: retry },
+          })
+        ).body,
+      ).toContain("event: completed");
+      expect(
+        store.getConversation(owner.id, chat.id)!.messages.at(-1),
+      ).toMatchObject({ ...retry, status: "complete" });
+      expect(store.getConversation(owner.id, chat.id)!.selection).toEqual({
+        ...selection,
+        thinkingLevel: "medium",
+      });
+      expect(store.aiTaskSelections(owner.id)).toMatchObject({
+        analysisModel: model,
+        analysisThinkingLevel: "low",
+        askModel: model,
+        askThinkingLevel: null,
+      });
+      for (const thinkingLevel of ["minimal", "none", "xhigh", "max"]) {
+        const invalid = { ...selection, thinkingLevel };
+        for (const request of [
+          {
+            method: "PUT" as const,
+            url: "/api/v1/ai-settings",
+            payload: { analysis: invalid },
+          },
+          { method: "PATCH" as const, url, payload: { selection: invalid } },
+          {
+            method: "POST" as const,
+            url: `${url}/messages/${store.getConversation(owner.id, chat.id)!.messages.at(-1)!.id}/retry`,
+            payload: { selection: invalid },
+          },
+        ]) {
+          const invalidResponse = await app.inject({ ...request, headers });
+          const expected =
+            request.method === "PUT" && thinkingLevel === "minimal" ? 409 : 400;
+          expect(invalidResponse.statusCode).toBe(expected);
+          if (expected === 409)
+            expect(invalidResponse.json().error).toBe("invalid_thinking_level");
+        }
+      }
+      expect(
+        (
+          await app.inject({
+            method: "PUT",
+            url: "/api/v1/ai-settings",
+            headers: otherHeaders,
+            payload: { analysis: selection },
+          })
+        ).statusCode,
+      ).toBe(409);
+      expect(store.getConversation(other.id, chat.id)).toBeNull();
+      // Existing model selections remain accepted after using the refreshed catalog.
+      expect(
+        (
+          await app.inject({
+            method: "PUT",
+            url: "/api/v1/ai-settings",
+            headers,
+            payload: { analysis },
+          })
+        ).statusCode,
+      ).toBe(200);
+    },
+  );
+
   it("resolves chat, Ask default, then Analysis; snapshots actual retries and failures", async () => {
     const f = await fixture();
     const {

@@ -910,7 +910,7 @@ export class AiProviderService {
     }
     if (!apiKey) throw new Error("ai_credentials_unreadable");
     const provider = connection.provider as AiProviderId;
-    const model = expectedModel ?? this.analysisOptions(provider)[0]!.model;
+    const model = expectedModel ?? this.defaultAnalysisModel(provider);
     if (
       !this.isAnalysisModel(provider, model) &&
       !this.isTranscriptionModel(provider, model)
@@ -947,15 +947,28 @@ export class AiProviderService {
           thinkingLevels: [] as ThinkingLevel[],
         },
       ];
-    return [...new Set([this.config.analysisModel, "gpt-5-mini", "gpt-5"])].map(
-      (model) => ({
-        model,
-        thinkingLevels:
-          model === "gpt-5-mini" || model === "gpt-5"
-            ? [...thinkingLevels]
-            : [],
-      }),
-    );
+    const currentModels = ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"];
+    return [
+      ...new Set([
+        ...currentModels,
+        this.config.analysisModel,
+        "gpt-5-mini",
+        "gpt-5",
+      ]),
+    ].map((model) => ({
+      model,
+      thinkingLevels: currentModels.includes(model)
+        ? (["low", "medium", "high"] as ThinkingLevel[])
+        : model === "gpt-5-mini" || model === "gpt-5"
+          ? [...thinkingLevels]
+          : [],
+    }));
+  }
+
+  private defaultAnalysisModel(provider: AiProviderId) {
+    return provider === "openai"
+      ? this.config.analysisModel
+      : this.config.cerebrasAnalysisModel;
   }
 
   private isTranscriptionModel(provider: AiProviderId, model: string) {
@@ -1025,7 +1038,7 @@ export class AiProviderService {
       const provider = selected.analysisProvider;
       const configuration = this.legacyConfiguration(userId, provider);
       const model =
-        configuration?.analysisModel ?? this.analysisOptions(provider)[0]!.model;
+        configuration?.analysisModel ?? this.defaultAnalysisModel(provider);
       if (this.isAnalysisModel(provider, model)) {
         next.analysisModel = model;
         next.analysisThinkingLevel = this.supportsThinkingLevel(

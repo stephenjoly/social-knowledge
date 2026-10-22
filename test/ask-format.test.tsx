@@ -6,6 +6,7 @@ import {
   conversationTimeLabel,
   defaultAskSelection,
   latestSources,
+  modelLabel,
   resolveAskSelection,
   safeSourceUrl,
   selectionFor,
@@ -15,8 +16,21 @@ import {
   thumbTint,
   usableSelection,
 } from "../web/pages/ask-format";
+import { analysisModelNote } from "../web/shared/format";
 import { invitationTokenFrom } from "../web/pages/auth";
 import type { AiProvider, AiProviderState, AskSelection, AskSource, ChatMessage } from "../web/shared/types";
+
+it.each([
+  ["gpt-6-luna", "GPT-6 Luna", "Efficient"],
+  ["gpt-6.1-sol", "GPT-6.1 Sol", "Balanced"],
+  ["gpt-6-astra", "GPT-6 Astra", "Highest capability"],
+  ["gpt-5-mini", "GPT-5 mini", "Previous generation"],
+  ["gpt-5", "GPT-5", "Previous generation"],
+  ["qwen-3.8-27b", "Qwen 3.8 27B", "No thinking"],
+])("labels %s consistently with its catalog note", (model, label, note) => {
+  expect(modelLabel(model)).toBe(label);
+  expect(analysisModelNote(model)).toBe(note);
+});
 
 const source = (citation: number, id = `capture-${citation}`): AskSource => ({
   id,

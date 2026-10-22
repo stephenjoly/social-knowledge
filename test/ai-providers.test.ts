@@ -559,41 +559,230 @@ describe("AI provider settings", () => {
     } finally { store.close(); }
   });
 
-  it.each([null, "high"] as const)("sends normal GPT-5 diagnostics through Responses with thinking=%s", async (thinkingLevel) => {
+  it.each(["openai", "cerebras"] as const)(
+    "preserves configured %s defaults when upgrading legacy selections without a model",
+    async (provider) => {
+      const store = new JobStore(":memory:");
+      try {
+        const user = store.createUser(`legacy-${provider}`, "hash");
+        const config = testConfig("/tmp/catalog-legacy");
+        const service = new AiProviderService(store, config);
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(
+            async () =>
+              new Response(JSON.stringify({ data: [] }), { status: 200 }),
+          ),
+        );
+        await service.verifyAndSave(
+          user.id,
+          provider,
+          "synthetic-legacy-credential",
+        );
+        store.saveAiTaskSelections(user.id, {
+          ...store.aiTaskSelections(user.id),
+          analysisProvider: provider,
+          analysisModel: null,
+          analysisThinkingLevel: null,
+        });
+        const expected =
+          provider === "openai"
+            ? config.analysisModel
+            : config.cerebrasAnalysisModel;
+        expect(service.client(user.id, provider).model).toBe(expected);
+        expect(service.settings(user.id).selections.analysis).toEqual({
+          provider,
+          model: expected,
+          thinkingLevel: null,
+        });
+        expect(store.aiTaskSelections(user.id).analysisModel).toBe(expected);
+      } finally {
+        store.close();
+      }
+    },
+  );
+
+  it("orders current models before configured and legacy options without changing saved defaults", () => {
     const store = new JobStore(":memory:");
     try {
-      const user = store.createUser("gpt-five-route", "hash");
-      const bodies: Array<Record<string, unknown>> = [];
-      const expectedEndpoints: boolean[] = [];
-      vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-        const url = input instanceof Request ? input.url : String(input);
-        if (url.endsWith("/models")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
-        expectedEndpoints.push(url === "https://api.openai.com/v1/responses");
-        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        bodies.push(body);
-        if (body.stream) return new Response([
-          { type: "response.output_text.delta", delta: "diagnostic-ok" },
-          { type: "response.completed", response: { status: "completed" } },
-        ].map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""), { status: 200, headers: { "content-type": "text/event-stream" } });
-        return new Response(JSON.stringify({ object: "response", status: "completed", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: '{"ok":true}', annotations: [] }] }] }), { status: 200, headers: { "content-type": "application/json" } });
-      }));
-      const service = new AiProviderService(store, testConfig("/tmp/gpt-five-route"));
-      await service.verifyAndSave(user.id, "openai", "sk-synthetic-gpt-five-credential");
-      service.saveSelections(user.id, { analysis: { provider: "openai", model: "gpt-5", thinkingLevel } });
-      const result = await service.testConnection(user.id, "analysis");
-      expect(expectedEndpoints).toEqual([true]);
-      expect(bodies).toHaveLength(1);
-      expect(result).toMatchObject({ ok: true, code: "ok" });
-      expect(await service.testConnection(user.id, "ask")).toMatchObject({ ok: true, code: "ok" });
-      expect(bodies).toHaveLength(2);
-      expect(bodies[0]).toMatchObject({ model: "gpt-5", store: false, max_output_tokens: 2048, text: { format: { type: "json_schema", strict: true } } });
-      expect(bodies[1]).toMatchObject({ model: "gpt-5", store: false, max_output_tokens: 2048, stream: true });
-      for (const body of bodies) {
-        if (thinkingLevel === null) expect(body).not.toHaveProperty("reasoning");
-        else expect(body).toHaveProperty("reasoning", { effort: thinkingLevel });
-        expect(body).not.toHaveProperty("reasoning_effort");
-        expect(body).not.toHaveProperty("temperature");
-      }
-    } finally { store.close(); }
+      const user = store.createUser("catalog-owner", "hash");
+      const config = {
+        ...testConfig("/tmp/catalog"),
+        analysisModel: "custom-analysis",
+      };
+      const service = new AiProviderService(store, config);
+      store.saveAiProviderConnection(user.id, "openai", "unused", "synthetic");
+      const legacy = {
+        provider: "openai" as const,
+        model: "gpt-5",
+        thinkingLevel: "minimal" as const,
+      };
+      service.saveSelections(user.id, { analysis: legacy, ask: legacy });
+      const before = store.aiTaskSelections(user.id);
+      const options = service
+        .list(user.id)
+        .find((provider) => provider.id === "openai")!.taskOptions.analysis;
+      expect(options.map((option) => option.model)).toEqual([
+        "gpt-6-luna",
+        "gpt-6.1-sol",
+        "gpt-6-astra",
+        "custom-analysis",
+        "gpt-5-mini",
+        "gpt-5",
+      ]);
+      expect(
+        options.slice(0, 3).map((option) => option.thinkingLevels),
+      ).toEqual(Array(3).fill(["low", "medium", "high"]));
+      expect(
+        options.find((option) => option.model === "custom-analysis")!
+          .thinkingLevels,
+      ).toEqual([]);
+      expect(
+        options.find((option) => option.model === "gpt-5")!.thinkingLevels,
+      ).toEqual(["minimal", "low", "medium", "high"]);
+      expect(service.settings(user.id).selections).toMatchObject({
+        analysis: legacy,
+        ask: legacy,
+      });
+      expect(store.aiTaskSelections(user.id)).toEqual(before);
+      expect(config.analysisModel).toBe("custom-analysis");
+      const configuredCurrent = new AiProviderService(store, {
+        ...config,
+        analysisModel: "gpt-6-luna",
+      });
+      expect(
+        configuredCurrent
+          .list(user.id)[0]!
+          .models.analysis.filter((model) => model === "gpt-6-luna"),
+      ).toHaveLength(1);
+    } finally {
+      store.close();
+    }
   });
+
+  it.each([
+    ...([null, "high"] as const).map((thinkingLevel) => ({
+      model: "gpt-5",
+      thinkingLevel,
+    })),
+    ...["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"].flatMap((model) =>
+      ([null, "low", "medium", "high"] as const).map((thinkingLevel) => ({
+        model,
+        thinkingLevel,
+      })),
+    ),
+  ])(
+    "sends $model diagnostics through Responses with thinking=$thinkingLevel",
+    async ({ model, thinkingLevel }) => {
+      const store = new JobStore(":memory:");
+      try {
+        const user = store.createUser("gpt-five-route", "hash");
+        const bodies: Array<Record<string, unknown>> = [];
+        const expectedEndpoints: boolean[] = [];
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+            const url = input instanceof Request ? input.url : String(input);
+            if (url.endsWith("/models"))
+              return new Response(JSON.stringify({ data: [] }), {
+                status: 200,
+              });
+            expectedEndpoints.push(
+              url === "https://api.openai.com/v1/responses",
+            );
+            const body = JSON.parse(String(init?.body)) as Record<
+              string,
+              unknown
+            >;
+            bodies.push(body);
+            if (body.stream)
+              return new Response(
+                [
+                  {
+                    type: "response.output_text.delta",
+                    delta: "diagnostic-ok",
+                  },
+                  {
+                    type: "response.completed",
+                    response: { status: "completed" },
+                  },
+                ]
+                  .map(
+                    (event) =>
+                      `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
+                  )
+                  .join(""),
+                {
+                  status: 200,
+                  headers: { "content-type": "text/event-stream" },
+                },
+              );
+            return new Response(
+              JSON.stringify({
+                object: "response",
+                status: "completed",
+                output: [
+                  {
+                    type: "message",
+                    role: "assistant",
+                    content: [
+                      {
+                        type: "output_text",
+                        text: '{"ok":true}',
+                        annotations: [],
+                      },
+                    ],
+                  },
+                ],
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            );
+          }),
+        );
+        const service = new AiProviderService(
+          store,
+          testConfig("/tmp/gpt-five-route"),
+        );
+        await service.verifyAndSave(
+          user.id,
+          "openai",
+          "sk-synthetic-gpt-five-credential",
+        );
+        service.saveSelections(user.id, {
+          analysis: { provider: "openai", model, thinkingLevel },
+        });
+        const result = await service.testConnection(user.id, "analysis");
+        expect(expectedEndpoints).toEqual([true]);
+        expect(bodies).toHaveLength(1);
+        expect(result).toMatchObject({ ok: true, code: "ok" });
+        expect(await service.testConnection(user.id, "ask")).toMatchObject({
+          ok: true,
+          code: "ok",
+        });
+        expect(bodies).toHaveLength(2);
+        expect(bodies[0]).toMatchObject({
+          model,
+          store: false,
+          max_output_tokens: 2048,
+          text: { format: { type: "json_schema", strict: true } },
+        });
+        expect(bodies[1]).toMatchObject({
+          model,
+          store: false,
+          max_output_tokens: 2048,
+          stream: true,
+        });
+        for (const body of bodies) {
+          if (thinkingLevel === null)
+            expect(body).not.toHaveProperty("reasoning");
+          else
+            expect(body).toHaveProperty("reasoning", { effort: thinkingLevel });
+          expect(body).not.toHaveProperty("reasoning_effort");
+          expect(body).not.toHaveProperty("temperature");
+        }
+      } finally {
+        store.close();
+      }
+    },
+  );
 });
