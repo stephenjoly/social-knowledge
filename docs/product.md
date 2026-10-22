@@ -37,6 +37,7 @@ The sidebar groups Inbox, Activity, and Knowledge base under Library. Assistant
 contains New chat and searchable conversation history on every app page. Chats
 are grouped by pin and date, with pending and failed answer indicators. Row menus
 rename, pin or unpin, export Markdown with source URLs, and confirm deletion.
+Renaming and pinning preserve the chat’s date group.
 The capture button opens a dialog over the current page. Command/Ctrl+K opens the
 destination palette. G then I/A/K/Q opens Inbox, Activity, Knowledge base, or a
 new chat; / focuses chat search. The processing card links to Activity and remains
@@ -101,7 +102,7 @@ from. Capture remains available from the application shell.
 
 AI settings separates credentials from task configuration. Compact provider rows connect or manage OpenAI and Cerebras keys. The task table chooses a connected provider, a compatible model, and a thinking level where supported. Changes remain drafts until Save changes succeeds. Transcription, Analysis, and Ask AI default have separate settings. An unset Ask default follows Analysis, preserving existing choices. New connections do not assign tasks automatically. Queued captures retain their saved models and thinking level, and disconnecting clears affected assignments.
 
-The footer's Test connection action opens explicit transcription, structured-analysis, and streaming-Ask checks using saved task settings. Save draft changes before testing. Transcription uses a short audio file selected by the user; analysis and Ask use small synthetic text samples. Tests can incur provider usage and do not create captures or conversations. Results distinguish configuration from successful provider calls and become stale when relevant settings change. These checks do not certify social downloads, archive retrieval, or the full capture pipeline.
+The bottom Test connection section’s Run test action opens explicit transcription, structured-analysis, and streaming-Ask checks using saved task settings. Save draft changes before testing. Transcription uses a short audio file selected by the user; analysis and Ask use small synthetic text samples. Tests can incur provider usage and do not create captures or conversations. Results distinguish configuration from successful provider calls and become stale when relevant settings change. These checks do not certify social downloads, archive retrieval, or the full capture pipeline.
 
 Settings topics share their layout and reserve scrollbar space to avoid horizontal shifts when switching between short and long pages. Provider verification confirms credentials; it does not replace live model and capture acceptance before production.
 
@@ -122,7 +123,11 @@ model opens that setup.
 Each answer records the provider, model, and thinking level actually used. Its
 metadata names the model, source count, and time; historical answers without model
 metadata remain unlabeled. Retry with… runs another attempt with a selected model
-without changing the chat selection. A disconnected chat selection falls back to
+without changing the chat selection. Completed answers can be retried only while
+they are the latest answer. Earlier attempts remain in history; subsequent model
+context uses the latest completed retry instead of duplicating replaced answers.
+Interrupted pending answers recover automatically to a retryable failure.
+A disconnected chat selection falls back to
 the Ask default, then Analysis, and records the actual fallback model.
 
 Source cards identify the answer they support; a follow-up without citations does

@@ -14,6 +14,8 @@ let root: string;
 let store: JobStore;
 let app: ReturnType<typeof buildApp>;
 let firstChat: string;
+let pauseNextAnswer = false;
+let releaseAnswer: (() => void) | undefined;
 const screenshots = path.resolve("output/playwright/ask-chat-first");
 
 test.beforeAll(async () => {
@@ -24,7 +26,16 @@ test.beforeAll(async () => {
   await mkdir(screenshots, { recursive: true });
   store = new JobStore(config.databasePath);
   const user = store.createUser("ask-review", await hash("synthetic-review-password"));
-  app = buildApp(config, store, new EventHub(), undefined, undefined, syntheticReviewAsk(store));
+  const synthetic = syntheticReviewAsk(store);
+  app = buildApp(config, store, new EventHub(), undefined, undefined, {
+    answer: async (input) => {
+      if (pauseNextAnswer) {
+        pauseNextAnswer = false;
+        await new Promise<void>((resolve) => { releaseAnswer = resolve; });
+      }
+      return synthetic.answer(input);
+    },
+  });
   await app.ready();
   firstChat = seedAskReviewFixture(store, user.id).conversationIds[0]!;
   await app.listen({ host: "127.0.0.1", port });
@@ -43,6 +54,10 @@ test("six approved Ask states, model persistence, sources and Settings preserve 
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: "New chat", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: "What do you want to find?", exact: true })).toBeVisible();
+  const suggestions = page.locator(".ask-suggestion");
+  await expect(suggestions).toHaveCount(3);
+  const suggestionTops = await suggestions.evaluateAll((items) => items.map((item) => Math.round(item.getBoundingClientRect().top)));
+  expect(new Set(suggestionTops).size).toBe(1);
   await page.screenshot({ path: path.join(screenshots, "state-1-home.png") });
 
   await page.getByRole("button", { name: "Leadership advice for a new manager", exact: true }).first().click();
@@ -120,7 +135,15 @@ test("model default, one-off retry, persisted preferences and sidebar actions wo
   await page.keyboard.press("Escape");
   await page.getByTitle("Retry with another model", { exact: true }).first().click();
   const retryPicker = page.getByRole("dialog", { name: "Retry this answer with" });
+  pauseNextAnswer = true;
   await retryPicker.locator(".ask-opt").filter({ hasText: "gpt-5-mini" }).click();
+  try {
+    await expect(page.locator(".ask-answer").last().locator(".ask-meta-model")).toContainText("GPT-5 mini");
+    await expect(page.locator(".ask-answer").last().locator(".ask-answer-body")).toHaveCount(0);
+  } finally {
+    releaseAnswer?.();
+    releaseAnswer = undefined;
+  }
   await expect.poll(() => page.evaluate(async (id) => {
     const conversation = (await (await fetch(`/api/v1/conversations/${id}`)).json()).conversation;
     const latest = conversation.messages.at(-1);
