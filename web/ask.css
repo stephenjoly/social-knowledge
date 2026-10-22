@@ -639,7 +639,6 @@ html:has(.ask-v2) {
 }
 
 .ask-title span {
-  max-width: 520px;
   min-width: 0;
   flex: 0 1 auto;
   overflow: hidden;
@@ -1077,7 +1076,8 @@ html:has(.ask-v2) {
   padding: 8px 28px 16px;
 }
 
-.ask-composer-wrap > * {
+.ask-composer-wrap > *,
+.ask-v2 .ask-composer-wrap > .ask-composer {
   width: 100%;
   max-width: 704px;
   margin: 0 auto;

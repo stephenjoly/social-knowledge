@@ -68,7 +68,9 @@ export function suggestionsFrom(facets: CaptureFacets | null): string[] {
       ? `Summarise my saved ${shortLabel(subcategory.label)} recommendations`
       : null,
   );
-  add(topics[0] ? `What did I save about ${shortLabel(topics[0].label)}?` : null);
+  add(
+    topics[0] ? `What did I save about ${shortLabel(topics[0].label)}?` : null,
+  );
   const domain = domains.find((item) => item.label !== subcategory?.label);
   add(
     domain
@@ -224,7 +226,9 @@ export function askFailure(
 ): AskFailure {
   const known = errorCode ? askFailures.get(errorCode) : undefined;
   if (known) return known;
-  return status === "cancelled" ? askFailures.get("cancelled")! : genericFailure;
+  return status === "cancelled"
+    ? askFailures.get("cancelled")!
+    : genericFailure;
 }
 
 /** The question an answer responds to: its linked message, else the one before it. */
@@ -355,7 +359,9 @@ export type AskModelOption = {
 };
 
 /** Analysis models of connected providers, in provider order. */
-export function askModelOptions(state: AiProviderState | null): AskModelOption[] {
+export function askModelOptions(
+  state: AiProviderState | null,
+): AskModelOption[] {
   if (!state) return [];
   return state.providers
     .filter((provider) => provider.connected && provider.capabilities.analysis)
@@ -381,10 +387,10 @@ export function sameSelection(
 ) {
   return Boolean(
     a &&
-      b &&
-      a.provider === b.provider &&
-      a.model === b.model &&
-      (a.thinkingLevel ?? null) === (b.thinkingLevel ?? null),
+    b &&
+    a.provider === b.provider &&
+    a.model === b.model &&
+    (a.thinkingLevel ?? null) === (b.thinkingLevel ?? null),
   );
 }
 
@@ -403,7 +409,8 @@ export function usableSelection(
   if (!selection) return null;
   const option = options.find((item) => sameModel(item, selection));
   if (!option) return null;
-  if (!option.thinkingLevels.length) return { ...selection, thinkingLevel: null };
+  if (!option.thinkingLevels.length)
+    return { ...selection, thinkingLevel: null };
   return selection.thinkingLevel &&
     option.thinkingLevels.includes(selection.thinkingLevel)
     ? selection

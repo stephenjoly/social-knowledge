@@ -1,8 +1,10 @@
 import {
+  createContext,
   type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -146,8 +148,63 @@ function ProviderDot({
   );
 }
 
+/** What a citation inside an answer needs; read through context so links stay mounted. */
+type CitationApi = {
+  highlight: string | null;
+  boundAnswerId: string | null;
+  onHover: (sourceId: string) => void;
+  onShow: (message: ChatMessage, source: AskSource) => void;
+};
+const CitationContext = createContext<CitationApi | null>(null);
+const AnswerContext = createContext<ChatMessage | null>(null);
+
+function MarkdownLink({
+  href,
+  children,
+}: {
+  href?: string;
+  children?: ReactNode;
+}) {
+  const citations = useContext(CitationContext);
+  const message = useContext(AnswerContext);
+  const source =
+    href?.startsWith("capture:") && message
+      ? message.sources.find(({ id }) => id === href.slice(8))
+      : undefined;
+  if (source && message && citations) {
+    const bound = citations.boundAnswerId === message.id;
+    return (
+      <button
+        type="button"
+        className={`ask-cite${bound && citations.highlight === source.id ? " hl" : ""}`}
+        data-source-id={source.id}
+        aria-label={`Source ${source.citation}: ${source.title}`}
+        title={source.title}
+        onMouseEnter={() => bound && citations.onHover(source.id)}
+        onFocus={() => bound && citations.onHover(source.id)}
+        onClick={() => citations.onShow(message, source)}
+      >
+        {children}
+      </button>
+    );
+  }
+  return (
+    <a href={href} target="_blank" rel="noreferrer noopener">
+      {children}
+    </a>
+  );
+}
+
+/** Stable across renders: a new component type would remount citations mid-click. */
+const markdownComponents: Components = {
+  a: ({ href, children }) => (
+    <MarkdownLink href={href}>{children}</MarkdownLink>
+  ),
+};
+
 function wideScreen() {
-  return typeof window !== "undefined" && typeof window.matchMedia === "function"
+  return typeof window !== "undefined" &&
+    typeof window.matchMedia === "function"
     ? window.matchMedia(sidePanelQuery).matches
     : true;
 }
@@ -249,7 +306,9 @@ function ModelOptionRows({
                     <span className="ask-opt-text">
                       <b>
                         {modelLabel(option.model)}
-                        {isDefault && <span className="ask-default">Default</span>}
+                        {isDefault && (
+                          <span className="ask-default">Default</span>
+                        )}
                       </b>
                       <small>
                         {option.thinkingLevels.length
@@ -279,7 +338,9 @@ function ModelOptionRows({
                           aria-labelledby="ask-think-label"
                         >
                           {thinkingOrder
-                            .filter((level) => option.thinkingLevels.includes(level))
+                            .filter((level) =>
+                              option.thinkingLevels.includes(level),
+                            )
                             .map((level) => (
                               <button
                                 type="button"
@@ -345,7 +406,10 @@ function ModelPicker({
     )?.focus({ preventScroll: true });
   }, [open]);
 
-  if (!loaded) return <span className="ask-pickbtn ask-pickbtn-loading" aria-hidden="true" />;
+  if (!loaded)
+    return (
+      <span className="ask-pickbtn ask-pickbtn-loading" aria-hidden="true" />
+    );
   if (!options.length || !selection)
     return (
       <button
@@ -368,7 +432,9 @@ function ModelPicker({
           role="dialog"
           aria-label="Model for this chat"
           ref={panelRef}
-          onKeyDown={(event) => roveFocus(event, ".ask-opt, .ask-seg button, .ask-pfoot button")}
+          onKeyDown={(event) =>
+            roveFocus(event, ".ask-opt, .ask-seg button, .ask-pfoot button")
+          }
         >
           <div className="ask-picker-head">
             <b>Model for this chat</b>
@@ -382,13 +448,17 @@ function ModelPicker({
             onChoose={(choice) =>
               onChange(selectionFor(choice, selection, defaultSelection))
             }
-            onThinking={(thinkingLevel) => onChange({ ...selection, thinkingLevel })}
+            onThinking={(thinkingLevel) =>
+              onChange({ ...selection, thinkingLevel })
+            }
           />
           <div className="ask-pfoot">
             <button
               type="button"
               disabled={isDefault}
-              title={isDefault ? "Already the default for new chats" : undefined}
+              title={
+                isDefault ? "Already the default for new chats" : undefined
+              }
               onClick={onSetDefault}
             >
               <Check size={14} aria-hidden="true" />
@@ -423,7 +493,9 @@ function ModelPicker({
         <span className="sr-only">Model: </span>
         {modelLabel(selection.model)}
         {option?.thinkingLevels.length && selection.thinkingLevel ? (
-          <span className="ask-pickbtn-level">· {thinkingName(selection.thinkingLevel)}</span>
+          <span className="ask-pickbtn-level">
+            · {thinkingName(selection.thinkingLevel)}
+          </span>
         ) : null}
         <ChevronDown size={14} aria-hidden="true" />
       </button>
@@ -619,7 +691,9 @@ export function AskAI({
   const [aiState, setAiState] = useState<AiProviderState | null>(null);
   const [aiLoaded, setAiLoaded] = useState(false);
   /** The model chosen on the new-chat screen before the chat exists. */
-  const [draftSelection, setDraftSelection] = useState<AskSelection | null>(null);
+  const [draftSelection, setDraftSelection] = useState<AskSelection | null>(
+    null,
+  );
   const [titleMenuOpen, setTitleMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -628,9 +702,7 @@ export function AskAI({
     Record<string, SourceDetails>
   >({});
   const [archive, setArchive] = useState<ArchiveState>("loading");
-  const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(
-    null,
-  );
+  const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null);
   const [sourcesOpen, setSourcesOpen] = useState(
     () => preferences.askSourcesPanel && wideScreen(),
   );
@@ -659,6 +731,8 @@ export function AskAI({
   const partialAnswersRef = useRef(new Map<string, string>());
   const serverAssistantIdsRef = useRef(new Map<string, string>());
   const newChatTokenRef = useRef(chats.newChatToken);
+  /** Set once the reader shows or hides the panel in this view. */
+  const panelTouchedRef = useRef(false);
   /** Guards the rename field, which both submits and blurs. */
   const renamingRef = useRef(false);
 
@@ -668,7 +742,7 @@ export function AskAI({
   const defaultSelection = defaultAskSelection(aiState);
   const chatSelection = current ? current.selection : draftSelection;
   const activeSelection = resolveAskSelection(chatSelection, aiState);
-  const aiReady = aiLoaded && aiState ? aiState.readiness?.ask ?? null : null;
+  const aiReady = aiLoaded && aiState ? (aiState.readiness?.ask ?? null) : null;
 
   function updateAssistant(temporaryId: string, patch: Partial<ChatMessage>) {
     setCurrent((existing) =>
@@ -801,8 +875,11 @@ export function AskAI({
       .catch(() => setArchive("unknown"));
   }, []);
 
-  // The saved preference decides the panel beside the thread; narrow screens start closed.
+  // The saved preference ("by default") opens the panel until the reader
+  // toggles it here; after that, a slow or failed save can never undo their
+  // choice. Narrow screens start closed because the panel covers the thread.
   useEffect(() => {
+    if (panelTouchedRef.current) return;
     setSourcesOpen(preferences.askSourcesPanel && wideScreen());
   }, [preferences.askSourcesPanel]);
 
@@ -873,7 +950,9 @@ export function AskAI({
     const bottom = threadScrolls()
       ? threadRef.current!.getBoundingClientRect().bottom
       : window.innerHeight;
-    return marker.getBoundingClientRect().bottom <= bottom - margin + followSlack;
+    return (
+      marker.getBoundingClientRect().bottom <= bottom - margin + followSlack
+    );
   }
   function scrollToEnd() {
     threadEndRef.current?.scrollIntoView?.({ block: "end" });
@@ -944,7 +1023,9 @@ export function AskAI({
         lastScrollRef.current = scrollPosition();
         const trigger = saved.trigger?.isConnected
           ? saved.trigger
-          : root.querySelectorAll<HTMLElement>(saved.triggerSelector)[saved.triggerIndex];
+          : root.querySelectorAll<HTMLElement>(saved.triggerSelector)[
+              saved.triggerIndex
+            ];
         trigger?.focus({ preventScroll: true });
       };
       restore();
@@ -957,7 +1038,9 @@ export function AskAI({
 
   function openSource(id: string, trigger: HTMLElement | null) {
     const triggerSelector = `.ask-source-open[data-source-id="${CSS.escape(id)}"]`;
-    const triggers = Array.from(rootRef.current?.querySelectorAll<HTMLElement>(triggerSelector) ?? []);
+    const triggers = Array.from(
+      rootRef.current?.querySelectorAll<HTMLElement>(triggerSelector) ?? [],
+    );
     readingPositionRef.current = {
       windowY: window.scrollY,
       threadTop: threadRef.current?.scrollTop ?? 0,
@@ -969,10 +1052,11 @@ export function AskAI({
   }
 
   function setPanelOpen(open: boolean) {
+    panelTouchedRef.current = true;
     setSourcesOpen(open);
-    if (wideScreen() && open !== preferences.askSourcesPanel)
-      void onPreferencesChange?.({ askSourcesPanel: open });
     if (!open) setHighlight(null);
+    if (wideScreen() && open !== preferences.askSourcesPanel)
+      void onPreferencesChange?.({ askSourcesPanel: open }).catch(() => false);
   }
 
   // S shows or hides the sources panel while a chat is open.
@@ -1234,7 +1318,9 @@ export function AskAI({
           "/api/v1/conversations",
           {
             method: "POST",
-            body: JSON.stringify(draftSelection ? { selection: draftSelection } : {}),
+            body: JSON.stringify(
+              draftSelection ? { selection: draftSelection } : {},
+            ),
           },
         );
         conversation = result.conversation;
@@ -1495,44 +1581,19 @@ export function AskAI({
     } else onOpenSettings?.("ai");
   }
 
-  function markdownComponents(message: ChatMessage): Components {
-    const bound = panel.answer?.id === message.id;
-    return {
-      a: ({ href, children }) => {
-        if (href?.startsWith("capture:")) {
-          const source = message.sources.find(
-            ({ id }) => id === href.slice(8),
-          );
-          if (source)
-            return (
-              <button
-                type="button"
-                className={`ask-cite${bound && highlight === source.id ? " hl" : ""}`}
-                data-source-id={source.id}
-                aria-label={`Source ${source.citation}: ${source.title}`}
-                title={source.title}
-                onMouseEnter={() => bound && setHighlight(source.id)}
-                onFocus={() => bound && setHighlight(source.id)}
-                onClick={() => showCitation(message, source)}
-              >
-                {children}
-              </button>
-            );
-        }
-        return (
-          <a href={href} target="_blank" rel="noreferrer noopener">
-            {children}
-          </a>
-        );
-      },
-    };
-  }
-
+  const citationApi: CitationApi = {
+    highlight,
+    boundAnswerId: panel.answer?.id ?? null,
+    onHover: setHighlight,
+    onShow: showCitation,
+  };
   const summaryRow = current
     ? chats.conversations.find((item) => item.id === current.id)
     : undefined;
   const chatTitle = summaryRow?.title ?? current?.title ?? "";
-  const chatPinned = Boolean(summaryRow ? summaryRow.pinnedAt : current?.pinnedAt);
+  const chatPinned = Boolean(
+    summaryRow ? summaryRow.pinnedAt : current?.pinnedAt,
+  );
   const suggestions = suggestionsFrom(facets).slice(0, 3);
   const lastAssistant = [...(current?.messages ?? [])]
     .reverse()
@@ -1543,9 +1604,6 @@ export function AskAI({
   const earlierQuestion = panel.earlierCited
     ? questionFor(current?.messages, panel.earlierCited)
     : null;
-  const citedAnswers = (current?.messages ?? []).filter(
-    (message) => message.role === "assistant" && message.sources.length > 0,
-  ).length;
   const notices = (
     <>
       {error && (
@@ -1680,7 +1738,10 @@ export function AskAI({
       <div className={`ask-conversation${sourcesOpen ? " sources-open" : ""}`}>
         <section className="ask-chat" aria-labelledby="ask-chat-title">
           <header className="ask-chat-bar">
-            <div className="ask-popover-anchor ask-title-anchor" ref={titleMenuRef}>
+            <div
+              className="ask-popover-anchor ask-title-anchor"
+              ref={titleMenuRef}
+            >
               {renaming ? (
                 <form
                   className="ask-rename"
@@ -1801,235 +1862,251 @@ export function AskAI({
             </button>
           </header>
           <div className="ask-thread" ref={threadRef}>
-            <div className="ask-thread-inner">
-              {current.messages.map((message) => {
-                if (message.role === "user")
+            <CitationContext.Provider value={citationApi}>
+              <div className="ask-thread-inner">
+                {current.messages.map((message) => {
+                  if (message.role === "user")
+                    return (
+                      <article
+                        className={`ask-message user ${message.status}`}
+                        key={message.id}
+                        aria-label="Your question"
+                      >
+                        <p className="ask-bubble">{message.content}</p>
+                      </article>
+                    );
+                  const meta = answerMeta(message);
+                  const isLast = message.id === lastAssistant?.id;
                   return (
                     <article
-                      className={`ask-message user ${message.status}`}
+                      className={`ask-message assistant ${message.status}`}
                       key={message.id}
-                      aria-label="Your question"
+                      id={`ask-answer-${message.id}`}
+                      tabIndex={-1}
+                      aria-label="Answer"
                     >
-                      <p className="ask-bubble">{message.content}</p>
-                    </article>
-                  );
-                const meta = answerMeta(message);
-                const isLast = message.id === lastAssistant?.id;
-                return (
-                  <article
-                    className={`ask-message assistant ${message.status}`}
-                    key={message.id}
-                    id={`ask-answer-${message.id}`}
-                    tabIndex={-1}
-                    aria-label="Answer"
-                  >
-                    <IconBox icon={Sparkles} size={28} tone="green" />
-                    <div className="ask-answer">
-                      {message.status !== "pending" &&
-                        (meta.model || meta.parts.length > 0) && (
-                          <p className="ask-meta">
-                            {[meta.model, ...meta.parts]
-                              .filter((part): part is string => Boolean(part))
-                              .map((part, index) => (
-                                <span
-                                  key={index}
-                                  className={
-                                    index === 0 && meta.model
-                                      ? "ask-meta-model"
-                                      : undefined
-                                  }
-                                >
-                                  {index > 0 && (
-                                    <span className="ask-meta-dot" aria-hidden="true">
-                                      ·
-                                    </span>
-                                  )}
-                                  {part}
-                                </span>
-                              ))}
+                      <IconBox icon={Sparkles} size={28} tone="green" />
+                      <div className="ask-answer">
+                        {message.status !== "pending" &&
+                          (meta.model || meta.parts.length > 0) && (
+                            <p className="ask-meta">
+                              {[meta.model, ...meta.parts]
+                                .filter((part): part is string => Boolean(part))
+                                .map((part, index) => (
+                                  <span
+                                    key={index}
+                                    className={
+                                      index === 0 && meta.model
+                                        ? "ask-meta-model"
+                                        : undefined
+                                    }
+                                  >
+                                    {index > 0 && (
+                                      <span
+                                        className="ask-meta-dot"
+                                        aria-hidden="true"
+                                      >
+                                        ·
+                                      </span>
+                                    )}
+                                    {part}
+                                  </span>
+                                ))}
+                            </p>
+                          )}
+                        {message.content ? (
+                          <AnswerContext.Provider value={message}>
+                            <div className="ask-answer-body">
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                skipHtml
+                                urlTransform={(url) =>
+                                  /^(capture:|https?:|mailto:)/i.test(url)
+                                    ? url
+                                    : ""
+                                }
+                                components={markdownComponents}
+                              >
+                                {citationsPerPoint(
+                                  answerWithCaptureLinks(
+                                    message.content,
+                                    message.sources,
+                                  ),
+                                )}
+                              </ReactMarkdown>
+                            </div>
+                          </AnswerContext.Provider>
+                        ) : message.status === "pending" ? (
+                          <p className="ask-pending">
+                            {message.statusText || "Searching your archive…"}
+                          </p>
+                        ) : null}
+                        {message.sufficient === false && (
+                          <p className="ask-insufficient">
+                            The saved archive did not contain enough evidence.
                           </p>
                         )}
-                      {message.content ? (
-                        <div className="ask-answer-body">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            skipHtml
-                            urlTransform={(url) =>
-                              /^(capture:|https?:|mailto:)/i.test(url)
-                                ? url
-                                : ""
-                            }
-                            components={markdownComponents(message)}
-                          >
-                            {citationsPerPoint(
-                              answerWithCaptureLinks(
-                                message.content,
-                                message.sources,
-                              ),
-                            )}
-                          </ReactMarkdown>
-                        </div>
-                      ) : message.status === "pending" ? (
-                        <p className="ask-pending">
-                          {message.statusText || "Searching your archive…"}
-                        </p>
-                      ) : null}
-                      {message.sufficient === false && (
-                        <p className="ask-insufficient">
-                          The saved archive did not contain enough evidence.
-                        </p>
-                      )}
-                      {(message.status === "failed" ||
-                        message.status === "cancelled") &&
-                        (() => {
-                          const failure = askFailure(
-                            message.errorCode,
-                            message.status,
-                          );
-                          const needsSetup =
-                            message.errorCode === "analysis_provider_required" ||
-                            message.errorCode === "ai_provider_required";
-                          const actions = failure.actions.filter(
-                            (action) =>
-                              action !== "setup" || Boolean(onOpenSettings),
-                          );
-                          return (
-                            <>
-                              <p
-                                className="ask-answer-failed"
-                                data-error-code={message.errorCode ?? undefined}
-                              >
-                                {failure.text}
-                              </p>
-                              <div className="ask-answer-actions">
-                                {actions.map((action, index) => (
-                                  <ActionButton
-                                    key={action}
-                                    variant={index === 0 ? "default" : "ghost"}
-                                    icon={
-                                      action === "retry"
-                                        ? RotateCcw
-                                        : action === "rephrase"
-                                          ? PencilLine
-                                          : action === "new-chat"
-                                            ? Plus
-                                            : Settings2
-                                    }
-                                    disabled={
-                                      streaming &&
-                                      (action === "retry" ||
-                                        action === "new-chat")
-                                    }
-                                    onClick={() => recover(action, message)}
-                                  >
-                                    {action === "setup" && needsSetup
-                                      ? "Set up AI"
-                                      : recoveryLabels[action]}
-                                  </ActionButton>
-                                ))}
-                                {isLast && !needsSetup && (
-                                  <RetryWith
-                                    options={modelOptions}
-                                    defaultSelection={defaultSelection}
-                                    disabled={streaming}
-                                    onRetry={(selection) =>
-                                      void retry(message, selection)
-                                    }
-                                  />
-                                )}
-                              </div>
-                            </>
-                          );
-                        })()}
-                      {message.status === "complete" && message.content && (
-                        <div className="ask-answer-actions">
-                          {message.sources.length > 0 ? (
-                            <button
-                              type="button"
-                              className="ask-sources-toggle"
-                              aria-pressed={
-                                sourcesOpen && panel.answer?.id === message.id
-                              }
-                              aria-controls="ask-sources"
-                              onClick={() => showSourcesFor(message)}
-                            >
-                              <span className="ask-faces" aria-hidden="true">
-                                {message.sources.slice(0, 3).map((source) => {
-                                  const thumb = sourceDetails[source.id]?.thumbUrl;
-                                  return (
-                                    <i
-                                      key={source.id}
-                                      style={
-                                        {
-                                          background: thumb
-                                            ? `center / cover url("${thumb}") ${thumbTint(source.citation)}`
-                                            : thumbTint(source.citation),
-                                        } as CSSProperties
+                        {(message.status === "failed" ||
+                          message.status === "cancelled") &&
+                          (() => {
+                            const failure = askFailure(
+                              message.errorCode,
+                              message.status,
+                            );
+                            const needsSetup =
+                              message.errorCode ===
+                                "analysis_provider_required" ||
+                              message.errorCode === "ai_provider_required";
+                            const actions = failure.actions.filter(
+                              (action) =>
+                                action !== "setup" || Boolean(onOpenSettings),
+                            );
+                            return (
+                              <>
+                                <p
+                                  className="ask-answer-failed"
+                                  data-error-code={
+                                    message.errorCode ?? undefined
+                                  }
+                                >
+                                  {failure.text}
+                                </p>
+                                <div className="ask-answer-actions">
+                                  {actions.map((action, index) => (
+                                    <ActionButton
+                                      key={action}
+                                      variant={
+                                        index === 0 ? "default" : "ghost"
+                                      }
+                                      icon={
+                                        action === "retry"
+                                          ? RotateCcw
+                                          : action === "rephrase"
+                                            ? PencilLine
+                                            : action === "new-chat"
+                                              ? Plus
+                                              : Settings2
+                                      }
+                                      disabled={
+                                        streaming &&
+                                        (action === "retry" ||
+                                          action === "new-chat")
+                                      }
+                                      onClick={() => recover(action, message)}
+                                    >
+                                      {action === "setup" && needsSetup
+                                        ? "Set up AI"
+                                        : recoveryLabels[action]}
+                                    </ActionButton>
+                                  ))}
+                                  {isLast && !needsSetup && (
+                                    <RetryWith
+                                      options={modelOptions}
+                                      defaultSelection={defaultSelection}
+                                      disabled={streaming}
+                                      onRetry={(selection) =>
+                                        void retry(message, selection)
                                       }
                                     />
-                                  );
-                                })}
-                              </span>
-                              {message.sources.length}{" "}
-                              {message.sources.length === 1
-                                ? "source"
-                                : "sources"}
-                              <span className="sr-only">
-                                {sourcesOpen && panel.answer?.id === message.id
-                                  ? " (shown in Sources)"
-                                  : " (show in Sources)"}
-                              </span>
-                            </button>
-                          ) : message.sufficient !== false ? (
-                            <span className="ask-no-sources">
-                              No saved posts cited
-                            </span>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="ask-ghost ask-ghost-icon"
-                            title="Copy answer"
-                            onClick={() => void copyAnswer(message)}
-                          >
-                            {copiedId === message.id ? (
-                              <Check size={14} aria-hidden="true" />
-                            ) : (
-                              <Copy size={14} aria-hidden="true" />
-                            )}
-                            <span className="sr-only">
-                              {copiedId === message.id ? "Copied" : "Copy answer"}
-                            </span>
-                          </button>
-                          {isLast && (
-                            <>
+                                  )}
+                                </div>
+                              </>
+                            );
+                          })()}
+                        {message.status === "complete" && message.content && (
+                          <div className="ask-answer-actions">
+                            {message.sources.length > 0 ? (
                               <button
                                 type="button"
-                                className="ask-ghost ask-ghost-icon"
-                                title="Retry"
-                                disabled={streaming}
-                                onClick={() => void retry(message)}
-                              >
-                                <RotateCcw size={14} aria-hidden="true" />
-                                <span className="sr-only">Retry</span>
-                              </button>
-                              <RetryWith
-                                options={modelOptions}
-                                defaultSelection={defaultSelection}
-                                disabled={streaming}
-                                onRetry={(selection) =>
-                                  void retry(message, selection)
+                                className="ask-sources-toggle"
+                                aria-pressed={
+                                  sourcesOpen && panel.answer?.id === message.id
                                 }
-                              />
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </article>
-                );
-              })}
-              <div ref={threadEndRef} />
-            </div>
+                                aria-controls="ask-sources"
+                                onClick={() => showSourcesFor(message)}
+                              >
+                                <span className="ask-faces" aria-hidden="true">
+                                  {message.sources.slice(0, 3).map((source) => {
+                                    const thumb =
+                                      sourceDetails[source.id]?.thumbUrl;
+                                    return (
+                                      <i
+                                        key={source.id}
+                                        style={
+                                          {
+                                            background: thumb
+                                              ? `center / cover url("${thumb}") ${thumbTint(source.citation)}`
+                                              : thumbTint(source.citation),
+                                          } as CSSProperties
+                                        }
+                                      />
+                                    );
+                                  })}
+                                </span>
+                                {message.sources.length}{" "}
+                                {message.sources.length === 1
+                                  ? "source"
+                                  : "sources"}
+                                <span className="sr-only">
+                                  {sourcesOpen &&
+                                  panel.answer?.id === message.id
+                                    ? " (shown in Sources)"
+                                    : " (show in Sources)"}
+                                </span>
+                              </button>
+                            ) : message.sufficient !== false ? (
+                              <span className="ask-no-sources">
+                                No saved posts cited
+                              </span>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="ask-ghost ask-ghost-icon"
+                              title="Copy answer"
+                              onClick={() => void copyAnswer(message)}
+                            >
+                              {copiedId === message.id ? (
+                                <Check size={14} aria-hidden="true" />
+                              ) : (
+                                <Copy size={14} aria-hidden="true" />
+                              )}
+                              <span className="sr-only">
+                                {copiedId === message.id
+                                  ? "Copied"
+                                  : "Copy answer"}
+                              </span>
+                            </button>
+                            {isLast && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="ask-ghost ask-ghost-icon"
+                                  title="Retry"
+                                  disabled={streaming}
+                                  onClick={() => void retry(message)}
+                                >
+                                  <RotateCcw size={14} aria-hidden="true" />
+                                  <span className="sr-only">Retry</span>
+                                </button>
+                                <RetryWith
+                                  options={modelOptions}
+                                  defaultSelection={defaultSelection}
+                                  disabled={streaming}
+                                  onRetry={(selection) =>
+                                    void retry(message, selection)
+                                  }
+                                />
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+                <div ref={threadEndRef} />
+              </div>
+            </CitationContext.Provider>
           </div>
           <div className="ask-composer-wrap">
             {jumpVisible && (
@@ -2083,7 +2160,9 @@ export function AskAI({
               {panel.answer && (
                 <p className="ask-sources-for">
                   <span className="ask-sources-tag">
-                    {panel.isLatest ? "Cited in latest answer" : "Cited in an earlier answer"}
+                    {panel.isLatest
+                      ? "Cited in latest answer"
+                      : "Cited in an earlier answer"}
                   </span>
                   {!panel.isLatest && panelQuestion && (
                     <button
@@ -2166,7 +2245,9 @@ export function AskAI({
                               <span className="sr-only"> (original post)</span>
                             </a>
                           ) : (
-                            <span className="ask-source-link">{attribution}</span>
+                            <span className="ask-source-link">
+                              {attribution}
+                            </span>
                           )}
                           {source.synopsis && (
                             <span className="ask-source-synopsis">
@@ -2211,10 +2292,13 @@ export function AskAI({
                   {questionExcerpt(earlierQuestion.content, 48)}”
                 </button>
               )}
-              {citedAnswers > 1 && (
+              {panel.answer && (
                 <p className="ask-earlier">
-                  Earlier answers in this chat keep their own sources. Click an
-                  answer’s <b>sources</b> button to switch.
+                  Earlier answers in this chat keep their own sources. Click a{" "}
+                  <b>
+                    {panelCount} {panelCount === 1 ? "source" : "sources"}
+                  </b>{" "}
+                  button to switch.
                 </p>
               )}
             </div>
