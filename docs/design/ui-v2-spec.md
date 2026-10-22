@@ -9,6 +9,12 @@ On 2026-10-19 the owner approved the [28-item UX addendum](ui-v2-ux-addendum.md)
 for this same PR. Its specific behavior and presentation changes supersede the
 corresponding original screen details; unaffected geometry and tokens remain binding.
 
+On 2026-10-22 the owner approved the [chat-first Ask design](../../designs/app/ask-chat-first/README.md)
+(plan: [ask-chat-first](../exec-plans/active/ask-chat-first.md)). It supersedes screens
+08–09 (Ask), the sidebar Ask row and the Settings-mode sidebar: chat history lives in
+the app sidebar, and Settings opens as a modal. Section contents of screens 10–15 still
+apply inside the modal unless that design shows otherwise.
+
 ## Sources of truth, in priority order
 
 1. **Screen exports** — `docs/design/ui-v2/screens/NN-name.png`. What the owner approved.

@@ -1,8 +1,15 @@
-# Ask AI — chat-first mockup (proposal)
+# Ask AI — chat-first design contract
 
-**Status: proposal for Stephen's review, 22 October 2026. Not approved.**
+**Status: approved by Stephen on 22 October 2026 with no changes. This is the
+binding UI target for the Ask, sidebar and Settings work.** [`index.html`](index.html)
+is the definition of success: implementation must match it. Scope, decisions, API
+contract and acceptance criteria are in the execution plan
+[`docs/exec-plans/active/ask-chat-first.md`](../../../docs/exec-plans/active/ask-chat-first.md).
+
 Open [`index.html`](index.html) in a browser (no build, no network). The top bar
-steps through six states. PNG copies are in [`previews/`](previews/).
+steps through six states. PNG copies, captured at a 1360×1000 viewport, are in
+[`previews/`](previews/): `home`, `convo`, `picker`, `history`, `focus`, `settings`
+match states 1–6.
 Inspired by the approved Delegate chat-first target in the phone-concierge repo.
 Tokens are copied from `web/design-tokens.css`. All chats, creators and posts are
 synthetic.
@@ -41,12 +48,10 @@ synthetic.
 6. **6 · Settings modal** — switch sections; change a model select to see the
    unsaved bar; press `Esc` to return to the chat.
 
-## Open questions before building
+## Resolved questions
 
-- Should the chat list also show on Inbox / Activity / Knowledge base, or only
-  while on Ask? (Mockup assumes always, like Claude/ChatGPT.)
-- Does the per-chat model persist on the conversation record (needs a migration),
-  or only for the browser session?
-- Ask currently reads the operator-configured analysis model in `src/ask.ts`;
-  an "Ask AI default" selection needs a new owner-scoped setting.
-- Mobile layout is unspecified.
+Recorded as decisions in the execution plan: chat history shows on every app page;
+the per-chat model persists on the conversation and each answer records its model;
+Ask AI default is a new nullable owner setting that falls back to Analysis (Ask
+already routes through the Analysis selection via `runForUser`); mobile reuses the
+existing drawer with a full-screen Settings modal and is confirmed at preview.
