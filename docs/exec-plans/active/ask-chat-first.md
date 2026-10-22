@@ -1,7 +1,7 @@
 # Chat-first Ask AI, model picker and Settings modal
 
-Status: active; design approved, implementation not started
-Owner: Stephen Joly (product); delivery lead to be assigned
+Status: active; design approved, implementation in progress
+Owner: Stephen Joly (product); Codex delivery lead
 Started: 2026-10-22
 Branch: `codex/ask-ai-ui-mockup` (base `origin/staging` 034ac71); feature PR targets `staging`
 
@@ -161,6 +161,9 @@ Suggested ownership so parallel workers never share a file:
 
 ## Progress
 
+- 2026-10-22: Preflight clean; all six HTML states clicked in browser. Branch pushed; draft PR #64 targets staging.
+- Delivery ownership: A backend/types/tests; B shell/Settings; C Ask. Lead owns plan/docs, integration, preview and e2e after slices land. Workers commit only their owned paths; no pushes or base merges.
+
 - [x] Mockup approved and committed as the design contract (2026-10-22).
 - [ ] M1 Backend contract: migrations, endpoints, types, tests.
 - [ ] M2 Shell: sidebar history + Settings modal + routing (early key-screen check of state 2 and 6).
@@ -168,6 +171,9 @@ Suggested ownership so parallel workers never share a file:
 - [ ] M4 Integration, e2e updates, full visual comparison, docs, PR preview with seeded synthetic data.
 
 ## Decisions
+
+- 2026-10-22: Original design author `25214aae-9f86-4336-94c1-8103217aac98` reviews after lead validation. Approved brief satisfies pre-build scope approval.
+- 2026-10-22: Runtime delegation policy requires Codex 6.1 medium for logic and Opus 5.5 high for UI; those settings override requested low-thinking implementation. Three workers share this workspace and disjoint file ownership.
 
 - 2026-10-22: Mockup approved as-is; it is the binding contract.
 - 2026-10-22: Chat history is visible on every app page, not only on Ask (as in the mockup).
