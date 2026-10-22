@@ -653,13 +653,15 @@ describe("API", () => {
     });
     expect(exportResponse.statusCode).toBe(202);
     const exportId = exportResponse.json().export.id;
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    const exportStatus = await app.inject({
-      method: "GET",
-      url: `/api/v1/knowledge/exports/${exportId}`,
-      headers: bearer,
-    });
-    expect(exportStatus.json().export.status).toBe("complete");
+    await vi.waitFor(async () => {
+      const exportStatus = await app.inject({
+        method: "GET",
+        url: `/api/v1/knowledge/exports/${exportId}`,
+        headers: bearer,
+      });
+      expect(exportStatus.statusCode).toBe(200);
+      expect(exportStatus.json().export.status).toBe("complete");
+    }, { timeout: 2000, interval: 20 });
     const backupResponse = await app.inject({
       method: "POST",
       url: "/api/v1/library-exports",
@@ -667,7 +669,15 @@ describe("API", () => {
     });
     expect(backupResponse.statusCode).toBe(202);
     const backupId = backupResponse.json().export.id;
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await vi.waitFor(async () => {
+      const backupStatus = await app.inject({
+        method: "GET",
+        url: `/api/v1/library-exports/${backupId}`,
+        headers: { cookie: cookie! },
+      });
+      expect(backupStatus.statusCode).toBe(200);
+      expect(backupStatus.json().export.status).toBe("complete");
+    }, { timeout: 2000, interval: 20 });
     const backupDownload = await app.inject({
       method: "GET",
       url: `/api/v1/library-exports/${backupId}/download`,
