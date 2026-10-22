@@ -172,6 +172,10 @@ Suggested ownership so parallel workers never share a file:
 
 ## Decisions
 
+- 2026-10-22: Shared review data lives under dedicated synthetic member `ask-review`, leaving existing users, passwords, and provider keys unchanged. A strict HTTPS PR-preview hostname plus enabled demo accounts permits automatic fixture bootstrap and simulated Ask for that account only. Production and permanent staging never activate simulation.
+
+- 2026-10-22: Stephen requested reuse/enrichment of the shared synthetic staging dataset for all previews. PR64 inherits staging data/vault/media mounts. This explicitly overrides preview persistence isolation for this review; no production mounts or data. Add labeled synthetic review records without replacing existing data; destructive tests stay in local disposable stores.
+
 - 2026-10-22: Original design author `25214aae-9f86-4336-94c1-8103217aac98` reviews after lead validation. Approved brief satisfies pre-build scope approval.
 - 2026-10-22: Runtime delegation policy requires Codex 6.1 medium for logic and Opus 5.5 high for UI; those settings override requested low-thinking implementation. Three workers share this workspace and disjoint file ownership.
 

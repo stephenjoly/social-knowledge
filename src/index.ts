@@ -18,6 +18,7 @@ import { LibraryPublisher } from "./library-publisher.js";
 import { PlatformConnectionService } from "./platform-connections.js";
 import { AiProviderService } from "./ai-providers.js";
 import { ensureDemoAccounts } from "./demo-accounts.js";
+import { prepareAskReviewPreview, restoreAskReviewSpinner } from "./ask-review-fixture.js";
 
 const config = loadConfig();
 await Promise.all([
@@ -39,7 +40,8 @@ await ensureDemoAccounts(store, config);
 const events = new EventHub();
 const platformConnections = new PlatformConnectionService(store, config);
 const aiProviders = new AiProviderService(store, config);
-const app = buildApp(config, store, events, platformConnections, aiProviders);
+const review = await prepareAskReviewPreview(store, config, aiProviders);
+const app = buildApp(config, store, events, platformConnections, aiProviders, review?.service);
 const generationClient = aiProviders.routedClient();
 const worker = new JobWorker(
   config,
@@ -73,5 +75,7 @@ const shutdown = async (signal: string) => {
 process.once("SIGINT", () => void shutdown("SIGINT"));
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
+await app.ready();
+if (review) restoreAskReviewSpinner(store, review.userId);
 await app.listen({ host: config.host, port: config.port });
 worker.start();

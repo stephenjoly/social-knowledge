@@ -33,17 +33,21 @@ thumbnails with a stable fallback and retain titles, creators, and source platfo
 phone layouts keep each tile readable in a single column. Empty archives offer a
 first capture and a way to resume incomplete AI setup.
 
-The sidebar groups Inbox, Activity, and Knowledge base under Library, with Ask in
-a separate Assistant group. Its capture button opens a dialog over the current
-page. The Go to control and Command/Ctrl+K open a destination palette; this is
-navigation, not archive search. The G then I/A/K/Q shortcuts open Inbox, Activity,
-Knowledge base, and Ask. The processing card shows live account-owned work and
-links to Activity; on mobile it remains available inside the menu.
+The sidebar groups Inbox, Activity, and Knowledge base under Library. Assistant
+contains New chat and searchable conversation history on every app page. Chats
+are grouped by pin and date, with pending and failed answer indicators. Row menus
+rename, pin or unpin, export Markdown with source URLs, and confirm deletion.
+The capture button opens a dialog over the current page. Command/Ctrl+K opens the
+destination palette. G then I/A/K/Q opens Inbox, Activity, Knowledge base, or a
+new chat; / focuses chat search. The processing card links to Activity and remains
+available in the mobile menu.
 
-The account-row gear opens Settings on My account. Settings replaces the sidebar
-navigation with My account, AI & models, Connections, API keys, Data & export,
-and People & access for administrators. Back to archive returns to the previous
-archive destination. There is no Overview page or second settings sidebar.
+The account-row gear and Command/Ctrl+, open Settings over the current page.
+Its sections are My account, AI & models, Connections, API keys, Data & export,
+and People & access for administrators. Closing restores the underlying page and
+focus; browser Back closes the modal. Links use `?settings=<topic>` and legacy
+Settings links remain supported. Unsaved drafts show Save changes and Discard
+controls and require confirmation before closing. Phones use a full-screen modal.
 
 ## Activity behavior
 
@@ -95,7 +99,7 @@ from. Capture remains available from the application shell.
 
 ## AI setup
 
-AI settings separates credentials from task configuration. Compact provider rows connect or manage OpenAI and Cerebras keys. The task table chooses a connected provider, a compatible model, and a thinking level where supported. Changes remain drafts until Save changes succeeds. Transcription and Analysis have separate settings; Analysis also powers Ask. Existing choices carry forward. New connections do not assign tasks automatically. Queued captures retain their saved models and thinking level, and disconnecting clears affected assignments.
+AI settings separates credentials from task configuration. Compact provider rows connect or manage OpenAI and Cerebras keys. The task table chooses a connected provider, a compatible model, and a thinking level where supported. Changes remain drafts until Save changes succeeds. Transcription, Analysis, and Ask AI default have separate settings. An unset Ask default follows Analysis, preserving existing choices. New connections do not assign tasks automatically. Queued captures retain their saved models and thinking level, and disconnecting clears affected assignments.
 
 The footer's Test connection action opens explicit transcription, structured-analysis, and streaming-Ask checks using saved task settings. Save draft changes before testing. Transcription uses a short audio file selected by the user; analysis and Ask use small synthetic text samples. Tests can incur provider usage and do not create captures or conversations. Results distinguish configuration from successful provider calls and become stale when relevant settings change. These checks do not certify social downloads, archive retrieval, or the full capture pipeline.
 
@@ -108,17 +112,30 @@ and transferring a file to a phone; it does not imply one-click social sign-in.
 
 ## Ask behavior
 
-Ask remains a conversational view with one composer. Each answer's source cards
-identify the question they support; a follow-up without citations does not inherit
-older cards. Earlier evidence remains available through its answer. Citations open
-saved notes and return to the answer's reading position. Streaming follows new text
-while the reader is at the bottom, and stops following when the reader scrolls up.
+Ask has one composer, a full-width conversation header, and a toggleable sources
+panel. New chats offer grounded starter questions when saved posts exist. The
+composer picker lists connected providers’ analysis models and supported thinking
+levels. A chat remembers its model; Set as default changes the model for new chats.
+Manage models opens Settings on AI & models. With no connected model, Connect a
+model opens that setup.
 
-Reopened failed answers use persisted, controlled failure reasons and relevant
-recovery actions. Unknown historical reasons use generic safe copy. Missing AI
-configuration links directly to AI & models. Empty archives explain that saved
-posts are needed and offer capture instead of suggesting questions about nonexistent
-content. Model configuration stays in Settings.
+Each answer records the provider, model, and thinking level actually used. Its
+metadata names the model, source count, and time; historical answers without model
+metadata remain unlabeled. Retry with… runs another attempt with a selected model
+without changing the chat selection. A disconnected chat selection falls back to
+the Ask default, then Analysis, and records the actual fallback model.
+
+Source cards identify the answer they support; a follow-up without citations does
+not inherit older cards. Earlier evidence remains available through its answer.
+The Sources button and S toggle the panel. Citation clicks reopen it and highlight
+the matching source; source cards open saved notes. Repeated citations within one
+point are consolidated. Streaming follows new text while the reader is at the
+bottom and stops following when the reader scrolls up.
+
+Reopened failures use controlled recovery copy. Missing AI setup links to AI &
+models. Empty archives offer capture and explain that answers need saved posts.
+My account preferences control default source visibility and whether Enter or
+Command/Ctrl+Enter sends messages; Shift+Enter inserts a new line.
 
 ## Account settings and access administration
 

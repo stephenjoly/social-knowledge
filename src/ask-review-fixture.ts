@@ -1,6 +1,9 @@
-import { randomUUID } from "node:crypto";
-import type { JobStore } from "../src/db.js";
-import type { AskService, AskSource } from "../src/ask.js";
+import { hash } from "@node-rs/argon2";
+import type { AppConfig } from "./config.js";
+import { AskService } from "./ask.js";
+import type { AiProviderService } from "./ai-providers.js";
+import type { JobStore } from "./db.js";
+import type { AskSource } from "./ask.js";
 
 const references = [
   { title: "10 skip-level questions to ask your boss’s boss", creator: "leadwell.daily", platform: "instagram" as const, synopsis: "Use skip-levels to show strategic curiosity: risks, untapped opportunities, success metrics." },
@@ -23,7 +26,7 @@ export function seedAskReviewFixture(store: JobStore, userId: string) {
       title: reference.title, creator: reference.creator, creatorUrl: null,
       description: reference.synopsis, transcript: reference.synopsis, sourceLanguage: "en",
       translatedTranscript: null, translationLanguage: null, comments: [],
-      analysis: { title: reference.title, synopsis: reference.synopsis, whyUseful: "A practical synthetic leadership reference.", takeaways: [reference.synopsis], topics: ["leadership"], entities: [], recommendations: [], claimsNeedingVerification: [], evidence: [], classification: { primaryDomain: "Work & Career", country: null, city: null, subcategory: "Leadership", secondaryTopics: ["leadership"], confidence: 0.95 } },
+      analysis: { title: reference.title, synopsis: reference.synopsis, whyUseful: "A practical synthetic leadership reference.", takeaways: [reference.synopsis], topics: ["leadership"], entities: [], recommendations: [], claimsNeedingVerification: [], evidence: [], classification: { primaryDomain: "Learning", country: null, city: null, subcategory: "Reference", secondaryTopics: ["leadership"], confidence: 0.95 } },
       publishedAt: null, durationSeconds: 45, notePath: `Social Knowledge/Captures/${slug}.md`, assets: [],
     })!;
     store.complete(job.id, capture.notePath);
@@ -37,7 +40,7 @@ export function seedAskReviewFixture(store: JobStore, userId: string) {
   const ids: string[] = [];
   for (const [index, title] of titles.entries()) {
     const conversation = store.createConversation(userId, title)!;
-    const attempt = store.beginConversationTurn(userId, conversation.id, index === 0 ? reviewQuestion : `What have I saved about ${title.toLowerCase()}?`, randomUUID());
+    const attempt = store.beginConversationTurn(userId, conversation.id, index === 0 ? reviewQuestion : `What have I saved about ${title.toLowerCase()}?`, `ask-review-seed-${index}`);
     if (index === 1) store.failConversationAttempt(userId, conversation.id, attempt.assistantId, "failed", "provider_error");
     else if (index !== 9) store.completeConversationAttempt(userId, conversation.id, attempt.assistantId, reviewAnswer, sources, true);
     const date = new Date();
@@ -68,4 +71,46 @@ export function syntheticReviewAsk(store: JobStore): Pick<AskService, "answer"> 
     store.completeConversationAttempt(input.userId, input.conversationId, input.assistantId, reviewAnswer, sources, true);
     return { answer: reviewAnswer, sources, sufficient: true, diagnostics: { action: "search_archive", standaloneQuestion: input.question, terms: ["leadership"], selected: [], reusedCaptureIds: [], compacted: false, compactionFallback: false, estimatedContextTokens: 0 } };
   } };
+}
+
+
+export function askReviewPreviewEnabled(config: Pick<AppConfig, "appUrl" | "demoAccounts">) {
+  const url = new URL(config.appUrl);
+  return config.demoAccounts.length > 0 && url.protocol === "https:" &&
+    /^preview-social-knowledge-staging-[a-z0-9-]+\.staging\.stephenjoly\.net$/.test(url.hostname);
+}
+
+/** Preview-only synthetic account. Never overwrites an existing account or key. */
+export async function prepareAskReviewPreview(store: JobStore, config: AppConfig, providers: AiProviderService) {
+  if (!askReviewPreviewEnabled(config)) return undefined;
+  const username = "ask-review";
+  const displayName = "Synthetic Ask review";
+  const existing = store.getUserByUsername(username);
+  if (existing && existing.displayName !== displayName) return undefined;
+  // Public disposable review password; never a provider or production credential.
+  const passwordHash = existing ? undefined : await hash("synthetic-review-password");
+  const owner = store.database.transaction(() => {
+    const current = store.getUserByUsername(username);
+    if (current && current.displayName !== displayName) return null;
+    if (current) return current;
+    const user = store.createUser(username, passwordHash!, "member");
+    store.updateProfile(user.id, { displayName });
+    seedAskReviewFixture(store, user.id);
+    return user;
+  })();
+  if (!owner) return undefined;
+  const synthetic = syntheticReviewAsk(store);
+  const real = new AskService(providers.routedClient(), config, store);
+  const service: Pick<AskService, "answer"> = {
+    answer: (input) => input.userId === owner.id ? synthetic.answer(input) : real.answer(input),
+  };
+  return { userId: owner.id, service };
+}
+
+/** Restore only the deliberate synthetic spinner after startup recovery. */
+export function restoreAskReviewSpinner(store: JobStore, userId: string) {
+  store.database.prepare(`UPDATE conversation_messages SET status='pending',error_code=NULL
+    WHERE request_id='ask-review-seed-9' AND content='' AND role='assistant'
+    AND conversation_id IN (SELECT id FROM conversations WHERE user_id=?)
+    AND NOT EXISTS (SELECT 1 FROM conversation_messages retry WHERE retry.retry_of=conversation_messages.id)`).run(userId);
 }

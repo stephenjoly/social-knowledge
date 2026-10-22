@@ -7,7 +7,7 @@ import { EventHub } from "../src/events.js";
 import { testConfig } from "../test/helpers.js";
 import { seedUiFixture } from "./ui-fixture.js";
 import type { AskService } from "../src/ask.js";
-import { seedAskReviewFixture, syntheticReviewAsk } from "./ask-review-fixture.js";
+import { seedAskReviewFixture, syntheticReviewAsk } from "../src/ask-review-fixture.js";
 
 const root = await mkdtemp(path.join(os.tmpdir(), "social-knowledge-qa-"));
 const config = testConfig(root);
@@ -60,7 +60,6 @@ if (process.env.E2E_UI_FIXTURE === "true") {
 if (process.env.ASK_CHAT_REVIEW === "true") {
   if (process.env.E2E_UI_FIXTURE !== "true") throw new Error("Ask review requires the disposable synthetic UI fixture");
   const user = store.getUserByUsername("stephen")!;
-  seedAskReviewFixture(store, user.id);
   syntheticAsk = syntheticReviewAsk(store);
 }
 const app = buildApp(config, store, new EventHub(), undefined, undefined, syntheticAsk);
@@ -76,6 +75,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => { void close().then(() => process.exit(0)); });
 }
 try {
+  await app.ready();
+  if (process.env.ASK_CHAT_REVIEW === "true") seedAskReviewFixture(store, store.getUserByUsername("stephen")!.id);
   await app.listen({ host: "127.0.0.1", port });
 } catch (error) {
   await close();
