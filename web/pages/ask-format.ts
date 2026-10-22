@@ -6,6 +6,7 @@ import type {
   AskSource,
   ChatMessage,
 } from "../shared/types.js";
+import { analysisModelLabel } from "../shared/format.js";
 
 export type CaptureFacets = {
   categories: Array<{ label: string; kind: string; count: number }>;
@@ -362,6 +363,8 @@ export function thinkingName(level: AiThinkingLevel) {
 
 /** A readable name for a provider model id, e.g. `gpt-5-mini` → `GPT-5 mini`. */
 export function modelLabel(model: string) {
+  const official = analysisModelLabel(model.trim());
+  if (official) return official;
   const parts = model.trim().split("-").filter(Boolean);
   if (!parts.length) return model;
   const word = (part: string) =>
