@@ -10,6 +10,7 @@ import { testConfig } from "../test/helpers.js";
 import { seedAskReviewFixture, syntheticReviewAsk } from "../src/ask-review-fixture.js";
 
 const port = 8801;
+const longChatTitle = "Synthetic long answer with eight sources";
 let root: string;
 let store: JobStore;
 let app: ReturnType<typeof buildApp>;
@@ -25,21 +26,89 @@ test.beforeAll(async () => {
   await mkdir(config.dataDir, { recursive: true });
   await mkdir(screenshots, { recursive: true });
   store = new JobStore(config.databasePath);
-  const user = store.createUser("ask-review", await hash("synthetic-review-password"));
+  const user = store.createUser(
+    "ask-review",
+    await hash("synthetic-review-password"),
+  );
   const synthetic = syntheticReviewAsk(store);
   app = buildApp(config, store, new EventHub(), undefined, undefined, {
     answer: async (input) => {
       if (pauseNextAnswer) {
         pauseNextAnswer = false;
-        await new Promise<void>((resolve) => { releaseAnswer = resolve; });
+        await new Promise<void>((resolve) => {
+          releaseAnswer = resolve;
+        });
       }
       return synthetic.answer(input);
     },
   });
   await app.ready();
   firstChat = seedAskReviewFixture(store, user.id).conversationIds[0]!;
+  // Local-only regression data: real owned capture rows, deterministic long prose.
+  const template = store.ownedCaptures(user.id)[0]!;
+  const sources = Array.from({ length: 8 }, (_, index) => {
+    const slug = `scroll-regression-${index}`;
+    const url = `https://www.instagram.com/reel/${slug}/`;
+    const { job } = store.createOrGet({
+      ownerUserId: user.id,
+      sourceUrl: url,
+      normalizedUrl: url,
+      sourceHash: slug,
+    });
+    const title = `Synthetic source ${index + 1}: practical leadership notes`;
+    const synopsis =
+      "Synthetic source summary for independent scrolling. ".repeat(8);
+    const capture = store.createCapture({
+      ...template,
+      job,
+      title,
+      sourceId: slug,
+      description: synopsis,
+      transcript: synopsis,
+      analysis: { ...template.analysis, title, synopsis },
+      notePath: `Synthetic/${slug}.md`,
+      assets: [],
+    })!;
+    store.complete(job.id, capture.notePath);
+    return {
+      id: capture.id,
+      citation: index + 1,
+      title,
+      creator: "synthetic.author",
+      platform: "instagram",
+      synopsis,
+      sourceUrl: url,
+      breadcrumb: ["Learning", "Reference"],
+    };
+  });
+  const longChat = store.createConversation(user.id, longChatTitle)!;
+  const attempt = store.beginConversationTurn(
+    user.id,
+    longChat.id,
+    "Show all eight synthetic sources in a long answer",
+    "synthetic-scroll-regression",
+  );
+  store.setConversationAttemptSelection(
+    user.id,
+    longChat.id,
+    attempt.assistantId,
+    { provider: "openai", model: "gpt-5-mini", thinkingLevel: "medium" },
+  );
+  const longAnswer = Array.from(
+    { length: 48 },
+    (_, index) =>
+      `#### Synthetic section ${index + 1}\n\n${"This deterministic paragraph exercises the answer scroller while preserving the surrounding Ask shell. ".repeat(5)}[${(index % 8) + 1}]`,
+  ).join("\n\n");
+  store.completeConversationAttempt(
+    user.id,
+    longChat.id,
+    attempt.assistantId,
+    longAnswer,
+    sources,
+    true,
+  );
   await app.listen({ host: "127.0.0.1", port });
-});
+};);
 test.afterAll(async () => {
   await app?.close();
   store?.close();
@@ -332,4 +401,147 @@ test("current model rows remain reachable by keyboard and persist answer/retry m
       ),
     ).toEqual(defaults);
   }
+});
+
+test("long answers and eight sources scroll independently without moving the desktop shell", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1360, height: 1000 });
+  await page.goto(`http://127.0.0.1:${port}/app`);
+  await page.getByLabel("Username").fill("ask-review");
+  await page.getByLabel("Password").fill("synthetic-review-password");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page
+    .getByRole("button", { name: longChatTitle, exact: true })
+    .first()
+    .click();
+  const thread = page.locator(".ask-thread");
+  const sources = page.locator(".ask-sources-body");
+  await expect(sources.locator(".ask-source")).toHaveCount(8);
+  await expect(page.locator(".ask-answer-body")).toContainText(
+    "Synthetic section 48",
+  );
+  await expect
+    .poll(() =>
+      thread.evaluate((element) => element.scrollHeight > element.clientHeight),
+    )
+    .toBe(true);
+  await expect
+    .poll(() =>
+      sources.evaluate(
+        (element) => element.scrollHeight > element.clientHeight,
+      ),
+    )
+    .toBe(true);
+  const shellParts = [
+    page.locator(".ask-chat-bar"),
+    page.getByRole("complementary", { name: "Archive navigation" }),
+    page.locator(".ask-composer-wrap"),
+  ];
+  let baseline = await Promise.all(
+    shellParts.map((part) => part.boundingBox()),
+  );
+  const rootMetrics = () =>
+    page.evaluate(() => ({
+      x: scrollX,
+      y: scrollY,
+      width: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      height: document.documentElement.scrollHeight,
+      clientHeight: document.documentElement.clientHeight,
+    }));
+  const assertShell = async (phase: string) => {
+    const metrics = await rootMetrics();
+    await testInfo.attach(`root-${phase}`, {
+      body: JSON.stringify(metrics),
+      contentType: "application/json",
+    });
+    expect.soft(metrics.x, `${phase}: root horizontal position`).toBe(0);
+    expect.soft(metrics.y, `${phase}: root vertical position`).toBe(0);
+    expect
+      .soft(metrics.width, `${phase}: no root horizontal overflow`)
+      .toBeLessThanOrEqual(metrics.clientWidth);
+    expect
+      .soft(metrics.height, `${phase}: no root vertical overflow`)
+      .toBeLessThanOrEqual(metrics.clientHeight);
+    for (let index = 0; index < shellParts.length; index++) {
+      const bounds = await shellParts[index]!.boundingBox();
+      expect
+        .soft(bounds, `${phase}: fixed shell part ${index}`)
+        .toEqual(baseline[index]);
+    }
+    // Reset only after recording failure, so other independent assertions run.
+    await page.evaluate(() => window.scrollTo(0, 0));
+  };
+  await assertShell("opened");
+  await page.evaluate(() => window.scrollTo(500, 10000));
+  await assertShell("programmatic-scroll");
+  await page.locator(".ask-chat-bar").hover();
+  await page.mouse.wheel(500, 10000);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await assertShell("outer-wheel-scroll");
+  await thread.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await sources.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await thread.hover();
+  await page.mouse.wheel(0, 600);
+  await expect
+    .poll(() => thread.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  expect(await sources.evaluate((element) => element.scrollTop)).toBe(0);
+  const threadTop = await thread.evaluate((element) => element.scrollTop);
+  await sources.hover();
+  await page.mouse.wheel(0, 600);
+  await expect
+    .poll(() => sources.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  expect(await thread.evaluate((element) => element.scrollTop)).toBe(threadTop);
+  await assertShell("independent-wheel-scroll");
+  await page
+    .getByRole("button", { name: /^Source 8:/ })
+    .last()
+    .click();
+  await expect(sources.locator(".ask-source.hl")).toContainText(
+    "Synthetic source 8",
+  );
+  await assertShell("citation-click");
+  await page.getByTitle("Choose model for this chat", { exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Model for this chat" }),
+  ).toBeVisible();
+  await assertShell("model-picker");
+  await page.keyboard.press("Escape");
+  await page
+    .getByTitle("Rename, pin, export or delete", { exact: true })
+    .click();
+  await expect(page.getByRole("menu", { name: "Chat actions" })).toBeVisible();
+  await assertShell("chat-menu");
+  await page.keyboard.press("Escape");
+  await sources
+    .locator(".ask-source")
+    .last()
+    .getByRole("button", { name: /Open note/ })
+    .click();
+  await expect(page.locator(".note-back")).toBeVisible();
+  await page.locator(".note-back").click();
+  await expect(thread).toBeVisible();
+  await assertShell("source-return");
+  await page.locator(".app-profile-settings").click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await expect(settings).toBeVisible();
+  await settings
+    .getByRole("button", { name: "Close Settings", exact: true })
+    .click();
+  await assertShell("settings-close");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  baseline = await Promise.all(shellParts.map((part) => part.boundingBox()));
+  await assertShell("desktop-resize");
 });
