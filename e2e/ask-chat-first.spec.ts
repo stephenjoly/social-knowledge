@@ -108,7 +108,7 @@ test.beforeAll(async () => {
     true,
   );
   await app.listen({ host: "127.0.0.1", port });
-};);
+});
 test.afterAll(async () => {
   await app?.close();
   store?.close();
