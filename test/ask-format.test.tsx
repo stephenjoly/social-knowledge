@@ -171,11 +171,23 @@ describe("suggestionsFrom", () => {
     const prompts = suggestionsFrom({ categories: [], topics: [] });
     expect(prompts).toEqual([
       { text: "Summarise my recent saves", category: null },
-      { text: "Places I saved this month", category: "Travel" },
-      { text: "Tips I saved more than once", category: null },
+      { text: "Compare themes in my saves", category: null },
+      { text: "Find useful takeaways", category: null },
     ]);
     expect(new Set(prompts.map((prompt) => prompt.text)).size).toBe(3);
     expect(suggestionsFrom(null)).toEqual(prompts);
+  });
+
+  it("fills sparse leadership facets with neutral prompts without inventing travel or repetition", () => {
+    const prompts = suggestionsFrom({ categories: [], topics: [{ label: "Leadership", count: 3 }] });
+    expect(prompts).toEqual([
+      { text: "What I saved about leadership", category: null },
+      { text: "Summarise my recent saves", category: null },
+      { text: "Compare themes in my saves", category: null },
+    ]);
+    expect(prompts.every((prompt) => prompt.category === null)).toBe(true);
+    expect(prompts.map((prompt) => prompt.text).join(" ")).not.toMatch(/travel|places|more than once|repeated|duplicate/i);
+    expect(prompts.every((prompt) => prompt.text.length <= suggestionMaxLength)).toBe(true);
   });
   it("drops oversized chips while keeping one short prompt per available kind", () => {
     const prompts = suggestionsFrom({
