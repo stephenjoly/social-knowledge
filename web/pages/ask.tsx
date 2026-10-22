@@ -16,10 +16,29 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpRight,
+  BookOpen,
+  Bus,
   Check,
+  ChefHat,
   ChevronDown,
+  Clapperboard,
   Copy,
   Cpu,
+  Dumbbell,
+  Hotel,
+  Info,
+  Leaf,
+  Lightbulb,
+  MapPin,
+  Moon,
+  Music,
+  Plane,
+  Route,
+  Shirt,
+  ShoppingBag,
+  Sofa,
+  Utensils,
+  Wrench,
   type LucideIcon,
   MessageSquare,
   PanelRight,
@@ -43,6 +62,7 @@ import {
   mergeConversationSnapshot,
   reconcileConversationAttempt,
   SseDecoder,
+  type StreamSelection,
   type StreamState,
 } from "../chat-stream";
 import type {
@@ -58,6 +78,7 @@ import type {
 } from "../shared/types";
 import type { ConversationsController } from "../shared/conversations";
 import { api, assetUrl } from "../shared/api";
+import { analysisModelNote } from "../shared/format";
 import { ActionButton } from "../components/ui/action-button";
 import { IconBox } from "../components/ui/icon-box";
 import {
@@ -202,6 +223,60 @@ const markdownComponents: Components = {
   ),
 };
 
+/** Library domains and subcategories behind a suggested question. */
+const categoryIcons: Record<string, LucideIcon> = {
+  Travel: Plane,
+  "Food & Drink": Utensils,
+  "Shopping & Products": ShoppingBag,
+  "Home & Design": Sofa,
+  Music,
+  "Technology & Tools": Wrench,
+  Learning: BookOpen,
+  "Culture & Entertainment": Clapperboard,
+  "Health & Wellness": Dumbbell,
+  Restaurants: Utensils,
+  Hotels: Hotel,
+  "Things to Do": MapPin,
+  Nightlife: Moon,
+  Transportation: Bus,
+  Itineraries: Route,
+  "Practical Info": Info,
+  Recipes: Leaf,
+  "Food Products": ShoppingBag,
+  Techniques: Lightbulb,
+  Kitchen: ChefHat,
+  "Clothing & Accessories": Shirt,
+  Technology: Cpu,
+  Beauty: Sparkles,
+  "Marketplace Sellers": ShoppingBag,
+  "Artists & Tracks": Music,
+  "Venues & Events": Clapperboard,
+  DJing: Music,
+  Guides: BookOpen,
+  Reference: BookOpen,
+};
+
+function SuggestionIcon({ category }: { category: string | null }) {
+  const Icon =
+    (category && Object.hasOwn(categoryIcons, category)
+      ? categoryIcons[category]
+      : undefined) ?? MessageSquare;
+  return <Icon size={14} aria-hidden="true" />;
+}
+
+/** Narrows the streamed model to a selection this app knows how to show. */
+function askSelectionFrom(value: StreamSelection | null): AskSelection | null {
+  if (!value || !Object.hasOwn(providerLooks, value.provider)) return null;
+  const level = value.thinkingLevel;
+  if (level !== null && !thinkingOrder.includes(level as AiThinkingLevel))
+    return null;
+  return {
+    provider: value.provider as AskSelection["provider"],
+    model: value.model,
+    thinkingLevel: level as AiThinkingLevel | null,
+  };
+}
+
 function wideScreen() {
   return typeof window !== "undefined" &&
     typeof window.matchMedia === "function"
@@ -311,9 +386,10 @@ function ModelOptionRows({
                         )}
                       </b>
                       <small>
-                        {option.thinkingLevels.length
-                          ? "Thinking levels"
-                          : "No thinking"}{" "}
+                        {analysisModelNote(option.model) ??
+                          (option.thinkingLevels.length
+                            ? "Thinking levels"
+                            : "No thinking")}{" "}
                         · <code>{option.model}</code>
                       </small>
                     </span>
@@ -1188,7 +1264,15 @@ export function AskAI({
       state = next;
       if (state.assistantId) setRenderedId(state.assistantId);
       partialAnswersRef.current.set(temporaryId, state.text);
+      const selection = askSelectionFrom(state.selection);
       updateAssistant(renderedId, {
+        ...(selection
+          ? {
+              provider: selection.provider,
+              model: selection.model,
+              thinkingLevel: selection.thinkingLevel,
+            }
+          : {}),
         content: state.text,
         sources: state.sources,
         sufficient: state.sufficient,
@@ -1590,7 +1674,7 @@ export function AskAI({
   const chatPinned = Boolean(
     summaryRow ? summaryRow.pinnedAt : current?.pinnedAt,
   );
-  const suggestions = suggestionsFrom(facets).slice(0, 3);
+  const suggestions = suggestionsFrom(facets);
   const lastAssistant = [...(current?.messages ?? [])]
     .reverse()
     .find((message) => message.role === "assistant");
@@ -1712,12 +1796,12 @@ export function AskAI({
                   <button
                     type="button"
                     className="ask-suggestion"
-                    key={suggestion}
+                    key={suggestion.text}
                     disabled={streaming || aiReady === false}
-                    onClick={() => void send(suggestion)}
+                    onClick={() => void send(suggestion.text)}
                   >
-                    <MessageSquare size={14} aria-hidden="true" />
-                    <span>{suggestion}</span>
+                    <SuggestionIcon category={suggestion.category} />
+                    <span>{suggestion.text}</span>
                   </button>
                 ))}
               </div>
@@ -1883,36 +1967,37 @@ export function AskAI({
                     >
                       <IconBox icon={Sparkles} size={28} tone="green" />
                       <div className="ask-answer">
-                        {message.status !== "pending" &&
-                          (meta.model || meta.parts.length > 0) && (
-                            <p className="ask-meta">
-                              {[meta.model, ...meta.parts]
-                                .filter((part): part is string => Boolean(part))
-                                .map((part, index) => (
-                                  <span
-                                    key={index}
-                                    className={
-                                      index === 0 && meta.model
-                                        ? "ask-meta-model"
-                                        : undefined
-                                    }
-                                  >
-                                    {index > 0 && (
-                                      <span
-                                        className="ask-meta-dot"
-                                        aria-hidden="true"
-                                      >
-                                        ·
-                                      </span>
-                                    )}
-                                    {index > 0 && (
-                                      <span className="sr-only">, </span>
-                                    )}
-                                    {part}
-                                  </span>
-                                ))}
-                            </p>
-                          )}
+                        {(message.status === "pending"
+                          ? Boolean(meta.model)
+                          : Boolean(meta.model || meta.parts.length)) && (
+                          <p className="ask-meta">
+                            {[meta.model, ...meta.parts]
+                              .filter((part): part is string => Boolean(part))
+                              .map((part, index) => (
+                                <span
+                                  key={index}
+                                  className={
+                                    index === 0 && meta.model
+                                      ? "ask-meta-model"
+                                      : undefined
+                                  }
+                                >
+                                  {index > 0 && (
+                                    <span
+                                      className="ask-meta-dot"
+                                      aria-hidden="true"
+                                    >
+                                      ·
+                                    </span>
+                                  )}
+                                  {index > 0 && (
+                                    <span className="sr-only">, </span>
+                                  )}
+                                  {part}
+                                </span>
+                              ))}
+                          </p>
+                        )}
                         {message.content ? (
                           <AnswerContext.Provider value={message}>
                             <div className="ask-answer-body">

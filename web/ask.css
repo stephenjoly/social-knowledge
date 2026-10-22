@@ -118,7 +118,7 @@ html:has(.ask-v2) {
 
 .ask-chips {
   display: flex;
-  width: min(720px, 100%);
+  width: min(880px, 100%);
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
@@ -1471,6 +1471,11 @@ html:has(.ask-v2) {
 
   .ask-v2 .ask-suggestion {
     min-width: 0;
+    border-radius: var(--radius-card);
+  }
+
+  .ask-suggestion span {
+    white-space: normal;
   }
 
   .ask-conversation {
@@ -1520,7 +1525,6 @@ html:has(.ask-v2) {
   .ask-thread-inner > :last-child {
     scroll-margin-bottom: calc(190px + env(safe-area-inset-bottom));
   }
-
 
   .ask-composer-wrap {
     position: sticky;

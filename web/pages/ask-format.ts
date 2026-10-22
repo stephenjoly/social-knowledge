@@ -37,56 +37,82 @@ export function answerWithCaptureLinks(content: string, sources: AskSource[]) {
   });
 }
 
-const fallbackSuggestions = [
-  "What are the most useful things I've saved?",
-  "Which recommendations came up more than once?",
-  "What places have I saved?",
-  "Which products have creators recommended?",
+/** A suggested question and the library category it came from, for its icon. */
+export type AskSuggestion = { text: string; category: string | null };
+
+/** Chips stay short enough for three to sit in one row beside each other. */
+export const suggestionMaxLength = 32;
+
+/** Short, lower-case names for the library domains, e.g. "wellness". */
+const domainShortNames: Record<string, string> = {
+  Travel: "travel",
+  "Food & Drink": "food",
+  "Shopping & Products": "shopping",
+  "Home & Design": "home",
+  Music: "music",
+  "Technology & Tools": "tech",
+  Learning: "learning",
+  "Culture & Entertainment": "culture",
+  "Health & Wellness": "wellness",
+};
+
+const fallbackSuggestions: AskSuggestion[] = [
+  { text: "Summarise my recent saves", category: null },
+  { text: "Places I saved this month", category: "Travel" },
+  { text: "Tips I saved more than once", category: null },
 ];
 
-const shortLabel = (label: string) => label.trim().slice(0, 60);
-
-/** Four prompts built from the account's own categories and topics. */
-export function suggestionsFrom(facets: CaptureFacets | null): string[] {
-  if (!facets) return fallbackSuggestions;
+/** Up to three short prompts built from the account's own categories and topics. */
+export function suggestionsFrom(facets: CaptureFacets | null): AskSuggestion[] {
   const byCount = <T extends { count: number }>(items: T[]) =>
     [...items].sort((a, b) => b.count - a.count);
-  const subcategories = byCount(
-    facets.categories.filter((category) => category.kind === "subcategory"),
-  );
   const domains = byCount(
-    facets.categories.filter((category) => category.kind === "domain"),
+    (facets?.categories ?? []).filter(
+      (category) =>
+        category.kind === "domain" && category.label in domainShortNames,
+    ),
   );
-  const topics = byCount(facets.topics);
-  const prompts: string[] = [];
-  const add = (prompt: string | null) => {
-    if (prompt && !prompts.includes(prompt)) prompts.push(prompt);
+  const subcategories = byCount(
+    (facets?.categories ?? []).filter(
+      (category) =>
+        category.kind === "subcategory" && category.label.trim() !== "Other",
+    ),
+  );
+  const topics = byCount(facets?.topics ?? []);
+  const prompts: AskSuggestion[] = [];
+  const add = (text: string, category: string | null) => {
+    const clean = text.replace(/\s+/g, " ").trim();
+    if (
+      clean.length <= suggestionMaxLength &&
+      !prompts.some((prompt) => prompt.text === clean)
+    )
+      prompts.push({ text: clean, category });
   };
-  const subcategory = subcategories[0] ?? domains[0];
-  add(
-    subcategory
-      ? `Summarise my saved ${shortLabel(subcategory.label)} recommendations`
-      : null,
-  );
-  add(
-    topics[0] ? `What did I save about ${shortLabel(topics[0].label)}?` : null,
-  );
-  const domain = domains.find((item) => item.label !== subcategory?.label);
-  add(
-    domain
-      ? `What are the key takeaways from my ${shortLabel(domain.label)} saves?`
-      : null,
-  );
-  add(
-    topics[1]
-      ? `Which ${shortLabel(topics[1].label)} tips came up more than once?`
-      : null,
-  );
+  for (const domain of domains.slice(0, 2))
+    add(`Summarise my ${domainShortNames[domain.label]} saves`, domain.label);
+  for (const subcategory of subcategories.slice(0, 2))
+    add(
+      `${subcategory.label.trim()} I saved this month`,
+      subcategory.label.trim(),
+    );
+  for (const topic of topics.slice(0, 2))
+    add(`What I saved about ${topic.label.trim().toLowerCase()}`, null);
+  // Keep one prompt per source kind before filling with more of the same.
+  const ordered = [
+    prompts.find((prompt) => prompt.text.startsWith("Summarise")),
+    prompts.find((prompt) => prompt.text.endsWith("this month")),
+    prompts.find((prompt) => prompt.text.startsWith("What I saved")),
+  ].filter((prompt): prompt is AskSuggestion => Boolean(prompt));
+  const result = [
+    ...ordered,
+    ...prompts.filter((prompt) => !ordered.includes(prompt)),
+  ];
   for (const fallback of fallbackSuggestions) {
-    if (prompts.length >= 4) break;
-    add(fallback);
+    if (result.length >= 3) break;
+    if (!result.some((prompt) => prompt.text === fallback.text))
+      result.push(fallback);
   }
-  return prompts.slice(0, 4);
+  return result.slice(0, 3);
 }
 
 const dayMs = 24 * 60 * 60 * 1000;

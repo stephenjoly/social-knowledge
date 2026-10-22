@@ -30,3 +30,16 @@ export function analysisOptions(provider: AiProvider) {
         thinkingLevels: [] as AiThinkingLevel[],
       }));
 }
+
+/** Approved one-line notes for shipped analysis models; unknown ids get none. */
+const analysisModelNotes: Record<string, string> = {
+  "gpt-5-mini": "Balanced",
+  "gpt-5": "Most thorough, slower",
+  "qwen-3.8-27b": "Fastest, no thinking",
+};
+
+export function analysisModelNote(model: string): string | null {
+  return Object.hasOwn(analysisModelNotes, model)
+    ? analysisModelNotes[model]!
+    : null;
+}
