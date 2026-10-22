@@ -178,6 +178,8 @@ Suggested ownership so parallel workers never share a file:
 
 ## Decisions
 
+- 2026-10-22: CI’s existing Azure Ubuntu mirror timed out after 15 minutes downloading FFmpeg dependencies before app checks; the next run showed the same setup delay. Switch only the CI runner’s package mirror to the official Ubuntu archive, preserving signed packages, the exact FFmpeg version, required checks, triggers, and deployment ownership.
+
 - 2026-10-22: Shared review data lives under dedicated synthetic member `ask-review`, leaving existing users, passwords, and provider keys unchanged. A strict HTTPS PR-preview hostname plus enabled demo accounts permits automatic fixture bootstrap and simulated Ask for that account only. Production and permanent staging never activate simulation.
 
 - 2026-10-22: Stephen requested reuse/enrichment of the shared synthetic staging dataset for all previews. PR64 inherits staging data/vault/media mounts. This explicitly overrides preview persistence isolation for this review; no production mounts or data. Add labeled synthetic review records without replacing existing data; destructive tests stay in local disposable stores.

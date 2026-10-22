@@ -22,6 +22,9 @@ jobs:
         env:
           FFMPEG_VERSION: "7:6.1.1-3ubuntu5"
         run: |
+          # Keep the signed Ubuntu packages and exact FFmpeg pin; avoid a slow
+          # Azure mirror exhausting the job before application checks start.
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
           sudo apt-get update
           sudo apt-get install -y --allow-downgrades "ffmpeg=${FFMPEG_VERSION}"
           test "$(dpkg-query -W -f='${Version}' ffmpeg)" = "${FFMPEG_VERSION}"
