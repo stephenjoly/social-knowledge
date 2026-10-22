@@ -177,9 +177,15 @@ export type ChatMessage = {
   errorCode: string | null;
   retryOf: string | null;
   userMessageId: string | null;
+  provider: AskSelection["provider"] | null;
+  model: string | null;
+  thinkingLevel: AiThinkingLevel | null;
   createdAt: string;
 };
 export type Conversation = {
+  pinnedAt: string | null;
+  selection: AskSelection | null;
+  lastStatus?: ChatMessage["status"] | null;
   id: string;
   title: string;
   createdAt: string;
@@ -221,11 +227,17 @@ export type AiSelection = {
   model: string;
 };
 export type AiAnalysisSelection = AiSelection & { thinkingLevel: AiThinkingLevel | null };
+export type AskSelection = AiAnalysisSelection;
+export type AskPreferences = {
+  askSourcesPanel: boolean;
+  sendWith: "enter" | "mod-enter";
+};
 export type AiProviderState = {
   providers: AiProvider[];
   selections: {
     transcription: AiSelection | null;
     analysis: AiAnalysisSelection | null;
+    ask: AskSelection | null;
   };
   readiness: { capture: boolean; ask: boolean };
 };
