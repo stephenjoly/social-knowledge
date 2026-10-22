@@ -401,7 +401,11 @@ export function sameModel(
   return Boolean(a && b && a.provider === b.provider && a.model === b.model);
 }
 
-/** A selection is usable when its provider is connected and offers that model and level. */
+/**
+ * A selection is usable when its provider is connected and offers that model.
+ * A null thinking level means the provider's default and is always allowed;
+ * only an explicit level the model does not offer is rejected.
+ */
 export function usableSelection(
   selection: AskSelection | null | undefined,
   options: AskModelOption[],
@@ -409,12 +413,11 @@ export function usableSelection(
   if (!selection) return null;
   const option = options.find((item) => sameModel(item, selection));
   if (!option) return null;
+  const thinkingLevel = selection.thinkingLevel ?? null;
   if (!option.thinkingLevels.length)
     return { ...selection, thinkingLevel: null };
-  return selection.thinkingLevel &&
-    option.thinkingLevels.includes(selection.thinkingLevel)
-    ? selection
-    : null;
+  if (thinkingLevel === null) return { ...selection, thinkingLevel: null };
+  return option.thinkingLevels.includes(thinkingLevel) ? selection : null;
 }
 
 /** The model the next answer uses: this chat's choice, else Ask default, else Analysis. */
@@ -442,14 +445,26 @@ export function selectionFor(
   fallback: AskSelection | null,
 ): AskSelection {
   const levels = option.thinkingLevels;
+  if (!levels.length)
+    return {
+      provider: option.provider,
+      model: option.model,
+      thinkingLevel: null,
+    };
+  // Keep the default's own level for its model, including null (provider default).
+  if (fallback && sameModel(fallback, option)) {
+    const level = fallback.thinkingLevel ?? null;
+    if (level === null || levels.includes(level))
+      return {
+        provider: option.provider,
+        model: option.model,
+        thinkingLevel: level,
+      };
+  }
   const pick = (level: AiThinkingLevel | null | undefined) =>
     level && levels.includes(level) ? level : null;
-  const thinkingLevel = levels.length
-    ? (pick(sameModel(fallback, option) ? fallback?.thinkingLevel : null) ??
-      pick(current?.thinkingLevel) ??
-      pick("medium") ??
-      levels[0]!)
-    : null;
+  const thinkingLevel =
+    pick(current?.thinkingLevel) ?? pick("medium") ?? levels[0]!;
   return { provider: option.provider, model: option.model, thinkingLevel };
 }
 
