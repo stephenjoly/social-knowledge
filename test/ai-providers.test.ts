@@ -505,4 +505,95 @@ describe("AI provider settings", () => {
     ).toBe("cerebras");
     store.close();
   });
+
+  it("reports unavailable local credential keys without changing shared account state, and recovers with the previous key ring", async () => {
+    const store = new JobStore(":memory:");
+    try {
+      const user = store.createUser("key-ring-owner", "hash");
+      const other = store.createUser("key-ring-other", "hash");
+      let generationRequests = 0;
+      vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith("/models")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+        generationRequests++;
+        return new Response(JSON.stringify({ object: "response", status: "completed", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: '{"ok":true}', annotations: [] }] }] }), { status: 200, headers: { "content-type": "application/json" } });
+      }));
+      const originalConfig = testConfig("/tmp/local-key-original");
+      originalConfig.aiCredentialsKey = "synthetic-original-encryption-identity";
+      const original = new AiProviderService(store, originalConfig);
+      await original.verifyAndSave(user.id, "openai", "sk-synthetic-owner-credential");
+      original.saveSelections(user.id, { transcription: { provider: "openai", model: originalConfig.transcriptionModel }, analysis: { provider: "openai", model: "gpt-5", thinkingLevel: null } });
+      const previewConfig = testConfig("/tmp/local-key-preview");
+      previewConfig.aiCredentialsKey = "synthetic-preview-encryption-identity";
+      const preview = new AiProviderService(store, previewConfig);
+      await preview.verifyAndSave(other.id, "openai", "sk-synthetic-other-credential");
+      preview.saveSelections(other.id, { analysis: { provider: "openai", model: "gpt-5", thinkingLevel: null } });
+      const metadataBefore = store.aiProviderConnection(user.id, "openai");
+      const selectionsBefore = store.aiTaskSelections(user.id);
+      const changesBefore = store.database.prepare("SELECT total_changes() AS count").get();
+      expect(preview.settings(user.id).providers.find((provider) => provider.id === "openai")).toMatchObject({ connected: false, status: "needs_attention" });
+      expect(preview.settings(user.id).readiness).toEqual({ capture: false, ask: false });
+      expect(preview.settings(user.id).selections.analysis).toEqual({ provider: "openai", model: "gpt-5", thinkingLevel: null });
+      expect(preview.resolveAskSelection(user.id)).toBeNull();
+      expect(preview.settings(other.id).providers.find((provider) => provider.id === "openai")).toMatchObject({ connected: true, status: "verified" });
+      expect(preview.settings(other.id).readiness.ask).toBe(true);
+      expect(() => preview.client(user.id, "openai", "gpt-5")).toThrow("ai_credentials_unreadable");
+      expect(await preview.testConnection(user.id, "analysis")).toMatchObject({ ok: false, code: "credential_error", selection: { provider: "openai", model: "gpt-5", thinkingLevel: null } });
+      expect(await preview.testConnection(user.id, "ask")).toMatchObject({ ok: false, code: "credential_error" });
+      expect(generationRequests).toBe(0);
+      expect(store.aiProviderConnection(user.id, "openai")).toEqual(metadataBefore);
+      expect(store.aiTaskSelections(user.id)).toEqual(selectionsBefore);
+      expect(store.database.prepare("SELECT total_changes() AS count").get()).toEqual(changesBefore);
+      expect(preview.client(other.id, "openai", "gpt-5").provider).toBe("openai");
+      expect(original.client(user.id, "openai", "gpt-5").provider).toBe("openai");
+      const recoveredConfig = { ...previewConfig, aiCredentialsPreviousKeys: [originalConfig.aiCredentialsKey] };
+      const recovered = new AiProviderService(store, recoveredConfig);
+      expect(recovered.settings(user.id).providers.find((provider) => provider.id === "openai")).toMatchObject({ connected: true, status: "verified" });
+      expect(recovered.settings(user.id).readiness).toEqual({ capture: true, ask: true });
+      expect(recovered.resolveAskSelection(user.id)).toEqual({ provider: "openai", model: "gpt-5", thinkingLevel: null });
+      expect(await recovered.testConnection(user.id, "analysis")).toMatchObject({ ok: true, code: "ok", selection: { provider: "openai", model: "gpt-5", thinkingLevel: null } });
+      expect(generationRequests).toBe(1);
+      expect(store.aiProviderConnection(user.id, "openai")).toEqual(metadataBefore);
+      expect(store.aiTaskSelections(user.id)).toEqual(selectionsBefore);
+      expect(store.database.prepare("SELECT total_changes() AS count").get()).toEqual(changesBefore);
+    } finally { store.close(); }
+  });
+
+  it.each([null, "high"] as const)("sends normal GPT-5 diagnostics through Responses with thinking=%s", async (thinkingLevel) => {
+    const store = new JobStore(":memory:");
+    try {
+      const user = store.createUser("gpt-five-route", "hash");
+      const bodies: Array<Record<string, unknown>> = [];
+      const expectedEndpoints: boolean[] = [];
+      vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith("/models")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+        expectedEndpoints.push(url === "https://api.openai.com/v1/responses");
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        bodies.push(body);
+        if (body.stream) return new Response([
+          { type: "response.output_text.delta", delta: "diagnostic-ok" },
+          { type: "response.completed", response: { status: "completed" } },
+        ].map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""), { status: 200, headers: { "content-type": "text/event-stream" } });
+        return new Response(JSON.stringify({ object: "response", status: "completed", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: '{"ok":true}', annotations: [] }] }] }), { status: 200, headers: { "content-type": "application/json" } });
+      }));
+      const service = new AiProviderService(store, testConfig("/tmp/gpt-five-route"));
+      await service.verifyAndSave(user.id, "openai", "sk-synthetic-gpt-five-credential");
+      service.saveSelections(user.id, { analysis: { provider: "openai", model: "gpt-5", thinkingLevel } });
+      const result = await service.testConnection(user.id, "analysis");
+      expect(expectedEndpoints).toEqual([true]);
+      expect(bodies).toHaveLength(1);
+      expect(result).toMatchObject({ ok: true, code: "ok" });
+      expect(await service.testConnection(user.id, "ask")).toMatchObject({ ok: true, code: "ok" });
+      expect(bodies).toHaveLength(2);
+      expect(bodies[0]).toMatchObject({ model: "gpt-5", store: false, max_output_tokens: 2048, text: { format: { type: "json_schema", strict: true } } });
+      expect(bodies[1]).toMatchObject({ model: "gpt-5", store: false, max_output_tokens: 2048, stream: true });
+      for (const body of bodies) {
+        if (thinkingLevel === null) expect(body).not.toHaveProperty("reasoning");
+        else expect(body).toHaveProperty("reasoning", { effort: thinkingLevel });
+        expect(body).not.toHaveProperty("reasoning_effort");
+        expect(body).not.toHaveProperty("temperature");
+      }
+    } finally { store.close(); }
+  });
 });

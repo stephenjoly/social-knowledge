@@ -6,6 +6,7 @@ import {
   normalizeInlineCitations,
 } from "../src/ask.js";
 import { JobStore } from "../src/db.js";
+import { AiProviderService } from "../src/ai-providers.js";
 import { testConfig } from "./helpers.js";
 
 function addCapture(
@@ -74,7 +75,58 @@ function streamedJson(value: unknown) {
 
 describe("AskService", () => {
   const stores: JobStore[] = [];
-  afterEach(() => stores.splice(0).forEach((store) => store.close()));
+  afterEach(() => {
+    stores.splice(0).forEach((store) => store.close());
+    vi.unstubAllGlobals();
+  });
+
+  it("answers a new chat through the normal GPT-5 Responses transport with default thinking", async () => {
+    const store = new JobStore(":memory:");
+    stores.push(store);
+    const user = store.createUser("normal-gpt-five", "hash");
+    const config = testConfig("/tmp/normal-gpt-five-ask");
+    const capture = addCapture(store, user.id, { sourceHash: "normal-gpt-five", title: "Seven Lisbon restaurants", synopsis: "Restaurants for a Lisbon trip", transcript: "Try Rio de Mello for grilled chicken." });
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url.endsWith("/models")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      expect(url).toBe("https://api.openai.com/v1/responses");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      bodies.push(body);
+      if (!body.stream) return new Response(JSON.stringify({
+        object: "response", status: "completed", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", annotations: [], text: JSON.stringify({ action: "search_archive", standaloneQuestion: "What Lisbon restaurants have I saved?", responseInstructions: "Answer directly", referencedCaptureIds: [] }) }] }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+      const answer = JSON.stringify({ answer: "Try Rio de Mello [1].", citedCaptureIds: [capture.id], sufficient: true });
+      return new Response([
+        { type: "response.output_text.delta", delta: answer },
+        { type: "response.completed", response: { status: "completed" } },
+      ].map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""), { status: 200, headers: { "content-type": "text/event-stream" } });
+    }));
+    const providers = new AiProviderService(store, config);
+    await providers.verifyAndSave(user.id, "openai", "sk-synthetic-new-chat-credential");
+    providers.saveSelections(user.id, { analysis: { provider: "openai", model: "gpt-5", thinkingLevel: null } });
+    const conversation = store.createConversation(user.id)!;
+    const turn = store.beginConversationTurn(user.id, conversation.id, "What Lisbon restaurants have I saved?", "normal-new-chat");
+    const ask = new AskService(providers.routedClient(), config, store);
+    const selection = providers.resolveAskSelection(user.id)!;
+    const result = await providers.runForUser(user.id, () => ask.answer({
+      userId: user.id, conversationId: conversation.id, assistantId: turn.assistantId,
+      question: "What Lisbon restaurants have I saved?", signal: new AbortController().signal, onDelta: () => undefined,
+    }), selection.provider, selection.model, selection.thinkingLevel);
+    expect(result.answer).toBe("Try Rio de Mello [1].");
+    expect(result.sources.map((source) => source.id)).toEqual([capture.id]);
+    expect(store.getConversation(user.id, conversation.id)!.messages.at(-1)).toMatchObject({ status: "complete", content: "Try Rio de Mello [1]." });
+    expect(bodies).toHaveLength(2);
+    for (const body of bodies) {
+      expect(body.model).toBe("gpt-5");
+      expect(body).not.toHaveProperty("reasoning");
+      expect(body).not.toHaveProperty("reasoning_effort");
+      expect(body).not.toHaveProperty("temperature");
+    }
+    expect(bodies[0]).toHaveProperty("text.format.name", "conversation_turn_plan");
+    expect(bodies[1]).toHaveProperty("text.format.name", "archive_answer");
+    expect(bodies[1]).toHaveProperty("stream", true);
+  });
 
   it.each([
     { status: "complete", chain: false, checkpoint: false },

@@ -145,11 +145,16 @@ export class AiProviderService {
       configuration: this.store.aiProviderConfiguration(userId, id) ?? null,
       connected: connections.some(
         (connection) =>
-          connection.provider === id && connection.status === "verified",
+          connection.provider === id &&
+          connection.status === "verified" &&
+          this.credentialKeyAvailable(userId, id),
       ),
       status:
-        connections.find((connection) => connection.provider === id)?.status ??
-        "not_connected",
+        connections.find((connection) => connection.provider === id)?.status ===
+          "verified" && !this.credentialKeyAvailable(userId, id)
+          ? "needs_attention"
+          : (connections.find((connection) => connection.provider === id)
+              ?.status ?? "not_connected"),
       keyHint:
         connections.find((connection) => connection.provider === id)?.keyHint ??
         null,
@@ -215,19 +220,27 @@ export class AiProviderService {
         ),
       },
       readiness: {
-        capture: Boolean(transcription && analysis),
+        capture: Boolean(
+          transcription &&
+          analysis &&
+          this.credentialKeyAvailable(userId, transcription.provider) &&
+          this.credentialKeyAvailable(userId, analysis.provider),
+        ),
         ask: Boolean(
-          analysis ||
-          this.validAskSelection(
-            userId,
-            selected.askProvider && selected.askModel
-              ? {
-                  provider: selected.askProvider,
-                  model: selected.askModel,
-                  thinkingLevel: selected.askThinkingLevel,
-                }
-              : null,
-          ),
+          (analysis &&
+            this.credentialKeyAvailable(userId, analysis.provider)) ||
+          (selected.askProvider &&
+            this.credentialKeyAvailable(userId, selected.askProvider) &&
+            this.validAskSelection(
+              userId,
+              selected.askProvider && selected.askModel
+                ? {
+                    provider: selected.askProvider,
+                    model: selected.askModel,
+                    thinkingLevel: selected.askThinkingLevel,
+                  }
+                : null,
+            )),
         ),
       },
     };
@@ -261,10 +274,24 @@ export class AiProviderService {
   ): AskSelection | null {
     const settings = this.settings(userId).selections;
     return (
-      this.validAskSelection(userId, conversationSelection) ??
-      settings.ask ??
-      settings.analysis
+      [
+        this.validAskSelection(userId, conversationSelection),
+        settings.ask,
+        settings.analysis,
+      ].find(
+        (selection) =>
+          selection && this.credentialKeyAvailable(userId, selection.provider),
+      ) ?? null
     );
+  }
+
+  /** Versioned credentials remain shared; key-ring availability is runtime-local. */
+  private credentialKeyAvailable(userId: string, provider: AiProviderId) {
+    const connection = this.store.aiProviderConnectionSecret(userId, provider);
+    if (!connection) return false;
+    const [version, keyId] = connection.encryptedPayload.split(".", 2);
+    // Legacy records have no key identifier and retain their existing behavior.
+    return version !== "v1" || Boolean(keyId && this.decryptionKeys.has(keyId));
   }
 
   configured(userId: string) {
@@ -1117,6 +1144,8 @@ export class AiProviderService {
     error: unknown,
   ): Exclude<AiDiagnosticResult["code"], "ok" | "busy"> {
     if (error instanceof DiagnosticFailure) return error.code;
+    if (error instanceof Error && error.message === "ai_credentials_unreadable")
+      return "credential_error";
     const details = error as {
       status?: unknown;
       statusCode?: unknown;
