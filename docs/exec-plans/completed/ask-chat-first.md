@@ -1,6 +1,6 @@
 # Chat-first Ask AI, model picker and Settings modal
 
-Status: active; design approved, implementation in progress
+Status: completed; reviewable draft PR preview delivered, retained design differences approved
 Owner: Stephen Joly (product); Codex delivery lead
 Started: 2026-10-22
 Branch: `codex/ask-ai-ui-mockup` (base `origin/staging` 034ac71); feature PR targets `staging`
@@ -161,6 +161,8 @@ Suggested ownership so parallel workers never share a file:
 
 ## Progress
 
+- 2026-10-22: Stephen approved both retained differences: Set as default stays disabled when already default; gear/⌘, reopens the last Settings section, initially My account. M1–M4 complete; plan moved to completed. Final implementation checkpoint 7996c6b deployed and verified; CI run 39840160561 passes (1m5s), full check 321/321 and browser acceptance 27/27 + 2/2. PR #64 remains draft targeting staging; no merge or production action.
+
 - 2026-10-22: Original-review corrections integrated and verified: full check **321/321**, fresh affected Playwright **27/27**, new Ask journeys **2/2**. Six screenshots recaptured after approved copy/layout corrections; desktop suggestions one row and streaming model metadata before text are asserted. Durable product documentation updated. Final preview revision c77198a verified live: health/login 200, twelve synthetic chats including pinned/pending/failed, both simulated providers, desktop/mobile modal and source/search interactions. CI run 39839848204 passes (48s). Neutral sparse-account suggestion regression included. Two Stephen design approvals remain; keep this plan active until those acceptance decisions arrive.
 
 - 2026-10-22: Original-author review completed on 2e6bd65. High design fidelity; authorization/migration boundaries approved. Assigned corrections to original workers: latest-only completed retries and superseded context, periodic stale-attempt recovery, streaming model event, approved model descriptors/suggestion patterns, bottom connection-test section and select chevrons, fixture status alignment. Lead also found/fixed null-thinking compatibility with six regression cases. Stephen decisions pending on disabled already-default action and last-topic Settings opening.
@@ -174,9 +176,11 @@ Suggested ownership so parallel workers never share a file:
 - [x] M1 Backend contract: migrations, endpoints, types, tests.
 - [x] M2 Shell: sidebar history + Settings modal + routing (early key-screen check of state 2 and 6).
 - [x] M3 Ask page: header, picker, meta/retry, sources panel, citations, hero.
-- [ ] M4 Integration, e2e updates, full visual comparison, docs, PR preview with seeded synthetic data.
+- [x] M4 Integration, e2e updates, full visual comparison, docs, PR preview with seeded synthetic data.
 
 ## Decisions
+
+- 2026-10-22: Stephen explicitly approved retaining disabled Set as default for the current default model, and gear/⌘, reopening the last Settings section (initially My account), following the original designer’s recommendations. These resolve the two previously pending design decisions.
 
 - 2026-10-22: CI’s existing Azure Ubuntu mirror timed out after 15 minutes downloading FFmpeg dependencies before app checks; the next run showed the same setup delay. Switch only the CI runner’s package mirror to the official Ubuntu archive, preserving signed packages, the exact FFmpeg version, required checks, triggers, and deployment ownership.
 
