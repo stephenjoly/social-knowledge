@@ -41,6 +41,7 @@ import {
   thinkingLevels,
 } from "./ai-providers.js";
 import { AskService } from "./ask.js";
+import { ASK_ATTEMPT_TIMEOUT_MS } from "./ask-limits.js";
 import { registerOAuth } from "./oauth.js";
 import { registerMcp } from "./mcp.js";
 import {
@@ -371,7 +372,7 @@ export function buildApp(
     const timer = setTimeout(() => {
       timedOut = true;
       controller.abort();
-    }, 60000);
+    }, ASK_ATTEMPT_TIMEOUT_MS);
     reply.raw.on("close", () => {
       if (!finished) controller.abort();
     });

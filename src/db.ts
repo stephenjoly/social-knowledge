@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { ASK_STALE_ATTEMPT_MS } from "./ask-limits.js";
 import { randomUUID } from "node:crypto";
 import type {
   AnalysisResult,
@@ -190,9 +191,9 @@ export class JobStore {
   recoverInterruptedConversationAttempts() {
     return this.database
       .prepare(
-        "UPDATE conversation_messages SET status='failed',error_code='provider_error' WHERE role='assistant' AND status='pending' AND created_at < ?",
+        "UPDATE conversation_messages SET status='failed',error_code='provider_error' WHERE role='assistant' AND status='pending' AND created_at <= ?",
       )
-      .run(new Date(Date.now() - 120000).toISOString()).changes;
+      .run(new Date(Date.now() - ASK_STALE_ATTEMPT_MS).toISOString()).changes;
   }
 
   recoverInterruptedJobs() {

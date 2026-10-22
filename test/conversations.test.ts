@@ -429,13 +429,93 @@ describe("chat-first API", () => {
     }
   });
 
+  it.each(["complete", "timeout"] as const)(
+    "allows slow reasoning beyond two minutes and handles %s at the bounded deadline",
+    async (outcome) => {
+      vi.useFakeTimers({
+        toFake: [
+          "Date",
+          "setTimeout",
+          "clearTimeout",
+          "setInterval",
+          "clearInterval",
+        ],
+      });
+      const { app, store, owner, headers, answer } = await fixture();
+      await app.ready();
+      const chat = store.createConversation(owner.id)!;
+      const immediateAnswer = answer.getMockImplementation()!;
+      let signal: AbortSignal | undefined;
+      let finish!: () => void;
+      let entered!: () => void;
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      answer.mockImplementation(async (input) => {
+        signal = input.signal;
+        input.onStatus?.("Writing a grounded answer…");
+        await new Promise<void>((resolve, reject) => {
+          finish = resolve;
+          input.signal?.addEventListener(
+            "abort",
+            () => reject(new Error("aborted")),
+            { once: true },
+          );
+          entered();
+        });
+        return immediateAnswer(input);
+      });
+      const response = app
+        .inject({
+          method: "POST",
+          url: `/api/v1/conversations/${chat.id}/messages`,
+          headers,
+          payload: {
+            message: "Summarise my saved posts",
+            requestId: `slow-${outcome}`,
+          },
+        })
+        .then((result) => result);
+      await started;
+      const pending = () =>
+        store.getConversation(owner.id, chat.id)!.messages.at(-1)!;
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(signal?.aborted).toBe(false);
+      expect(pending().status).toBe("pending");
+      await vi.advanceTimersByTimeAsync(90000);
+      expect(signal?.aborted).toBe(false);
+      expect(pending().status).toBe("pending");
+      if (outcome === "complete") {
+        finish();
+        const result = await response;
+        expect(result.body).toContain("event: completed");
+        expect(result.body).not.toContain("event: error");
+        expect(pending().status).toBe("complete");
+      } else {
+        await vi.advanceTimersByTimeAsync(29999);
+        expect(signal?.aborted).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        const result = await response;
+        expect(signal?.aborted).toBe(true);
+        expect(result.body).toContain('"errorCode":"timeout"');
+        expect(result.body).not.toContain("event: completed");
+        expect(pending()).toMatchObject({
+          status: "failed",
+          errorCode: "timeout",
+        });
+      }
+      await app.close();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
   it("sweeps fresh interrupted attempts after they become stale, calls the hook, and clears unref timers on close", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
     const afterRecovery = vi.fn();
     const { app, store, owner, other } = await fixture(afterRecovery);
     const staleChat = store.createConversation(owner.id)!;
     const stale = store.beginConversationTurn(owner.id, staleChat.id, "Stale question", "stale-question");
-    store.database.prepare("UPDATE conversation_messages SET created_at=? WHERE id=?").run(new Date(Date.now() - 180000).toISOString(), stale.assistantId);
+    store.database.prepare("UPDATE conversation_messages SET created_at=? WHERE id=?").run(new Date(Date.now() - 300000).toISOString(), stale.assistantId);
     const freshChat = store.createConversation(other.id)!;
     const fresh = store.beginConversationTurn(other.id, freshChat.id, "Fresh question", "fresh-question");
     const statuses: string[] = [];
@@ -446,9 +526,10 @@ describe("chat-first API", () => {
     expect(statuses).toEqual(["pending"]);
     const sweep = intervals.mock.results.find((_, index) => intervals.mock.calls[index]?.[1] === 30000)!.value as NodeJS.Timeout;
     expect(sweep.hasRef()).toBe(false);
-    await vi.advanceTimersByTimeAsync(90000);
-    expect(statuses).toEqual(["pending", "pending", "pending", "pending"]);
-    await vi.advanceTimersByTimeAsync(60000);
+    await vi.advanceTimersByTimeAsync(239999);
+    expect(statuses).toHaveLength(8);
+    expect(statuses.every((status) => status === "pending")).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
     expect(statuses.at(-1)).toBe("failed");
     expect(store.getConversation(other.id, freshChat.id)!.messages.find((message) => message.id === fresh.assistantId)).toMatchObject({ status: "failed", errorCode: "provider_error" });
     await app.close();

@@ -94,7 +94,7 @@ describe("JobStore", () => {
         store.getConversation(owner.id, chat.id)!.messages.at(-1)!.status,
       ).toBe("pending");
       expect(store.recoverInterruptedConversationAttempts()).toBe(0);
-      store.database.prepare("UPDATE conversation_messages SET created_at=? WHERE id=?").run(new Date(Date.now() - 180000).toISOString(), pending.assistantId);
+      store.database.prepare("UPDATE conversation_messages SET created_at=? WHERE id=?").run(new Date(Date.now() - 300000).toISOString(), pending.assistantId);
       expect(store.recoverInterruptedConversationAttempts()).toBe(1);
       expect(store.recoverInterruptedConversationAttempts()).toBe(0);
       const recovered = store
