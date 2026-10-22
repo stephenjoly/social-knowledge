@@ -75,7 +75,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   await page.getByRole("button", { name: "Use for analysis" }).click();
   await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
 
-  await page.goto(`${baseUrl}/app?tab=settings&topic=people`);
+  await page.goto(`${baseUrl}/app?settings=people`);
   await expect(
     page.getByRole("heading", { name: "People & access" }),
   ).toBeVisible();
@@ -151,13 +151,12 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   ).toBeVisible();
   await invitedPage.getByRole("button", { name: "Ask", exact: true }).click();
   await expect(
-    invitedPage.getByRole("heading", { name: "Ask what you've saved" }),
+    invitedPage.getByRole("heading", { name: "What do you want to find?" }),
   ).toBeVisible();
   await invitedPage.getByRole("button", { name: "Open menu" }).click();
   await invitedPage.getByRole("button", { name: "Open Settings" }).click();
   await expect(invitedPage.getByRole("heading", { level: 1, name: "My account" })).toBeVisible();
-  await invitedPage.getByRole("button", { name: "Open menu" }).click();
-  await invitedPage.getByRole("button", { name: "Back to archive" }).click();
+  await invitedPage.getByRole("button", { name: "Close Settings" }).click();
   await invitedPage.getByRole("button", { name: "Inbox", exact: true }).click();
   await invitedPage
     .getByRole("button", { name: "Capture a post", exact: true })

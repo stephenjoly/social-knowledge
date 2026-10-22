@@ -1,5 +1,20 @@
 import { expect, test } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  // Document routes require a real session before mocked API reads run.
+  if (process.env.E2E_USERNAME && process.env.E2E_PASSWORD) {
+    await page.goto("/login");
+    const status = await page.evaluate(async (credentials) => {
+      const response = await fetch("/api/auth/login", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify(credentials),
+      });
+      return response.status;
+    }, { username: process.env.E2E_USERNAME, password: process.env.E2E_PASSWORD });
+    expect(status).toBe(200);
+  }
+});
+
 const stages = (
   active: "added" | "found" | "media" | "text" | "saved",
   failed = false,
@@ -215,7 +230,7 @@ test("Activity inspects safe logs, complete failure counts, and compact account 
   await expect(accountMenu).toHaveCount(0);
   await page.locator(".app-profile-settings").click();
   await expect(page.getByRole("heading", { level: 1, name: "My account" })).toBeVisible();
-  await page.getByRole("button", { name: "Back to archive" }).click();
+  await page.getByRole("button", { name: "Close Settings" }).click();
   await page.getByRole("button", { name: "Activity", exact: true }).click();
   await page.setViewportSize({ width: 900, height: 900 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);

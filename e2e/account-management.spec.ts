@@ -18,7 +18,7 @@ let store: JobStore;
 let app: ReturnType<typeof buildApp>;
 
 async function signIn(page: Page, username: string, password: string) {
-  await page.goto(`${baseUrl}/app?tab=settings`);
+  await page.goto(`${baseUrl}/app?settings=account`);
   await page.getByLabel("Username").fill(username);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Continue" }).click();
@@ -26,7 +26,7 @@ async function signIn(page: Page, username: string, password: string) {
 }
 
 async function openTopic(page: Page, topic: string, heading: string) {
-  await page.goto(`${baseUrl}/?tab=settings&topic=${topic}`);
+  await page.goto(`${baseUrl}/app?settings=${topic}`);
   await expect(page.getByRole("heading", { level: 1, name: heading, exact: true })).toBeVisible();
 }
 
@@ -34,7 +34,8 @@ async function expectColumnGeometry(page: Page, viewportWidth: 1440 | 1800) {
   await page.setViewportSize({ width: viewportWidth, height: 1020 });
   const column = await page.locator(".st-column").boundingBox();
   expect(column).not.toBeNull();
-  expect(column!.width).toBeCloseTo(780, 0);
+  await expect.poll(async () => (await page.locator(".sm-dialog").boundingBox())!.width).toBe(900);
+  expect(column!.width).toBeCloseTo(612, 0);
   const cards = page.locator(".st-column .st-card");
   expect(await cards.count()).toBeGreaterThan(0);
   for (let index = 0; index < await cards.count(); index += 1) {
@@ -177,7 +178,7 @@ test.describe.serial("account profile and access management", () => {
 
     const suspendedContext = await browser.newContext();
     const suspendedPage = await suspendedContext.newPage();
-    await suspendedPage.goto(`${baseUrl}/?tab=settings`);
+    await suspendedPage.goto(`${baseUrl}/app?settings=account`);
     await suspendedPage.getByLabel("Username").fill("account-member");
     await suspendedPage.getByLabel("Password").fill(memberPassword);
     await suspendedPage.getByRole("button", { name: "Continue" }).click();

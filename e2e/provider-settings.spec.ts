@@ -129,7 +129,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await page.getByRole("dialog", { name: "Link saved — AI setup needed", exact: true }).getByRole("button", { name: "Set up AI", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "AI & models" })).toBeVisible();
   const openAiTopic = async () => {
-    await page.goto(`http://127.0.0.1:${port}/?tab=settings&topic=ai`);
+    await page.goto(`http://127.0.0.1:${port}/app?settings=ai`);
     await expect(page.getByRole("heading", { level: 1, name: "AI & models" })).toBeVisible();
   };
   await openAiTopic();
@@ -199,9 +199,11 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
 
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("AI settings saved.")).toBeVisible();
-  await expect(progress).toContainText("Optional: test your setup");
+  await expect(progress).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Test connection", exact: true })).toBeEnabled();
   expect(savedRequests).toEqual([
     {
+      ask: null,
       transcription: { provider: "openai", model: config.transcriptionModel },
       analysis: { provider: "openai", model: "gpt-5", thinkingLevel: "high" },
     },
@@ -256,7 +258,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await expect(askTest).toContainText("Passed in");
   await testDialog.getByRole("button", { name: "Close connection tests" }).click();
   await expect(page.getByRole("button", { name: "Test connection" })).toBeFocused();
-  await expect(progress).toContainText("AI is set up");
+  await expect(progress).toHaveCount(0);
 
   await thinking.selectOption("low");
   await expect(page.getByRole("button", { name: "Save changes" })).toBeEnabled();

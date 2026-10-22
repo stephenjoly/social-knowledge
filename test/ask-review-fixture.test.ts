@@ -62,6 +62,12 @@ describe("disposable Ask review fixture", () => {
     const originalConnection = store.aiProviderConnectionSecret(owner.id, "openai");
     const repeated = await prepareAskReviewPreview(store, config, providers);
     expect(repeated!.userId).toBe(prepared!.userId);
+    expect(config.demoAccounts.filter((account) => account.username === "ask-review")).toEqual([{
+      username: "ask-review", password: "synthetic-review-password", role: "member",
+    }]);
+    expect(config.demoAccounts.find((account) => account.username === "synthetic")).toEqual({
+      username: "synthetic", password: "synthetic-password", role: "member",
+    });
     expect(store.userCount()).toBe(2);
     expect(store.listConversations(owner.id)).toHaveLength(12);
     expect(store.getUserByUsername("ask-review")!.passwordHash).toBe(originalHash);

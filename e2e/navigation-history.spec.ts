@@ -41,7 +41,7 @@ test("restores page and dialog navigation with browser history", async ({
   await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
   const baseline = await page.locator(".shell").boundingBox();
   const navBaseline = await page.locator('.app-nav button[data-tab="inbox"]').boundingBox();
-  for (const name of ["Knowledge base", "Ask", "Inbox", "Activity"]) {
+  for (const name of ["Knowledge base", "New chat", "Inbox", "Activity"]) {
     await page.getByRole("button", { name, exact: true }).click();
     const geometry = await page.locator(".shell").boundingBox();
     expect(geometry?.x).toBe(baseline?.x);
@@ -51,7 +51,7 @@ test("restores page and dialog navigation with browser history", async ({
 
   for (const [key, heading] of [
     ["i", "Inbox"], ["a", "Activity"], ["k", "Knowledge base"],
-    ["q", "Ask what you've saved"],
+    ["q", "What do you want to find?"],
   ]) {
     await page.keyboard.press("g");
     await page.keyboard.press(key!);
@@ -75,12 +75,10 @@ test("restores page and dialog navigation with browser history", async ({
   await page.getByRole("button", { name: "Open Settings" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "My account" })).toBeVisible();
   for (const name of ["AI & models", "Connections", "API keys", "Data & export", "My account"]) {
-    await page.getByRole("button", { name: "Open menu" }).click();
     await page.getByRole("navigation", { name: "Settings sections" })
-      .getByRole("button", { name, exact: true }).click();
+      .getByRole("button", { name: name === "Connections" ? /^Connections/ : name, exact: name !== "Connections" }).click();
     await expect(page.getByRole("heading", { level: 1, name, exact: true })).toBeVisible();
   }
-  await page.getByRole("button", { name: "Open menu" }).click();
-  await page.getByRole("button", { name: "Back to archive" }).click();
+  await page.getByRole("button", { name: "Close Settings" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Knowledge base", exact: true })).toBeVisible();
 });

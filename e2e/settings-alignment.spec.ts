@@ -33,13 +33,13 @@ test.afterAll(async () => {
 });
 
 const openTopic = async (page: import("@playwright/test").Page, topic: string, heading: string) => {
-  await page.goto(`http://127.0.0.1:${port}/?tab=settings&topic=${topic}`);
+  await page.goto(`http://127.0.0.1:${port}/app?settings=${topic}`);
   await expect(page.getByRole("heading", { level: 1, name: heading, exact: true })).toBeVisible();
 };
 
 test("settings topics share one content column and reflow without horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1020 });
-  await page.goto(`http://127.0.0.1:${port}/app?tab=settings`);
+  await page.goto(`http://127.0.0.1:${port}/app?settings=account`);
   await page.getByLabel("Username").fill("qa-user");
   await page.getByLabel("Password").fill("a-strong-qa-password");
   await page.getByRole("button", { name: "Continue" }).click();
@@ -50,7 +50,8 @@ test("settings topics share one content column and reflow without horizontal ove
     return { x: rect.x, y: rect.y + window.scrollY, width: selector === ".st-column" ? rect.width : 0 };
   }));
   const baseline = await geometry();
-  expect(baseline[0]!.width).toBe(780);
+  await expect.poll(async () => (await page.locator(".sm-dialog").boundingBox())!.width).toBe(900);
+  expect(baseline[0]!.width).toBeCloseTo(612, 0);
   const topics = [["ai", "AI & models"], ["connections", "Connections"], ["api", "API keys"], ["data", "Data & export"], ["people", "People & access"], ["overview", "My account"]] as const;
   for (const [topic, heading] of topics) {
     await openTopic(page, topic, heading);

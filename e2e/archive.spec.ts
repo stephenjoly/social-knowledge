@@ -56,11 +56,17 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(knowledge).not.toContainText("node_type:");
   await expect(knowledge).not.toContainText("generated:");
   const topics = page.getByRole("group", { name: "Topics" });
-  if (await topics.getByRole("button", { name: /^Portugal \d+$/ }).count())
+  if (await topics.getByRole("button", { name: /^Portugal \d+$/ }).count()) {
     await topics.getByRole("button", { name: /^Portugal \d+$/ }).click();
+    await expect(knowledge.getByRole("heading", { level: 1, name: "Portugal", exact: true })).toBeVisible();
+  }
   await topics.getByRole("button", { name: /^Lisbon \d+$/ }).click();
+  await expect(knowledge.getByRole("heading", { level: 1, name: "Lisbon", exact: true })).toBeVisible();
   const restaurants = topics.getByRole("button", { name: /^Restaurants \d+$/ });
-  if (await restaurants.count()) await restaurants.click();
+  if (await restaurants.count()) {
+    await restaurants.click();
+    await expect(knowledge.getByRole("heading", { level: 1, name: "Restaurants", exact: true })).toBeVisible();
+  }
   const topicTitle = await knowledge.getByRole("heading", { level: 1 }).textContent();
   await knowledge.locator(".kb-capture-row").first().click();
   await expect(note).not.toContainText("source_url:");
@@ -75,13 +81,13 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
     page.getByRole("heading", { level: 1, name: topicTitle!, exact: true }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Ask", exact: true }).click();
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Ask what you've saved" }),
+    page.getByRole("heading", { name: "What do you want to find?" }),
   ).toBeVisible();
   await expect(
     page.getByRole("group", { name: "Suggested questions" }).getByRole("button"),
-  ).toHaveCount(4);
+  ).toHaveCount(3);
   await page
     .getByLabel("Ask your archive")
     .fill("What Lisbon restaurants have I saved?");
@@ -104,11 +110,13 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
     page.locator(".ask-sources .ask-source-link").first(),
   ).toHaveAttribute("href", /^https?:\/\//);
   await inlineCitation.click();
+  await expect(page.locator(".ask-sources .ask-source.hl")).toBeVisible();
+  await page.locator(".ask-sources .ask-source-open").first().click();
   await expect(note).toBeVisible();
   await note.getByRole("button", { name: "Back to Ask", exact: true }).click();
   await page.reload();
-  await page.getByRole("button", { name: "Ask", exact: true }).click();
-  await page.locator(".ask-recent-row").first().click();
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.locator(".app-chat-open").filter({ hasText: "What Lisbon restaurants" }).first().click();
   await expect(
     page.locator(".ask-sources .ask-source-open").first(),
   ).toBeVisible();
@@ -118,7 +126,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
 
   await page.getByRole("button", { name: "New chat" }).click();
   await expect(
-    page.getByRole("heading", { name: "Ask what you've saved" }),
+    page.getByRole("heading", { name: "What do you want to find?" }),
   ).toBeVisible();
   await page.getByLabel("Ask your archive").fill("__smoke_stream__");
   await page.getByRole("button", { name: "Send" }).click();
@@ -138,7 +146,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
 
   await page.getByRole("button", { name: "New chat" }).click();
   await expect(
-    page.getByRole("heading", { name: "Ask what you've saved" }),
+    page.getByRole("heading", { name: "What do you want to find?" }),
   ).toBeVisible();
   await page.getByLabel("Ask your archive").fill("__smoke_slow__");
   await page.getByRole("button", { name: "Send" }).click();
@@ -148,7 +156,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   });
   const cancelledRetry = page
     .locator(".ask-message.assistant.cancelled")
-    .getByRole("button", { name: "Retry" });
+    .getByRole("button", { name: "Retry", exact: true });
   await expect(cancelledRetry).toBeEnabled({ timeout: 10000 });
   await cancelledRetry.click();
   await expect(
@@ -157,7 +165,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
 
   await page.getByRole("button", { name: "New chat" }).click();
   await expect(
-    page.getByRole("heading", { name: "Ask what you've saved" }),
+    page.getByRole("heading", { name: "What do you want to find?" }),
   ).toBeVisible();
   await page.getByLabel("Ask your archive").fill("__smoke_failure__");
   await page.getByRole("button", { name: "Send" }).click();
@@ -166,7 +174,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   });
   const failedRetry = page
     .locator(".ask-message.assistant.failed")
-    .getByRole("button", { name: "Retry" });
+    .getByRole("button", { name: "Retry", exact: true });
   await expect(failedRetry).toBeEnabled({ timeout: 10000 });
   await failedRetry.click();
   await expect(
@@ -203,8 +211,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(languageSelect).toHaveValue(originalLanguage);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Open menu" }).click();
-  await page.getByRole("button", { name: "Back to archive" }).click();
+  await page.getByRole("button", { name: "Close Settings" }).click();
   await page
     .getByRole("button", { name: "Knowledge base", exact: true })
     .click();
