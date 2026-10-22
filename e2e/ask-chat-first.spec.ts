@@ -181,3 +181,155 @@ test("model default, one-off retry, persisted preferences and sidebar actions wo
   await page.getByRole("menuitem", { name: "Delete…", exact: true }).click();
   await expect(page.getByRole("button", { name: "Synthetic renamed Lisbon chat", exact: true })).toHaveCount(0);
 });
+
+
+test("current model rows remain reachable by keyboard and persist answer/retry metadata on desktop and mobile", async ({
+  page,
+}) => {
+  await page.goto(`http://127.0.0.1:${port}/app`);
+  await page.getByLabel("Username").fill("ask-review");
+  await page.getByLabel("Password").fill("synthetic-review-password");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  const models = [
+    { id: "gpt-6-luna", label: "GPT-6 Luna" },
+    { id: "gpt-6.1-sol", label: "GPT-6.1 Sol" },
+    { id: "gpt-6-astra", label: "GPT-6 Astra" },
+  ];
+  await expect(
+    page.getByRole("button", { name: "New chat", exact: true }).first(),
+  ).toBeVisible();
+  const defaults = await page.evaluate(
+    async () => (await (await fetch("/api/v1/ai-providers")).json()).selections,
+  );
+  expect(defaults).toBeDefined();
+  for (const width of [1360, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(`http://127.0.0.1:${port}/app`);
+    if (width === 390)
+      await page
+        .getByRole("button", { name: "Open menu", exact: true })
+        .click();
+    await page
+      .getByRole("button", { name: "New chat", exact: true })
+      .first()
+      .click();
+    const trigger = page.getByTitle("Choose model for this chat", {
+      exact: true,
+    });
+    await trigger.click();
+    const picker = page.getByRole("dialog", { name: "Model for this chat" });
+    const rows = picker.locator(".ask-opt");
+    await expect(rows).toHaveCount(6);
+    for (let index = 0; index < models.length; index++)
+      await expect(rows.nth(index)).toContainText(models[index]!.label);
+    const bounds = await picker.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect.soft(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect
+      .soft(bounds!.y, `${width}px picker top remains in viewport`)
+      .toBeGreaterThanOrEqual(0);
+    expect.soft(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    expect.soft(bounds!.y + bounds!.height).toBeLessThanOrEqual(844);
+    await page.keyboard.press("Home");
+    const controls = picker.locator(
+      ".ask-opt:not([disabled]), .ask-seg button:not([disabled]), .ask-pfoot button:not([disabled])",
+    );
+    for (let index = 0; index < (await controls.count()); index++) {
+      const control = controls.nth(index);
+      await expect(control).toBeFocused();
+      expect
+        .soft(
+          await control.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const hit = document.elementFromPoint(
+              rect.x + rect.width / 2,
+              rect.y + rect.height / 2,
+            );
+            return (
+              rect.y >= 0 &&
+              rect.bottom <= innerHeight &&
+              hit !== null &&
+              element.contains(hit)
+            );
+          }),
+          `${width}px focused control ${index} is visible and hit-testable`,
+        )
+        .toBe(true);
+      await page.keyboard.press("ArrowDown");
+    }
+    for (const model of models) {
+      const row = rows.filter({ hasText: model.id });
+      await row.focus();
+      await page.keyboard.press("Enter");
+      await expect(row).toHaveAttribute("aria-pressed", "true");
+      await expect(
+        picker.getByRole("button", { name: "Minimal", exact: true }),
+      ).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(trigger).toBeFocused();
+      await expect(trigger).toContainText(model.label);
+      await trigger.click();
+    }
+    await page.keyboard.press("Escape");
+    const composer = page.getByRole("textbox", { name: "Ask your archive" });
+    await composer.fill(`Synthetic current model summary at ${width}px`);
+    const created = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === "/api/v1/conversations",
+    );
+    await composer.press("Enter");
+    const chatId = (await (await created).json()).conversation.id as string;
+    await expect(page.locator(".ask-meta-model").last()).toContainText(
+      "GPT-6 Astra",
+    );
+    await expect(page.locator(".ask-answer-body").last()).toContainText(
+      "Promotion strategy",
+    );
+    const savedChat = await page.evaluate(
+      async (id) =>
+        (await (await fetch(`/api/v1/conversations/${id}`)).json())
+          .conversation,
+      chatId,
+    );
+    expect(savedChat.selection.model).toBe("gpt-6-astra");
+    await page.reload();
+    if (width === 390)
+      await page
+        .getByRole("button", { name: "Open menu", exact: true })
+        .click();
+    await page
+      .getByRole("button", { name: savedChat.title, exact: true })
+      .first()
+      .click();
+    await expect(
+      page.getByTitle("Choose model for this chat", { exact: true }),
+    ).toContainText("GPT-6 Astra");
+    await page
+      .getByTitle("Retry with another model", { exact: true })
+      .last()
+      .click();
+    const retryPicker = page.getByRole("dialog", {
+      name: "Retry this answer with",
+    });
+    await retryPicker
+      .locator(".ask-opt")
+      .filter({ hasText: "gpt-6-luna" })
+      .press("Enter");
+    await expect(page.locator(".ask-meta-model").last()).toContainText(
+      "GPT-6 Luna",
+    );
+    await expect(page.locator(".ask-answer-body").last()).toContainText(
+      "Promotion strategy",
+    );
+    await expect(
+      page.getByTitle("Choose model for this chat", { exact: true }),
+    ).toContainText("GPT-6 Astra");
+    expect(
+      await page.evaluate(
+        async () =>
+          (await (await fetch("/api/v1/ai-providers")).json()).selections,
+      ),
+    ).toEqual(defaults);
+  }
+});
