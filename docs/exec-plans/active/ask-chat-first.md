@@ -161,13 +161,15 @@ Suggested ownership so parallel workers never share a file:
 
 ## Progress
 
+- 2026-10-22: M1–M3 committed; full check passed 302 tests. Early visual states 2/6 checked; modal 900×660. Existing browser journeys: 26/27 clean batch, corrected stale setup-banner expectation then focused provider journey passed; no skips. New Ask acceptance 2/2 covers six states, default/send/retry, persisted panel and sidebar CRUD/export. Citation component-remount click loss and nested People-menu Escape fixed; preference PATCHes serialized.
+
 - 2026-10-22: Preflight clean; all six HTML states clicked in browser. Branch pushed; draft PR #64 targets staging.
 - Delivery ownership: A backend/types/tests; B shell/Settings; C Ask. Lead owns plan/docs, integration, preview and e2e after slices land. Workers commit only their owned paths; no pushes or base merges.
 
 - [x] Mockup approved and committed as the design contract (2026-10-22).
-- [ ] M1 Backend contract: migrations, endpoints, types, tests.
-- [ ] M2 Shell: sidebar history + Settings modal + routing (early key-screen check of state 2 and 6).
-- [ ] M3 Ask page: header, picker, meta/retry, sources panel, citations, hero.
+- [x] M1 Backend contract: migrations, endpoints, types, tests.
+- [x] M2 Shell: sidebar history + Settings modal + routing (early key-screen check of state 2 and 6).
+- [x] M3 Ask page: header, picker, meta/retry, sources panel, citations, hero.
 - [ ] M4 Integration, e2e updates, full visual comparison, docs, PR preview with seeded synthetic data.
 
 ## Decisions
