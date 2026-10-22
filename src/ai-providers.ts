@@ -1,3 +1,4 @@
+import type { AskSelection } from "./db.js";
 import {
   createCipheriv,
   createDecipheriv,
@@ -199,12 +200,71 @@ export class AiProviderService {
         : null;
     return {
       providers: this.list(userId),
-      selections: { transcription, analysis },
+      selections: {
+        transcription,
+        analysis,
+        ask: this.validAskSelection(
+          userId,
+          selected.askProvider && selected.askModel
+            ? {
+                provider: selected.askProvider,
+                model: selected.askModel,
+                thinkingLevel: selected.askThinkingLevel,
+              }
+            : null,
+        ),
+      },
       readiness: {
         capture: Boolean(transcription && analysis),
-        ask: Boolean(analysis),
+        ask: Boolean(
+          analysis ||
+          this.validAskSelection(
+            userId,
+            selected.askProvider && selected.askModel
+              ? {
+                  provider: selected.askProvider,
+                  model: selected.askModel,
+                  thinkingLevel: selected.askThinkingLevel,
+                }
+              : null,
+          ),
+        ),
       },
     };
+  }
+
+  validAskSelection(
+    userId: string,
+    selection: AskSelection | null,
+  ): AskSelection | null {
+    if (!selection) return null;
+    return this.store.aiProviderConnection(userId, selection.provider)
+      ?.status === "verified" &&
+      this.isAnalysisModel(selection.provider, selection.model) &&
+      this.supportsThinkingLevel(
+        selection.provider,
+        selection.model,
+        selection.thinkingLevel,
+      )
+      ? selection
+      : null;
+  }
+
+  assertAskSelection(userId: string, selection: AskSelection): void {
+    if (!this.validAskSelection(userId, selection))
+      throw new Error("invalid_selection");
+  }
+
+  resolveAskSelection(
+    userId: string,
+    conversationSelection: AskSelection | null = null,
+  ): AskSelection | null {
+    const settings = this.settings(userId).selections;
+    return (
+      this.validAskSelection(userId, conversationSelection) ??
+      settings.ask ??
+      settings.analysis
+    );
   }
 
   configured(userId: string) {
@@ -526,6 +586,7 @@ export class AiProviderService {
   saveSelections(
     userId: string,
     selections: {
+      ask?: AskSelection | null | undefined;
       transcription?:
         { provider: "openai"; model?: string | undefined } | null | undefined;
       analysis?:
@@ -592,6 +653,12 @@ export class AiProviderService {
         next.analysisModel = model;
         next.analysisThinkingLevel = thinkingLevel;
       }
+    }
+    if (selections.ask !== undefined) {
+      if (selections.ask) this.assertAskSelection(userId, selections.ask);
+      next.askProvider = selections.ask?.provider ?? null;
+      next.askModel = selections.ask?.model ?? null;
+      next.askThinkingLevel = selections.ask?.thinkingLevel ?? null;
     }
     this.store.saveAiTaskSelections(userId, next);
     return this.settings(userId);
@@ -956,7 +1023,9 @@ export class AiProviderService {
       return settings.transcription
         ? { ...settings.transcription, thinkingLevel: null }
         : null;
-    return settings.analysis ? { ...settings.analysis } : null;
+    const selected =
+      task === "ask" ? (settings.ask ?? settings.analysis) : settings.analysis;
+    return selected ? { ...selected } : null;
   }
 
   private startDiagnostic(userId: string): "ok" | "rate_limited" | "busy" {

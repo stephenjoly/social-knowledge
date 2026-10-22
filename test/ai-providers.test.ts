@@ -89,6 +89,7 @@ describe("AI provider settings", () => {
       "cs…test",
     );
     expect(service.settings(user.id).selections).toEqual({
+      ask: null,
       transcription: null,
       analysis: null,
     });
@@ -165,6 +166,7 @@ describe("AI provider settings", () => {
     });
     const service = new AiProviderService(store, config);
     expect(service.settings(user.id).selections).toEqual({
+      ask: null,
       transcription: { provider: "openai", model: config.transcriptionModel },
       analysis: {
         provider: "openai",
@@ -178,6 +180,7 @@ describe("AI provider settings", () => {
       thinkingLevel: null,
     });
     expect(service.settings(user.id).selections).toEqual({
+      ask: null,
       transcription: { provider: "openai", model: config.transcriptionModel },
       analysis: {
         provider: "openai",
@@ -271,6 +274,7 @@ describe("AI provider settings", () => {
       settings.providers.filter((provider) => provider.connected),
     ).toHaveLength(2);
     expect(settings.selections).toEqual({
+      ask: null,
       transcription: { provider: "openai", model: config.transcriptionModel },
       analysis: {
         provider: "cerebras",

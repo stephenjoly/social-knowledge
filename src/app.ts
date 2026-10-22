@@ -1,3 +1,4 @@
+import type { AskSelection } from "./db.js";
 import { createReadStream } from "node:fs";
 import { randomBytes, randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
@@ -51,6 +52,13 @@ const submitSchema = z.object({
   url: z.string().min(1).max(4096),
   note: z.string().max(2000).optional(),
 });
+const askSelectionSchema = z
+  .object({
+    provider: z.enum(aiProviderIds),
+    model: z.string().trim().min(1).max(200),
+    thinkingLevel: z.enum(thinkingLevels).nullable(),
+  })
+  .strict();
 const requestIdSchema = z
   .string()
   .trim()
@@ -300,6 +308,7 @@ export function buildApp(
   const knowledgeExporter = new KnowledgeExporter(store, config);
   let exportCleanup: NodeJS.Timeout | null = null;
   app.addHook("onReady", async () => {
+    store.recoverInterruptedConversationAttempts();
     await knowledgeExporter.recoverInterrupted();
     await knowledgeExporter.cleanup();
     exportCleanup = setInterval(
@@ -324,7 +333,15 @@ export function buildApp(
     assistantId: string,
     question: string,
     smokeMode?: "failure" | "slow" | "stream" | "complete",
+    selection?: AskSelection,
   ) => {
+    if (selection)
+      store.setConversationAttemptSelection(
+        userId,
+        conversationId,
+        assistantId,
+        selection,
+      );
     reply.hijack();
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -422,16 +439,21 @@ export function buildApp(
         send("completed", { assistantId });
         return;
       }
-      const result = await aiProviderService.runForUser(userId, () =>
-        ask.answer({
-          userId,
-          conversationId,
-          assistantId,
-          question,
-          signal: controller.signal,
-          onDelta: (text) => send("delta", { text }),
-          onStatus: (status) => send("status", { assistantId, status }),
-        }),
+      const result = await aiProviderService.runForUser(
+        userId,
+        () =>
+          ask.answer({
+            userId,
+            conversationId,
+            assistantId,
+            question,
+            signal: controller.signal,
+            onDelta: (text) => send("delta", { text }),
+            onStatus: (status) => send("status", { assistantId, status }),
+          }),
+        selection?.provider,
+        selection?.model,
+        selection?.thinkingLevel,
       );
       request.log.info(
         { conversationId, assistantId, retrieval: result.diagnostics },
@@ -1486,6 +1508,7 @@ export function buildApp(
     protectedApi.put("/api/v1/ai-settings", async (request, reply) => {
       const body = z
         .object({
+          ask: askSelectionSchema.nullable().optional(),
           transcription: z
             .object({
               provider: z.literal("openai"),
@@ -1504,7 +1527,9 @@ export function buildApp(
         })
         .refine(
           (value) =>
-            value.transcription !== undefined || value.analysis !== undefined,
+            value.transcription !== undefined ||
+            value.analysis !== undefined ||
+            value.ask !== undefined,
         )
         .safeParse(request.body);
       if (!body.success)
@@ -1734,9 +1759,13 @@ export function buildApp(
       const user = auth.user(request)!;
       const input = z
         .object({
-          defaultLanguage: z.string().trim().min(2).max(60),
-          translateForeign: z.boolean(),
+          defaultLanguage: z.string().trim().min(2).max(60).optional(),
+          translateForeign: z.boolean().optional(),
+          askSourcesPanel: z.boolean().optional(),
+          sendWith: z.enum(["enter", "mod-enter"]).optional(),
         })
+        .strict()
+        .refine((value) => Object.keys(value).length > 0)
         .safeParse(request.body);
       if (!input.success)
         return reply.code(400).send({ error: "invalid_request" });
@@ -1855,13 +1884,57 @@ export function buildApp(
     protectedApi.post("/api/v1/conversations", async (request, reply) => {
       const user = auth.user(request)!;
       const input = z
-        .object({ title: z.string().trim().min(1).max(100).optional() })
+        .object({
+          title: z.string().trim().min(1).max(100).optional(),
+          selection: askSelectionSchema.optional(),
+        })
+        .strict()
         .safeParse(request.body ?? {});
       if (!input.success)
         return reply.code(400).send({ error: "invalid_request" });
+      if (
+        input.data.selection &&
+        !aiProviderService.validAskSelection(user.id, input.data.selection)
+      )
+        return reply.code(400).send({ error: "invalid_selection" });
       return reply.code(201).send({
-        conversation: store.createConversation(user.id, input.data.title),
+        conversation: store.createConversation(
+          user.id,
+          input.data.title,
+          input.data.selection,
+        ),
       });
+    });
+    protectedApi.patch("/api/v1/conversations/:id", async (request, reply) => {
+      const user = auth.user(request)!;
+      const params = z
+        .object({ id: z.string().uuid() })
+        .safeParse(request.params);
+      const input = z
+        .object({
+          title: z.string().trim().min(1).max(100).optional(),
+          pinned: z.boolean().optional(),
+          selection: askSelectionSchema.nullable().optional(),
+        })
+        .strict()
+        .refine((value) => Object.keys(value).length > 0)
+        .safeParse(request.body);
+      if (!params.success || !input.success)
+        return reply.code(400).send({ error: "invalid_request" });
+      if (!store.getConversation(user.id, params.data.id))
+        return reply.code(404).send({ error: "not_found" });
+      if (
+        input.data.selection &&
+        !aiProviderService.validAskSelection(user.id, input.data.selection)
+      )
+        return reply.code(400).send({ error: "invalid_selection" });
+      return {
+        conversation: store.updateConversation(
+          user.id,
+          params.data.id,
+          input.data,
+        ),
+      };
     });
     protectedApi.get("/api/v1/conversations/:id", async (request, reply) => {
       const user = auth.user(request)!;
@@ -1883,8 +1956,6 @@ export function buildApp(
       { config: { rateLimit: { max: 30, timeWindow: "1 hour" } } },
       async (request, reply) => {
         const user = auth.user(request)!;
-        if (!aiProviderService.settings(user.id).readiness.ask)
-          return reply.code(428).send({ error: "analysis_provider_required" });
         const { id } = z
           .object({ id: z.string().uuid() })
           .parse(request.params);
@@ -1912,6 +1983,15 @@ export function buildApp(
           });
         }
         const requestId = input.data.requestId ?? randomUUID();
+        const conversation = store.getConversation(user.id, id);
+        if (!conversation)
+          return reply.code(404).send({ error: "conversation_not_found" });
+        const selection = aiProviderService.resolveAskSelection(
+          user.id,
+          conversation.selection,
+        );
+        if (!selection)
+          return reply.code(428).send({ error: "analysis_provider_required" });
         try {
           const turn = store.beginConversationTurn(
             user.id,
@@ -1944,6 +2024,7 @@ export function buildApp(
             turn.assistantId,
             input.data.message,
             smokeMode,
+            selection,
           );
         } catch (error) {
           const code = error instanceof Error ? error.message : "unknown";
@@ -1964,21 +2045,53 @@ export function buildApp(
       { config: { rateLimit: { max: 30, timeWindow: "1 hour" } } },
       async (request, reply) => {
         const user = auth.user(request)!;
-        if (!aiProviderService.settings(user.id).readiness.ask)
-          return reply.code(428).send({ error: "analysis_provider_required" });
         const { id, messageId } = z
           .object({ id: z.string().uuid(), messageId: z.string().uuid() })
           .parse(request.params);
         const input = z
-          .object({ requestId: requestIdSchema.optional() })
-          .safeParse(request.body);
+          .object({
+            requestId: requestIdSchema.optional(),
+            selection: askSelectionSchema.optional(),
+          })
+          .strict()
+          .safeParse(request.body ?? {});
         if (!input.success) {
           request.log.warn(
             { invalidFields: ["requestId"] },
             "Ask AI retry validation failed",
           );
-          return reply.code(400).send({ error: "invalid_request_id" });
+          return reply
+            .code(400)
+            .send({
+              error: input.error.issues.some(
+                (issue) => issue.path[0] === "selection",
+              )
+                ? "invalid_request"
+                : "invalid_request_id",
+            });
         }
+        const conversation = store.getConversation(user.id, id);
+        if (
+          !conversation ||
+          !conversation.messages.some(
+            (message) =>
+              message.id === messageId && message.role === "assistant",
+          )
+        )
+          return reply.code(404).send({ error: "not_found" });
+        if (
+          input.data.selection &&
+          !aiProviderService.validAskSelection(user.id, input.data.selection)
+        )
+          return reply.code(400).send({ error: "invalid_selection" });
+        const selection =
+          input.data.selection ??
+          aiProviderService.resolveAskSelection(
+            user.id,
+            conversation.selection,
+          );
+        if (!selection)
+          return reply.code(428).send({ error: "analysis_provider_required" });
         try {
           const attempt = store.beginConversationRetry(
             user.id,
@@ -2011,6 +2124,7 @@ export function buildApp(
             attempt.assistantId,
             attempt.question,
             smokeMode,
+            selection,
           );
         } catch (error) {
           const code = error instanceof Error ? error.message : "unknown";

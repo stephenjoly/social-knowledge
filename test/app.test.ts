@@ -111,6 +111,7 @@ describe("API", () => {
     expect(configured.json().selections).toEqual({
       transcription: null,
       analysis: null,
+      ask: null,
     });
     const assigned = await app.inject({
       method: "PUT",
@@ -481,6 +482,8 @@ describe("API", () => {
     expect(preferences.json().preferences).toEqual({
       defaultLanguage: "French",
       translateForeign: false,
+      askSourcesPanel: true,
+      sendWith: "enter",
     });
     const createdKey = await app.inject({
       method: "POST",
