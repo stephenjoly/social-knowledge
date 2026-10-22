@@ -578,7 +578,7 @@ body.sidebar-resizing * {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  width: 180px;
+  min-width: 180px;
   padding: 5px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
@@ -598,6 +598,7 @@ body.sidebar-resizing * {
   font-size: var(--type-control);
   font-weight: var(--weight-regular);
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
 }
 

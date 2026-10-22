@@ -254,6 +254,16 @@
   gap: 8px;
 }
 
+.sm-pane-body .st-row-controls .ui-select {
+  height: 30px;
+  font-weight: var(--weight-regular);
+}
+
+.sm-pane-body .st-task-row .ui-select:nth-child(2) .ui-select-control {
+  font-family: var(--font-mono);
+  font-size: var(--type-metadata);
+}
+
 .sm-pane-body .st-control-130,
 .sm-pane-body .st-control-110,
 .sm-pane-body .st-control-172 {

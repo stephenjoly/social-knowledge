@@ -460,25 +460,41 @@ function ChatRow({
   const [draft, setDraft] = useState(chat.title);
   const input = useRef<HTMLInputElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
+  const finished = useRef(false);
+  const restoreFocus = useRef(false);
   useEffect(() => {
-    if (!renaming) return;
-    setDraft(chat.title);
-    input.current?.focus();
-    input.current?.select();
-  }, [renaming, chat.title]);
+    if (renaming) {
+      finished.current = false;
+      setDraft(chat.title);
+      input.current?.focus();
+      input.current?.select();
+    } else if (restoreFocus.current) {
+      restoreFocus.current = false;
+      moreRef.current?.focus();
+    }
+    // Only entering or leaving rename moves focus.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renaming]);
   const parts = highlightParts(chat.title, query);
   if (renaming) {
-    const commit = async () => {
-      const title = draft.trim();
-      if (title && title !== chat.title) await chats.rename(chat.id, title.slice(0, 100));
+    const finish = (keyboard: boolean) => {
+      if (finished.current) return false;
+      finished.current = true;
+      restoreFocus.current = keyboard;
       onRenameDone();
+      return true;
+    };
+    const commit = (keyboard: boolean) => {
+      const title = draft.trim();
+      if (!finish(keyboard)) return;
+      if (title && title !== chat.title) void chats.rename(chat.id, title.slice(0, 100));
     };
     return (
       <form
         className="app-chat-row renaming"
         onSubmit={(event) => {
           event.preventDefault();
-          void commit();
+          commit(true);
         }}
       >
         <input
@@ -488,12 +504,12 @@ function ChatRow({
           value={draft}
           maxLength={100}
           onChange={(event) => setDraft(event.target.value)}
-          onBlur={() => void commit()}
+          onBlur={() => commit(false)}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.preventDefault();
               event.stopPropagation();
-              onRenameDone();
+              finish(true);
             }
           }}
         />

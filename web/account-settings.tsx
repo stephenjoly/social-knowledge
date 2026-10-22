@@ -599,6 +599,8 @@ function PersonActions({
         root.current?.contains(event.target as Node)
       )
         return;
+      // Escape belongs to this menu; the Settings modal stays open.
+      if (event instanceof KeyboardEvent) event.preventDefault();
       setOpen(false);
       if (event instanceof KeyboardEvent) trigger.current?.focus();
     };

@@ -321,18 +321,25 @@ export function useAskPreferences(ownerId: string | null): AskPreferencesControl
   const [preferences, setPreferences] = useState<AskPreferences>(defaultAskPreferences);
   const [loaded, setLoaded] = useState(false);
   const generation = useRef(0);
-  const latest = useRef(preferences);
-  latest.current = preferences;
+  /** Last values the server confirmed; failures fall back to these. */
+  const confirmed = useRef<AskPreferences>(defaultAskPreferences);
+  /** PATCHes run one at a time so the server always ends on the latest choice. */
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const revision = useRef(0);
 
   useEffect(() => {
     const request = ++generation.current;
+    confirmed.current = defaultAskPreferences;
+    queue.current = Promise.resolve();
     setPreferences(defaultAskPreferences);
     setLoaded(false);
     if (!ownerId) return;
     void api<{ preferences: unknown }>("/api/v1/preferences")
       .then((result) => {
-        if (request === generation.current)
-          setPreferences({ ...defaultAskPreferences, ...pickAskPreferences(result.preferences) });
+        if (request !== generation.current) return;
+        confirmed.current = { ...defaultAskPreferences, ...pickAskPreferences(result.preferences) };
+        // Choices made before the first load finished still win.
+        if (revision.current === 0) setPreferences(confirmed.current);
       })
       .catch(() => undefined)
       .finally(() => {
@@ -340,25 +347,34 @@ export function useAskPreferences(ownerId: string | null): AskPreferencesControl
       });
   }, [ownerId]);
 
-  const update = useCallback(async (patch: Partial<AskPreferences>) => {
+  const update = useCallback((patch: Partial<AskPreferences>) => {
     const request = generation.current;
-    const previous = latest.current;
-    setPreferences({ ...previous, ...patch });
-    try {
-      const result = await api<{ preferences: unknown }>("/api/v1/preferences", {
-        method: "PATCH",
-        body: JSON.stringify(patch),
-      });
-      if (request === generation.current)
-        setPreferences((current) => ({ ...current, ...pickAskPreferences(result.preferences) }));
-      return true;
-    } catch {
-      if (request === generation.current) setPreferences(previous);
-      return false;
-    }
+    const mine = ++revision.current;
+    setPreferences((current) => ({ ...current, ...patch }));
+    const send = async () => {
+      if (request !== generation.current) return false;
+      try {
+        const result = await api<{ preferences: unknown }>("/api/v1/preferences", {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        });
+        if (request !== generation.current) return false;
+        confirmed.current = { ...confirmed.current, ...pickAskPreferences(result.preferences) };
+        if (mine === revision.current) setPreferences(confirmed.current);
+        return true;
+      } catch {
+        if (request === generation.current && mine === revision.current)
+          setPreferences(confirmed.current);
+        return false;
+      }
+    };
+    const result = queue.current.then(send, send);
+    queue.current = result;
+    return result;
   }, []);
 
   const replace = useCallback((next: Partial<AskPreferences>) => {
+    confirmed.current = { ...confirmed.current, ...pickAskPreferences(next) };
     setPreferences((current) => ({ ...current, ...pickAskPreferences(next) }));
   }, []);
 

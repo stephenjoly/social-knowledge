@@ -143,11 +143,6 @@ const providerLooks: Record<
   },
 };
 
-const providerDot: Record<AiProvider["id"], string> = {
-  openai: "#18181b",
-  cerebras: "#c2410c",
-};
-
 const assistantLooks: Array<{
   match: RegExp;
   icon: LucideIcon;
@@ -1372,11 +1367,6 @@ export function Settings({
                                 : "st-control-130",
                               !selectedProvider && task !== "ask" && "st-select-empty",
                             )}
-                            dotColor={
-                              selectedProvider
-                                ? providerDot[selectedProvider.id]
-                                : undefined
-                            }
                             value={selection?.provider ?? ""}
                             disabled={busy}
                             onChange={(event) => {
