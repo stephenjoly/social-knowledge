@@ -365,6 +365,21 @@ html:has(.ask-v2) {
   left: 0;
 }
 
+/* Placement measured against the visible viewport (see usePopoverPlacement). */
+.ask-v2 .ask-picker.ask-place-up {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
+.ask-v2 .ask-picker.ask-place-down {
+  top: calc(100% + 8px);
+  bottom: auto;
+}
+
+.ask-picker {
+  overscroll-behavior: contain;
+}
+
 .ask-picker-head {
   display: flex;
   align-items: baseline;
@@ -573,10 +588,24 @@ html:has(.ask-v2) {
 
 /* Conversation (states 2 and 5) */
 .ask-conversation {
+  position: relative;
   display: flex;
   height: 100vh;
   height: 100dvh;
   background: var(--canvas);
+}
+
+/*
+ * Visually hidden labels (.sr-only) are absolutely positioned. Inside an
+ * unpositioned scroller they resolve against the page and, deep in a long
+ * thread, stretch the document so the whole shell can scroll away. Each pane
+ * contains its own, and the conversation clips anything that still escapes
+ * (clip, unlike hidden, cannot be scrolled by scrollIntoView).
+ */
+@media (min-width: 781px) {
+  .ask-conversation {
+    overflow: clip;
+  }
 }
 
 .ask-chat {
@@ -791,6 +820,7 @@ html:has(.ask-v2) {
 }
 
 .ask-thread {
+  position: relative;
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -1148,6 +1178,7 @@ html:has(.ask-v2) {
 }
 
 .ask-sources-body {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;

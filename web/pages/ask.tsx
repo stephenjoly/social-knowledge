@@ -336,7 +336,7 @@ function roveFocus(event: KeyboardEvent<HTMLElement>, selector: string) {
         : event.key === "ArrowDown"
           ? (index + 1) % items.length
           : (index - 1 + items.length) % items.length;
-  items[next]!.focus();
+  focusInside(event.currentTarget, items[next]!);
 }
 
 function ModelOptionRows({
@@ -444,6 +444,126 @@ function ModelOptionRows({
   );
 }
 
+type PopoverPlacement = { side: "up" | "down"; maxHeight: number };
+
+const popoverGap = 8;
+const popoverMargin = 8;
+const popoverMaxHeight = 560;
+const popoverMinHeight = 120;
+
+/**
+ * The band of the viewport a popover can use: inside every clipping ancestor
+ * of its anchor and clear of the app's pinned top and bottom bars, which would
+ * otherwise cover (and steal clicks from) its first or last rows.
+ */
+function visibleBand(anchor: HTMLElement) {
+  let top = 0;
+  let bottom = window.innerHeight;
+  for (const selector of [".app-topbar", ".ask-chat-bar"]) {
+    const bar = document.querySelector<HTMLElement>(selector);
+    if (!bar) continue;
+    const rect = bar.getBoundingClientRect();
+    const { position } = getComputedStyle(bar);
+    if (
+      (position === "fixed" || position === "sticky") &&
+      rect.height > 0 &&
+      rect.top <= top + 1
+    )
+      top = Math.max(top, rect.bottom);
+  }
+  const tabbar = document.querySelector<HTMLElement>(".app-tabbar");
+  if (tabbar && getComputedStyle(tabbar).position === "fixed") {
+    const rect = tabbar.getBoundingClientRect();
+    if (rect.height > 0) bottom = Math.min(bottom, rect.top);
+  }
+  for (
+    let node = anchor.parentElement;
+    node && node !== document.body;
+    node = node.parentElement
+  ) {
+    if (getComputedStyle(node).overflowY === "visible") continue;
+    const rect = node.getBoundingClientRect();
+    top = Math.max(top, rect.top);
+    bottom = Math.min(bottom, rect.bottom);
+  }
+  return { top: top + popoverMargin, bottom: bottom - popoverMargin };
+}
+
+/**
+ * Opens a popover on the side of its anchor with room for it, capping its
+ * height to that room so it scrolls inside instead of leaving the screen.
+ */
+function usePopoverPlacement(
+  open: boolean,
+  popoverRef: RefObject<HTMLElement | null>,
+  anchor: () => HTMLElement | null | undefined,
+  preferred: PopoverPlacement["side"],
+) {
+  const [placement, setPlacement] = useState<PopoverPlacement | null>(null);
+  const measureRef = useRef<() => void>(() => undefined);
+  measureRef.current = () => {
+    const popover = popoverRef.current;
+    const box = anchor();
+    if (!open || !popover || !box) return;
+    const band = visibleBand(box);
+    const rect = box.getBoundingClientRect();
+    const above = rect.top - popoverGap - band.top;
+    const below = band.bottom - rect.bottom - popoverGap;
+    const needed = Math.min(popover.scrollHeight, popoverMaxHeight);
+    const side =
+      (preferred === "up" ? above : below) >= needed
+        ? preferred
+        : above >= below
+          ? "up"
+          : "down";
+    const maxHeight = Math.floor(
+      Math.max(
+        popoverMinHeight,
+        Math.min(popoverMaxHeight, side === "up" ? above : below),
+      ),
+    );
+    setPlacement((current) =>
+      current?.side === side && current.maxHeight === maxHeight
+        ? current
+        : { side, maxHeight },
+    );
+  };
+  // Content can grow while open (the thinking control), so measure each render.
+  useLayoutEffect(() => {
+    if (open) measureRef.current();
+    else setPlacement(null);
+  });
+  useEffect(() => {
+    if (!open) return;
+    const measure = () => measureRef.current();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [open]);
+  return {
+    className: placement ? ` ask-place-${placement.side}` : "",
+    style: placement ? { maxHeight: placement.maxHeight } : undefined,
+    ready: placement !== null,
+  };
+}
+
+/** Focuses an option and scrolls only its popover, never the page. */
+function focusInside(
+  container: HTMLElement | null,
+  element: HTMLElement | null,
+) {
+  if (!container || !element) return;
+  element.focus({ preventScroll: true });
+  const box = container.getBoundingClientRect();
+  const rect = element.getBoundingClientRect();
+  if (rect.top < box.top) container.scrollTop -= box.top - rect.top + 6;
+  else if (rect.bottom > box.bottom)
+    container.scrollTop += rect.bottom - box.bottom + 6;
+}
+
 function ModelPicker({
   options,
   selection,
@@ -473,14 +593,24 @@ function ModelPicker({
     chipRef.current?.focus({ preventScroll: true });
   };
   useDismiss(open, close, anchorRef, escape);
+  const placement = usePopoverPlacement(
+    open,
+    panelRef,
+    () => chipRef.current?.closest<HTMLElement>(".ask-composer"),
+    "up",
+  );
+  // Focus once the popover has its measured height, so the row is in view.
   useEffect(() => {
-    if (!open) return;
+    if (!open || !placement.ready) return;
     const panel = panelRef.current;
-    (
+    focusInside(
+      panel,
       panel?.querySelector<HTMLElement>(".ask-opt.picked") ??
-      panel?.querySelector<HTMLElement>(".ask-opt")
-    )?.focus({ preventScroll: true });
-  }, [open]);
+        panel?.querySelector<HTMLElement>(".ask-opt") ??
+        null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, placement.ready]);
 
   if (!loaded)
     return (
@@ -504,7 +634,8 @@ function ModelPicker({
     <div className="ask-picker-anchor" ref={anchorRef}>
       {open && (
         <div
-          className="ask-picker"
+          className={`ask-picker${placement.className}`}
+          style={placement.style}
           role="dialog"
           aria-label="Model for this chat"
           ref={panelRef}
@@ -599,12 +730,20 @@ function RetryWith({
     buttonRef.current?.focus({ preventScroll: true });
   };
   useDismiss(open, close, anchorRef, escape);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const placement = usePopoverPlacement(
+    open,
+    menuRef,
+    () => anchorRef.current,
+    "down",
+  );
   useEffect(() => {
-    if (open)
-      anchorRef.current
-        ?.querySelector<HTMLElement>(".ask-opt")
-        ?.focus({ preventScroll: true });
-  }, [open]);
+    if (open && placement.ready)
+      focusInside(
+        menuRef.current,
+        menuRef.current?.querySelector<HTMLElement>(".ask-opt") ?? null,
+      );
+  }, [open, placement.ready]);
   if (!options.length) return null;
   return (
     <div className="ask-picker-anchor" ref={anchorRef}>
@@ -624,7 +763,9 @@ function RetryWith({
       </button>
       {open && (
         <div
-          className="ask-picker ask-retry-menu"
+          className={`ask-picker ask-retry-menu${placement.className}`}
+          style={placement.style}
+          ref={menuRef}
           role="dialog"
           aria-label="Retry this answer with"
           onKeyDown={(event) => roveFocus(event, ".ask-opt")}
