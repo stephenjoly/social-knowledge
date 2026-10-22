@@ -166,7 +166,12 @@ test("six approved Ask states, model persistence, sources and Settings preserve 
   await page.getByRole("button", { name: /Source 1:/ }).first().click();
   await expect(page.locator(".ask-sources")).toBeVisible();
 
-  await page.locator(".app-profile-settings").click();
+  // Focus return is a keyboard contract; Safari intentionally does not focus
+  // buttons on pointer click, so establish the actual keyboard opener.
+  const settingsTrigger = page.locator(".app-profile-settings");
+  await settingsTrigger.focus();
+  await expect(settingsTrigger).toBeFocused();
+  await settingsTrigger.press("Enter");
   const modal = page.getByRole("dialog", { name: "Settings", exact: true });
   await expect(modal).toBeVisible();
   await modal.getByRole("button", { name: "AI & models", exact: true }).click();
