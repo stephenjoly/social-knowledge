@@ -191,7 +191,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   }).toBe(true);
   await expect(page.getByRole("button", { name: "Save changes" })).toBeEnabled();
 
-  await page.getByRole("button", { name: "Test connection" }).click();
+  await page.getByRole("button", { name: "Run test" }).click();
   const dirtyDialog = page.getByRole("dialog", { name: "Test connection" });
   await expect(dirtyDialog).toContainText("Save changes before testing a connection.");
   await expect(dirtyDialog.getByRole("button", { name: "Test analysis" })).toBeDisabled();
@@ -200,7 +200,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("AI settings saved.")).toBeVisible();
   await expect(progress).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Test connection", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Run test", exact: true })).toBeEnabled();
   expect(savedRequests).toEqual([
     {
       ask: null,
@@ -227,7 +227,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await expect(page.getByLabel("Analysis model")).toHaveValue("gpt-5");
   await expect(thinking).toHaveValue("high");
 
-  await page.getByRole("button", { name: "Test connection" }).click();
+  await page.getByRole("button", { name: "Run test" }).click();
   const testDialog = page.getByRole("dialog", { name: "Test connection" });
   await expect(testDialog).toBeFocused();
   await page.keyboard.press("Shift+Tab");
@@ -257,7 +257,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await askTest.getByRole("button", { name: "Test ask" }).click();
   await expect(askTest).toContainText("Passed in");
   await testDialog.getByRole("button", { name: "Close connection tests" }).click();
-  await expect(page.getByRole("button", { name: "Test connection" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Run test" })).toBeFocused();
   await expect(progress).toHaveCount(0);
 
   await thinking.selectOption("low");
@@ -276,7 +276,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await expect(page.getByText("AI settings saved.")).toBeVisible();
 
   nextDiagnosticFailure = "quota";
-  await page.getByRole("button", { name: "Test connection" }).click();
+  await page.getByRole("button", { name: "Run test" }).click();
   await expect(testDialog.getByRole("button", { name: "Test analysis" })).toBeEnabled();
   await testDialog.getByRole("button", { name: "Test analysis" }).click();
   await expect(testDialog).toContainText("Failed in");

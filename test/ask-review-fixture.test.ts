@@ -7,6 +7,7 @@ import {
   askReviewPreviewEnabled,
   prepareAskReviewPreview,
   restoreAskReviewSpinner,
+  reviewAnswer,
 } from "../src/ask-review-fixture.js";
 import { AskService } from "../src/ask.js";
 import { testConfig } from "./helpers.js";
@@ -95,6 +96,43 @@ describe("disposable Ask review fixture", () => {
     expect(store.getUserByUsername("ask-review")!.passwordHash).toBe("existing-password-hash");
   });
 
+  it("upgrades only legacy fixture placeholders once and leaves other owners and retried turns intact", async () => {
+    const config = previewConfig();
+    const store = new JobStore(":memory:");
+    stores.push(store);
+    const providers = new AiProviderService(store, config);
+    const prepared = (await prepareAskReviewPreview(store, config, providers))!;
+    const ownerId = prepared.userId;
+    const other = store.createUser("legacy-other", "hash");
+    seedAskReviewFixture(store, other.id);
+    const rows = (userId: string) => store.database.prepare(`SELECT m.* FROM conversation_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.user_id=? ORDER BY m.rowid`).all(userId);
+    const legacy = (userId: string) => {
+      store.database.prepare(`UPDATE conversation_messages SET content='',sources_json='[]',sufficient=NULL,status='pending',error_code=NULL WHERE request_id='ask-review-seed-9' AND conversation_id IN (SELECT id FROM conversations WHERE user_id=?)`).run(userId);
+      store.database.prepare(`UPDATE conversation_messages SET content='',sources_json='[]',sufficient=NULL,status='failed',error_code='provider_error' WHERE request_id='ask-review-seed-1' AND conversation_id IN (SELECT id FROM conversations WHERE user_id=?)`).run(userId);
+      store.database.prepare(`UPDATE conversation_messages SET content=?,status='complete',error_code=NULL WHERE request_id='ask-review-seed-3' AND conversation_id IN (SELECT id FROM conversations WHERE user_id=?)`).run(reviewAnswer, userId);
+    };
+    legacy(ownerId);
+    legacy(other.id);
+    const otherBefore = rows(other.id);
+    await prepareAskReviewPreview(store, config, providers);
+    expect(store.listConversations(ownerId).find((chat) => chat.title === "Lower back stretches under 10 minutes")!.lastStatus).toBe("pending");
+    expect(store.listConversations(ownerId).find((chat) => chat.title === "Sourdough starter troubleshooting")!.lastStatus).toBe("failed");
+    const oldSpinner = store.listConversations(ownerId).find((chat) => chat.title === "Beginner running plans")!;
+    expect(store.getConversation(ownerId, oldSpinner.id)!.messages.find((message) => message.requestId === "ask-review-seed-9")).toMatchObject({ status: "complete", content: reviewAnswer });
+    const afterUpgrade = rows(ownerId);
+    await prepareAskReviewPreview(store, config, providers);
+    expect(rows(ownerId)).toEqual(afterUpgrade);
+    expect(rows(other.id)).toEqual(otherBefore);
+    const original = store.getConversation(ownerId, oldSpinner.id)!.messages.find((message) => message.requestId === "ask-review-seed-9")!;
+    const retry = store.beginConversationRetry(ownerId, oldSpinner.id, original.id, "reviewer-retry");
+    store.failConversationAttempt(ownerId, oldSpinner.id, retry.assistantId, "failed", "provider_error");
+    store.database.prepare("UPDATE conversation_messages SET content='',status='failed',error_code='provider_error' WHERE id=?").run(original.id);
+    const retriedBefore = rows(ownerId);
+    await prepareAskReviewPreview(store, config, providers);
+    expect(rows(ownerId)).toEqual(retriedBefore);
+    expect(rows(other.id)).toEqual(otherBefore);
+  });
+
   it("restores only the owner's deliberate spinner and never resurrects a retried answer", () => {
     const store = new JobStore(":memory:");
     stores.push(store);
@@ -102,7 +140,7 @@ describe("disposable Ask review fixture", () => {
     const other = store.createUser("spinner-other", "hash");
     seedAskReviewFixture(store, owner.id);
     const otherChat = store.createConversation(other.id)!;
-    const otherAttempt = store.beginConversationTurn(other.id, otherChat.id, "Other", "ask-review-seed-9");
+    const otherAttempt = store.beginConversationTurn(other.id, otherChat.id, "Other", "ask-review-seed-1");
     store.database.prepare("UPDATE conversation_messages SET created_at='2000-01-01' WHERE status='pending'").run();
     expect(store.recoverInterruptedConversationAttempts()).toBe(2);
     restoreAskReviewSpinner(store, owner.id);
@@ -127,12 +165,8 @@ describe("disposable Ask review fixture", () => {
     expect(fixture.conversationIds).toHaveLength(12);
     expect(chats.filter((chat) => chat.pinnedAt)).toHaveLength(1);
     expect(chats[0]!.pinnedAt).not.toBeNull();
-    expect(chats.filter((chat) => chat.lastStatus === "pending")).toHaveLength(
-      1,
-    );
-    expect(chats.filter((chat) => chat.lastStatus === "failed")).toHaveLength(
-      1,
-    );
+    expect(chats.filter((chat) => chat.lastStatus === "pending").map((chat) => chat.title)).toEqual(["Lower back stretches under 10 minutes"]);
+    expect(chats.filter((chat) => chat.lastStatus === "failed").map((chat) => chat.title)).toEqual(["Sourdough starter troubleshooting"]);
     const today = new Date();
     const day = 24 * 60 * 60 * 1000;
     const ages = chats.map((chat) =>

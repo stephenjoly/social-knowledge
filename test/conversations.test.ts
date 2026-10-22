@@ -14,9 +14,10 @@ describe("chat-first API", () => {
   const cleanups: Array<() => Promise<void>> = [];
   afterEach(async () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
+    vi.useRealTimers();
   });
 
-  async function fixture() {
+  async function fixture(afterConversationRecovery?: () => void) {
     const root = await mkdtemp(path.join(tmpdir(), "ask-contract-"));
     await mkdir(path.join(root, "data"));
     const config = testConfig(root);
@@ -52,6 +53,8 @@ describe("chat-first API", () => {
     const answer = vi.fn<Pick<AskService, "answer">["answer"]>(
       async (input) => {
         if (fail) throw new Error("synthetic failure");
+        input.onStatus?.("Synthetic status");
+        input.onDelta("Synthetic answer");
         store.completeConversationAttempt(
           input.userId,
           input.conversationId,
@@ -80,7 +83,7 @@ describe("chat-first API", () => {
     const run = vi.spyOn(providers, "runForUser");
     const app = buildApp(config, store, new EventHub(), undefined, providers, {
       answer,
-    });
+    }, afterConversationRecovery);
     cleanups.push(async () => {
       await app.close();
       store.close();
@@ -120,6 +123,8 @@ describe("chat-first API", () => {
       pinnedAt: null,
       selection: alternate,
     });
+    chat.updatedAt = "2001-01-01T00:00:00.000Z";
+    store.database.prepare("UPDATE conversations SET updated_at=? WHERE id=?").run(chat.updatedAt, chat.id);
     const url = `/api/v1/conversations/${chat.id}`;
     const later = store.createConversation(owner.id, "Later")!;
     store.database
@@ -140,6 +145,7 @@ describe("chat-first API", () => {
       payload: { title: " Renamed " },
     });
     expect(renamed.json().conversation.title).toBe("Renamed");
+    expect(renamed.json().conversation.updatedAt).toBe(chat.updatedAt);
     const pending = store.beginConversationTurn(
       owner.id,
       chat.id,
@@ -266,7 +272,18 @@ describe("chat-first API", () => {
         payload: { message: "Question" },
       });
       expect(response.statusCode).toBe(200);
-      return store.getConversation(owner.id, chat.id)!.messages.at(-1)!;
+      const assistant = store.getConversation(owner.id, chat.id)!.messages.at(-1)!;
+      const events = response.body.split("\n\n").filter(Boolean).map((packet) => ({
+        name: packet.split("\n")[0]!.slice(7),
+        data: JSON.parse(packet.split("\n")[1]!.slice(6)) as unknown,
+      }));
+      expect(events.slice(0, 2).map((event) => event.name)).toEqual(["started", "model"]);
+      expect(events[1]!.data).toEqual({ assistantId: assistant.id, selection: { provider: assistant.provider, model: assistant.model, thinkingLevel: assistant.thinkingLevel } });
+      for (const name of ["status", "delta"]) {
+        const index = events.findIndex((event) => event.name === name);
+        if (assistant.status === "complete") expect(index).toBeGreaterThan(1);
+      }
+      return assistant;
     };
     expect(await send()).toMatchObject(analysis);
     expect(run.mock.calls.at(-1)?.slice(2)).toEqual([
@@ -300,6 +317,10 @@ describe("chat-first API", () => {
       retryOf: complete.id,
       status: "complete",
     });
+    expect(retried.body.split("\n\n").slice(0, 2)).toEqual([
+      `event: started\ndata: ${JSON.stringify({ assistantId: messages.at(-1)!.id })}`,
+      `event: model\ndata: ${JSON.stringify({ assistantId: messages.at(-1)!.id, selection: alternate })}`,
+    ]);
     expect(messages.filter((message) => message.role === "user")).toHaveLength(
       3,
     );
@@ -379,6 +400,63 @@ describe("chat-first API", () => {
         })
       ).statusCode,
     ).toBe(200);
+  });
+
+  it("retries only the latest completed answer while preserving replay and failed/cancelled recovery", async () => {
+    const { app, store, owner, otherHeaders, headers } = await fixture();
+    const chat = store.createConversation(owner.id)!;
+    const first = store.beginConversationTurn(owner.id, chat.id, "First question", "first-question");
+    store.completeConversationAttempt(owner.id, chat.id, first.assistantId, "First answer", [], false);
+    const last = store.beginConversationTurn(owner.id, chat.id, "Last question", "last-question");
+    store.completeConversationAttempt(owner.id, chat.id, last.assistantId, "Last answer", [], false);
+    const retryUrl = (id: string) => `/api/v1/conversations/${chat.id}/messages/${id}/retry`;
+    const rejected = await app.inject({ method: "POST", url: retryUrl(first.assistantId), headers, payload: {} });
+    expect(rejected.statusCode).toBe(409);
+    expect(rejected.json()).toEqual({ error: "not_retryable" });
+    expect((await app.inject({ method: "POST", url: retryUrl(last.assistantId), headers: otherHeaders, payload: {} })).statusCode).toBe(404);
+    const request = { method: "POST" as const, url: retryUrl(last.assistantId), headers, payload: { requestId: "successful-retry" } };
+    expect((await app.inject(request)).statusCode).toBe(200);
+    const replay = await app.inject(request);
+    expect(replay.statusCode).toBe(409);
+    expect(replay.json().error).toBe("request_already_processed");
+    for (const status of ["failed", "cancelled"] as const) {
+      const recoverable = store.createConversation(owner.id)!;
+      const old = store.beginConversationTurn(owner.id, recoverable.id, "Recover this", `old-${status}`);
+      store.failConversationAttempt(owner.id, recoverable.id, old.assistantId, status, "provider_error");
+      const newer = store.beginConversationTurn(owner.id, recoverable.id, "Newer question", `newer-${status}`);
+      store.completeConversationAttempt(owner.id, recoverable.id, newer.assistantId, "Newer answer", [], false);
+      expect((await app.inject({ method: "POST", url: `/api/v1/conversations/${recoverable.id}/messages/${old.assistantId}/retry`, headers, payload: {} })).statusCode).toBe(200);
+    }
+  });
+
+  it("sweeps fresh interrupted attempts after they become stale, calls the hook, and clears unref timers on close", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    const afterRecovery = vi.fn();
+    const { app, store, owner, other } = await fixture(afterRecovery);
+    const staleChat = store.createConversation(owner.id)!;
+    const stale = store.beginConversationTurn(owner.id, staleChat.id, "Stale question", "stale-question");
+    store.database.prepare("UPDATE conversation_messages SET created_at=? WHERE id=?").run(new Date(Date.now() - 180000).toISOString(), stale.assistantId);
+    const freshChat = store.createConversation(other.id)!;
+    const fresh = store.beginConversationTurn(other.id, freshChat.id, "Fresh question", "fresh-question");
+    const statuses: string[] = [];
+    afterRecovery.mockImplementation(() => statuses.push(store.getConversation(other.id, freshChat.id)!.messages.find((message) => message.id === fresh.assistantId)!.status));
+    const intervals = vi.spyOn(globalThis, "setInterval");
+    await app.ready();
+    expect(store.getConversation(owner.id, staleChat.id)!.messages.find((message) => message.id === stale.assistantId)!.status).toBe("failed");
+    expect(statuses).toEqual(["pending"]);
+    const sweep = intervals.mock.results.find((_, index) => intervals.mock.calls[index]?.[1] === 30000)!.value as NodeJS.Timeout;
+    expect(sweep.hasRef()).toBe(false);
+    await vi.advanceTimersByTimeAsync(90000);
+    expect(statuses).toEqual(["pending", "pending", "pending", "pending"]);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(statuses.at(-1)).toBe("failed");
+    expect(store.getConversation(other.id, freshChat.id)!.messages.find((message) => message.id === fresh.assistantId)).toMatchObject({ status: "failed", errorCode: "provider_error" });
+    await app.close();
+    const callsAfterClose = afterRecovery.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(afterRecovery).toHaveBeenCalledTimes(callsAfterClose);
+    expect(vi.getTimerCount()).toBe(0);
+    intervals.mockRestore();
   });
 
   it("keeps Ask assignments, readiness and partial preferences account-scoped", async () => {

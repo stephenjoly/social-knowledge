@@ -232,6 +232,7 @@ export function buildApp(
   platformConnectionService = new PlatformConnectionService(store, config),
   aiProviderService = new AiProviderService(store, config),
   askService?: Pick<AskService, "answer">,
+  afterConversationRecovery?: () => void,
 ) {
   const app = Fastify({
     logger: { level: config.logLevel },
@@ -307,8 +308,15 @@ export function buildApp(
     new AskService(aiProviderService.routedClient(), config, store);
   const knowledgeExporter = new KnowledgeExporter(store, config);
   let exportCleanup: NodeJS.Timeout | null = null;
-  app.addHook("onReady", async () => {
+  let conversationRecovery: NodeJS.Timeout | null = null;
+  const recoverConversations = () => {
     store.recoverInterruptedConversationAttempts();
+    afterConversationRecovery?.();
+  };
+  app.addHook("onReady", async () => {
+    recoverConversations();
+    conversationRecovery = setInterval(recoverConversations, 30000);
+    conversationRecovery.unref();
     await knowledgeExporter.recoverInterrupted();
     await knowledgeExporter.cleanup();
     exportCleanup = setInterval(
@@ -324,6 +332,7 @@ export function buildApp(
   });
   app.addHook("onClose", async () => {
     if (exportCleanup) clearInterval(exportCleanup);
+    if (conversationRecovery) clearInterval(conversationRecovery);
   });
   const streamAnswer = async (
     request: any,
@@ -367,6 +376,7 @@ export function buildApp(
       if (!finished) controller.abort();
     });
     send("started", { assistantId });
+    if (selection) send("model", { assistantId, selection });
     try {
       if (smokeMode === "failure") throw new Error("smoke_failure");
       if (smokeMode === "slow")

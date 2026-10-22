@@ -152,7 +152,7 @@ test.describe.serial("account profile and access management", () => {
     const role = memberRow.getByLabel("Role for account-member");
     const roleBounds = await memberRow.locator(".ui-select").boundingBox();
     expect(roleBounds).not.toBeNull();
-    expect(roleBounds!.height).toBeCloseTo(32, 0);
+    expect(roleBounds!.height).toBeCloseTo(30, 0);
     await expect(role).toHaveValue("member");
     await role.selectOption("admin");
     await expect(page.getByRole("status").first()).toContainText("Account updated.");

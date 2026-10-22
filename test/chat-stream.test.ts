@@ -17,6 +17,9 @@ type TestMessage = {
   status: "pending" | "complete" | "failed" | "cancelled";
   errorCode: string | null;
   userMessageId?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  thinkingLevel?: string | null;
 };
 
 type TestConversation = {
@@ -42,6 +45,29 @@ function message(
 }
 
 describe("SSE stream helpers", () => {
+  it("accepts resolved model metadata before text and preserves it across malformed model events", () => {
+    const decoder = new SseDecoder();
+    const selection = { provider: "cerebras", model: "qwen-3.8-27b", thinkingLevel: null };
+    const events = decoder.push(`event: started\ndata: {"assistantId":"a"}\n\nevent: model\ndata: ${JSON.stringify({ assistantId: "a", selection })}\n\nevent: delta\ndata: {"text":"Answer"}\n\n`);
+    let state = initialStreamState();
+    expect(state.selection).toBeNull();
+    for (const event of events) state = applyStreamEvent(state, event);
+    expect(state).toMatchObject({ assistantId: "a", selection, text: "Answer", status: "pending" });
+    for (const malformed of [null, {}, { provider: 1, model: "gpt-5", thinkingLevel: null }, { provider: "openai", model: {}, thinkingLevel: null }, { provider: "openai", model: "gpt-5", thinkingLevel: {} }, { provider: "openai", model: "gpt-5" }]) {
+      state = applyStreamEvent(state, { event: "model", data: { selection: malformed } });
+      expect(state.selection).toEqual(selection);
+      expect(state.text).toBe("Answer");
+    }
+  });
+
+  it("keeps streamed model metadata until an authoritative completed snapshot replaces it", () => {
+    const local: TestConversation = { id: "chat", messages: [{ ...message("a", "assistant", "Partial", "pending"), provider: "cerebras", model: "qwen-3.8-27b", thinkingLevel: null }] };
+    const pending: TestConversation = { id: "chat", messages: [{ ...message("a", "assistant", "", "pending"), provider: null, model: null, thinkingLevel: null }] };
+    const merged = mergeConversationSnapshot(local, pending, { assistantId: "a", partialText: "Partial" });
+    expect(merged.messages[0]).toMatchObject({ provider: "cerebras", model: "qwen-3.8-27b", thinkingLevel: null, content: "Partial" });
+    const complete: TestConversation = { id: "chat", messages: [{ ...message("a", "assistant", "Final", "complete"), provider: "openai", model: "gpt-5", thinkingLevel: "high" }] };
+    expect(mergeConversationSnapshot(merged, complete, { assistantId: "a", partialText: "Partial" }).messages[0]).toMatchObject({ provider: "openai", model: "gpt-5", thinkingLevel: "high", content: "Final" });
+  });
   it("handles fragmented, combined, and final unterminated records", () => {
     const decoder = new SseDecoder();
     expect(decoder.push('event: delta\ndata: {"text":"fi')).toEqual([]);

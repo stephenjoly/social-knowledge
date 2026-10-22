@@ -76,6 +76,52 @@ describe("AskService", () => {
   const stores: JobStore[] = [];
   afterEach(() => stores.splice(0).forEach((store) => store.close()));
 
+  it.each([
+    { status: "complete", chain: false, checkpoint: false },
+    { status: "failed", chain: false, checkpoint: false },
+    { status: "cancelled", chain: false, checkpoint: false },
+    { status: "pending", chain: false, checkpoint: false },
+    { status: "complete", chain: true, checkpoint: false },
+    { status: "complete", chain: true, checkpoint: true },
+  ] as const)("uses one successful answer in context after a $status retry (chain=$chain, checkpoint=$checkpoint)", async ({ status, chain, checkpoint }) => {
+    const store = new JobStore(":memory:");
+    stores.push(store);
+    const owner = store.createUser("retry-context", "hash");
+    const capture = addCapture(store, owner.id, { sourceHash: "retry-context", title: "Saved project", synopsis: "A saved project", transcript: "Prime, coat and seal the saved project." });
+    const conversation = store.createConversation(owner.id)!;
+    const original = store.beginConversationTurn(owner.id, conversation.id, "Tell me about my saved project", "original-question");
+    const sources = [{ id: capture.id, citation: 1, title: capture.title, creator: capture.creator, platform: capture.platform, synopsis: capture.synopsis, sourceUrl: capture.sourceUrl, breadcrumb: [] }];
+    store.completeConversationAttempt(owner.id, conversation.id, original.assistantId, "Original project answer [1]", sources, true);
+    if (checkpoint) store.saveConversationCompaction({
+      userId: owner.id, conversationId: conversation.id, throughMessageId: original.assistantId,
+      summary: "STALE ORIGINAL CHECKPOINT", sourceIds: [capture.id], provider: null, model: null, estimatedTokens: 10,
+    });
+    let retry = store.beginConversationRetry(owner.id, conversation.id, original.assistantId, "retry-question");
+    if (chain) {
+      store.failConversationAttempt(owner.id, conversation.id, retry.assistantId, "failed", "provider_error");
+      retry = store.beginConversationRetry(owner.id, conversation.id, retry.assistantId, "chain-retry-question");
+    }
+    if (status === "complete") store.completeConversationAttempt(owner.id, conversation.id, retry.assistantId, "Replacement project answer [1]", sources, true);
+    else if (status !== "pending") store.failConversationAttempt(owner.id, conversation.id, retry.assistantId, status, "provider_error");
+    const current = status === "pending" ? retry : store.beginConversationTurn(owner.id, conversation.id, "Summarize my saved project", "followup-question");
+    const create = vi.fn().mockResolvedValueOnce({ output_text: JSON.stringify({ action: "reuse_sources", standaloneQuestion: "Saved project", responseInstructions: "Be brief", referencedCaptureIds: [capture.id] }) }).mockResolvedValueOnce(streamedJson({ answer: "Project follow-up [1]", citedCaptureIds: [capture.id], sufficient: true }));
+    await new AskService({ responses: { create } } as unknown as OpenAI, testConfig("/tmp/ask-retry-context"), store).answer({
+      userId: owner.id, conversationId: conversation.id, assistantId: current.assistantId,
+      question: "Summarize my saved project", signal: new AbortController().signal, onDelta: () => undefined,
+    });
+    const plannerInput = create.mock.calls[0]![0].input as Array<{ role: string; content: string }>;
+    expect(plannerInput.filter((message) => message.role === "assistant").map((message) => message.content)).toEqual([
+      status === "complete" ? "Replacement project answer [1]" : "Original project answer [1]",
+    ]);
+    expect(JSON.stringify(plannerInput)).not.toContain("STALE ORIGINAL CHECKPOINT");
+    const answerInput = create.mock.calls[1]![0].input as Array<{ role: string; content: string }>;
+    expect(answerInput.filter((message) => message.role === "assistant").map((message) => message.content)).toEqual([
+      status === "complete" ? "Replacement project answer [1]" : "Original project answer [1]",
+    ]);
+    // Superseded turns remain in the transcript; only provider context is filtered.
+    expect(store.getConversation(owner.id, conversation.id)!.messages.find((message) => message.id === original.assistantId)!.content).toBe("Original project answer [1]");
+  });
+
   it("retrieves saved knowledge and persists a cited answer", async () => {
     const store = new JobStore(":memory:");
     stores.push(store);

@@ -2446,9 +2446,9 @@ export class JobStore {
       if (input.title !== undefined)
         this.database
           .prepare(
-            "UPDATE conversations SET title=?,updated_at=? WHERE id=? AND user_id=?",
+            "UPDATE conversations SET title=? WHERE id=? AND user_id=?",
           )
-          .run(input.title, new Date().toISOString(), id, userId);
+          .run(input.title, id, userId);
       if (input.pinned !== undefined)
         this.database
           .prepare(
@@ -2772,6 +2772,12 @@ export class JobStore {
           status: existing.status,
           existing: true,
         };
+      if (failed.status === "complete") {
+        const latest = this.database.prepare(
+          "SELECT id FROM conversation_messages WHERE conversation_id=? AND role='assistant' ORDER BY created_at DESC,rowid DESC LIMIT 1",
+        ).get(conversationId) as { id: string } | undefined;
+        if (latest?.id !== failed.id) throw new Error("not_retryable");
+      }
       if (
         this.database
           .prepare(

@@ -30,6 +30,7 @@ type StoredMessage = {
   sufficient: boolean | null;
   status: string;
   userMessageId: string | null;
+  retryOf: string | null;
 };
 
 type ProviderMessage = {
@@ -330,12 +331,39 @@ function sourceDirectoryLine(source: SourceDirectoryItem) {
 function completeMessages(conversation: {
   messages: StoredMessage[];
 }): StoredMessage[] {
+  const indexed = new Map(conversation.messages.map((message, index) => [message.id, { message, index }]));
+  const superseded = new Set<string>();
+  for (const [index, message] of conversation.messages.entries()) {
+    if (message.role !== "assistant" || message.status !== "complete") continue;
+    let ancestorId = message.retryOf;
+    let before = index;
+    while (ancestorId) {
+      const ancestor = indexed.get(ancestorId);
+      // Follow only earlier rows in this owned conversation, avoiding cycles.
+      if (!ancestor || ancestor.index >= before || ancestor.message.role !== "assistant") break;
+      superseded.add(ancestorId);
+      before = ancestor.index;
+      ancestorId = ancestor.message.retryOf;
+    }
+  }
   return conversation.messages.filter(
     (message) =>
       message.status === "complete" &&
+      !superseded.has(message.id) &&
       Boolean(message.content.trim()) &&
       (message.role === "user" || message.role === "assistant"),
   );
+}
+
+/** A completed retry invalidates any checkpoint that summarized its old answer. */
+function usableCheckpoint(conversation: { messages: StoredMessage[] }, checkpoint: ConversationCompaction | null) {
+  if (!checkpoint) return null;
+  const boundary = conversation.messages.findIndex((message) => message.id === checkpoint.throughMessageId);
+  if (boundary < 0) return null;
+  const retained = new Set(completeMessages(conversation).map((message) => message.id));
+  return conversation.messages.slice(0, boundary + 1).some((message) =>
+    message.role === "assistant" && message.status === "complete" && message.content.trim() && !retained.has(message.id),
+  ) ? null : checkpoint;
 }
 
 function providerMessages(
@@ -515,10 +543,10 @@ export class AskService {
     signal: AbortSignal,
     onStatus: (status: string) => void,
   ) {
-    let checkpoint = this.store.latestConversationCompaction(
+    let checkpoint = usableCheckpoint(conversation, this.store.latestConversationCompaction(
       userId,
       conversation.id,
-    );
+    ));
     let messages = completeMessages(conversation);
     let visible = providerMessages(messages, checkpoint);
     const threshold = Math.floor(
@@ -727,10 +755,10 @@ export class AskService {
       isOpaqueArchiveMiss(input.question) &&
       !this.store.searchKnowledge(input.userId, input.question, 1).length
     ) {
-      const checkpoint = this.store.latestConversationCompaction(
+      const checkpoint = usableCheckpoint(conversation, this.store.latestConversationCompaction(
         input.userId,
         conversation.id,
-      );
+      ));
       const visible = providerMessages(completedBeforeTurn, checkpoint);
       const answer =
         "I couldn’t find anything in your saved Social Knowledge archive that answers that question. Try using a place, creator, product, or topic from a capture you’ve saved.";

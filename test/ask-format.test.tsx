@@ -11,6 +11,7 @@ import {
   selectionFor,
   sourceAttribution,
   suggestionsFrom,
+  suggestionMaxLength,
   thumbTint,
   usableSelection,
 } from "../web/pages/ask-format";
@@ -146,7 +147,7 @@ describe("answerWithCaptureLinks", () => {
 });
 
 describe("suggestionsFrom", () => {
-  it("builds four prompts from the account's categories and topics", () => {
+  it("builds three short prompts with category attribution from the account's facets", () => {
     expect(
       suggestionsFrom({
         categories: [
@@ -160,19 +161,41 @@ describe("suggestionsFrom", () => {
         ],
       }),
     ).toEqual([
-      "Summarise my saved Lisbon recommendations",
-      "What did I save about restaurants?",
-      "What are the key takeaways from my Travel saves?",
-      "Which endurance tips came up more than once?",
+      { text: "Summarise my travel saves", category: "Travel" },
+      { text: "Lisbon I saved this month", category: "Lisbon" },
+      { text: "What I saved about restaurants", category: null },
     ]);
   });
 
   it("falls back to generic prompts for an empty archive", () => {
     const prompts = suggestionsFrom({ categories: [], topics: [] });
-    expect(prompts).toHaveLength(4);
-    expect(new Set(prompts).size).toBe(4);
+    expect(prompts).toEqual([
+      { text: "Summarise my recent saves", category: null },
+      { text: "Places I saved this month", category: "Travel" },
+      { text: "Tips I saved more than once", category: null },
+    ]);
+    expect(new Set(prompts.map((prompt) => prompt.text)).size).toBe(3);
     expect(suggestionsFrom(null)).toEqual(prompts);
   });
+  it("drops oversized chips while keeping one short prompt per available kind", () => {
+    const prompts = suggestionsFrom({
+      categories: [
+        { label: "Health & Wellness", kind: "domain", count: 5 },
+        { label: "Food & Drink", kind: "domain", count: 3 },
+        { label: "Clothing & Accessories", kind: "subcategory", count: 9 },
+        { label: "Recipes", kind: "subcategory", count: 3 },
+        { label: "Other", kind: "domain", count: 100 },
+      ],
+      topics: [{ label: "Leadership", count: 4 }],
+    });
+    expect(prompts).toEqual([
+      { text: "Summarise my wellness saves", category: "Health & Wellness" },
+      { text: "Recipes I saved this month", category: "Recipes" },
+      { text: "What I saved about leadership", category: null },
+    ]);
+    expect(prompts.every((prompt) => prompt.text.length <= suggestionMaxLength)).toBe(true);
+  });
+
 });
 
 describe("conversationTimeLabel", () => {
