@@ -25,8 +25,10 @@ import {
   Input,
   Select,
   StatusPill,
+  Toggle,
   cx,
 } from "./components/ui/primitives";
+import type { AskPreferences } from "./shared/types";
 import {
   Feedback,
   SaveBar,
@@ -137,6 +139,8 @@ export function MyAccount({
   onOpenLanguage,
   noteLanguage = null,
   onUnsavedChange,
+  askPreferences,
+  onAskPreferencesChange,
 }: {
   user: AccountUser;
   onUserChange: (user: AccountUser) => void;
@@ -147,7 +151,17 @@ export function MyAccount({
   noteLanguage?: string | null;
   /** Receives a summary of unsaved profile edits, or null. */
   onUnsavedChange?: (summary: string | null) => void;
+  /** Ask preferences save as soon as they change. */
+  askPreferences?: AskPreferences;
+  onAskPreferencesChange?: (patch: Partial<AskPreferences>) => Promise<boolean>;
 }) {
+  const [preferenceError, setPreferenceError] = useState("");
+  const changePreference = async (patch: Partial<AskPreferences>) => {
+    if (!onAskPreferencesChange) return;
+    setPreferenceError("");
+    if (!(await onAskPreferencesChange(patch)))
+      setPreferenceError("Preferences could not be saved. Try again.");
+  };
   const [displayName, setDisplayName] = useState(user.displayName || "");
   const [username, setUsername] = useState(user.username);
   const [saving, setSaving] = useState(false);
@@ -385,6 +399,62 @@ export function MyAccount({
           </ActionButton>
         </CardRow>
       </SettingsSection>
+      {askPreferences && onAskPreferencesChange && (
+        <SettingsSection
+          title="Preferences"
+          description="Saved to your account."
+          after={<Feedback error>{preferenceError}</Feedback>}
+        >
+          <CardRow
+            title={<span id="pref-sources-panel">Show sources panel by default</span>}
+            description="You can always toggle it with S."
+          >
+            <Toggle
+              aria-labelledby="pref-sources-panel"
+              checked={askPreferences.askSourcesPanel}
+              onCheckedChange={(checked) => void changePreference({ askSourcesPanel: checked })}
+            />
+          </CardRow>
+          <CardRow title={<span id="pref-send-with">Send messages with</span>} last>
+            <div
+              className="st-segmented"
+              role="radiogroup"
+              aria-labelledby="pref-send-with"
+              onKeyDown={(event) => {
+                if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+                event.preventDefault();
+                const group = event.currentTarget;
+                const next = askPreferences.sendWith === "enter" ? "mod-enter" : "enter";
+                void changePreference({ sendWith: next });
+                window.requestAnimationFrame(() =>
+                  group
+                    .querySelector<HTMLButtonElement>('[aria-checked="true"]')
+                    ?.focus(),
+                );
+              }}
+            >
+              {(
+                [
+                  ["enter", "Enter"],
+                  ["mod-enter", "⌘ Enter"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={askPreferences.sendWith === value}
+                  tabIndex={askPreferences.sendWith === value ? 0 : -1}
+                  className={cx(askPreferences.sendWith === value && "active")}
+                  onClick={() => void changePreference({ sendWith: value })}
+                  key={value}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </CardRow>
+        </SettingsSection>
+      )}
       <SettingsSection title="Your archive">
         {onOpenLanguage && (
           <CardRow

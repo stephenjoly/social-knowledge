@@ -14,14 +14,6 @@
   font-display: swap;
 }
 
-/* Settings draws its own 44px 72px content frame. */
-main.shell:has(> .sk-settings) {
-  width: auto;
-  max-width: none;
-  margin: 0;
-  padding: 0;
-}
-
 .sk-settings {
   min-height: 100dvh;
   padding: 44px 72px 72px;
@@ -83,11 +75,258 @@ main.shell:has(> .sk-settings) {
   gap: 30px;
 }
 
-/* Page header */
+/* Settings modal: 900×660 over the current page, section nav on the left. */
+.sm-layer {
+  position: fixed;
+  z-index: 70;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #18181b47;
+}
+
+.sm-dialog.sk-settings {
+  display: flex;
+  width: min(900px, 100%);
+  height: min(660px, 100%);
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-dialog);
+  background: var(--surface);
+  box-shadow: var(--shadow-dialog);
+  line-height: 1.5;
+}
+
+.sm-nav {
+  display: flex;
+  width: 224px;
+  flex: none;
+  flex-direction: column;
+  gap: 1px;
+  padding: 18px 10px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--canvas);
+}
+
+.sk-settings .sm-nav-title {
+  margin: 0 10px 6px;
+  color: var(--ink);
+  font-size: 1.0625rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.5px;
+}
+
+.sm-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sm-nav-label {
+  padding: 12px 10px 6px;
+  color: var(--muted);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.sk-settings .sm-nav-item {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: var(--type-nav);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sk-settings .sm-nav-item:hover {
+  background: var(--subtle);
+}
+
+.sk-settings .sm-nav-item.active {
+  background: #ececee;
+  color: var(--ink);
+  font-weight: var(--weight-medium);
+}
+
+.sm-nav-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.sm-nav-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--amber);
+}
+
+.sk-settings .sm-nav-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding: 8px 10px 0;
+  color: var(--muted);
+  font-size: 0.71875rem;
+}
+
+.sm-pane {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.sm-pane-head {
+  display: flex;
+  height: 60px;
+  flex: none;
+  align-items: center;
+  padding: 0 14px 0 32px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.sk-settings .sm-title {
+  flex: 1;
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.125rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.5px;
+  outline: none;
+}
+
+.sk-settings .sm-title:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--green);
+  outline-offset: 4px;
+}
+
+.sk-settings .sm-close {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+  place-items: center;
+  cursor: pointer;
+}
+
+.sk-settings .sm-close:hover {
+  background: var(--subtle);
+  color: var(--ink);
+}
+
+.sm-pane-body {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 32px 28px;
+  overflow-y: auto;
+}
+
+.sm-pane-body .st-column {
+  max-width: none;
+  gap: 22px;
+  padding-top: 14px;
+}
+
+.sm-pane-body .st-section {
+  gap: 10px;
+}
+
+.sm-pane-body .st-row-controls {
+  gap: 8px;
+}
+
+.sm-pane-body .st-control-130,
+.sm-pane-body .st-control-110,
+.sm-pane-body .st-control-172 {
+  width: 112px;
+}
+
+.sm-pane-body .st-task-row .st-control-110 {
+  width: 120px;
+}
+
+.sm-pane-body .app-return-banner {
+  margin: 14px 0 0;
+}
+
+.sm-savebar-slot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+}
+
+.sm-savebar-slot:empty {
+  display: none;
+}
+
+.st-new-tag {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--green-tint);
+  color: var(--green-ink);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-semibold);
+  vertical-align: 1px;
+}
+
+/* Two-option segmented control (Send messages with). */
+.st-segmented {
+  display: inline-flex;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.sk-settings .st-segmented button {
+  padding: 3px 10px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted-strong);
+  font-size: var(--type-metadata);
+  cursor: pointer;
+}
+
+.sk-settings .st-segmented button:first-child {
+  border-left: 0;
+}
+
+.sk-settings .st-segmented button.active {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+/* Page header: the topic's lede and optional action. */
 .st-page-header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 16px;
+}
+
+.st-lede {
+  min-width: 0;
+  flex: 1;
 }
 
 .st-page-header-text {
@@ -134,7 +373,7 @@ main.shell:has(> .sk-settings) {
 
 .st-description {
   color: var(--muted);
-  font-size: var(--type-page-description);
+  font-size: var(--type-nav);
   line-height: var(--leading-page-description);
 }
 
@@ -319,67 +558,64 @@ main.shell:has(> .sk-settings) {
   cursor: progress;
 }
 
-/* Save bar */
+/* Unsaved-changes bar, pinned under the Settings pane. */
 .st-savebar {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 10px 10px 16px;
-  border-radius: var(--radius-card);
-  background: var(--ink);
-  box-shadow: 0 8px 24px #18181b33;
-}
-
-.st-savebar-icon {
   flex: none;
-  color: var(--amber);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 10px 32px;
+  border-top: 1px solid var(--border);
+  background: var(--amber-tint);
+  color: var(--amber-ink);
 }
 
 .st-savebar-message {
   min-width: 0;
   flex: 1;
-  color: var(--subtle);
+  color: var(--amber-ink);
   font-size: var(--type-control);
 }
 
 .st-savebar-discard,
 .st-savebar-save {
   display: inline-flex;
-  height: 32px;
+  height: 30px;
   flex: none;
   align-items: center;
-  border: 0;
+  padding: 0 12px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-control);
   font-size: var(--type-control);
+  font-weight: var(--weight-regular);
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .st-savebar-discard {
-  padding: 0 12px;
-  background: transparent;
-  color: var(--faint);
-  font-weight: var(--weight-medium);
+  background: var(--surface);
+  color: var(--ink-soft);
 }
 
 .st-savebar-discard:hover:not(:disabled) {
-  background: #ffffff14;
+  border-color: var(--faint);
+  color: var(--ink);
 }
 
 .st-savebar-save {
-  padding: 0 14px;
-  background: var(--surface);
-  color: var(--ink);
-  font-weight: var(--weight-semibold);
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: var(--shadow-primary-button);
+  color: var(--surface);
 }
 
 .st-savebar-save:hover:not(:disabled) {
-  background: var(--subtle);
+  background: var(--accent-hover);
 }
 
 .st-savebar button:focus-visible {
-  outline: 2px solid var(--surface);
+  outline: 2px solid var(--green);
   outline-offset: 2px;
 }
 
@@ -1157,6 +1393,67 @@ main.shell:has(> .sk-settings) {
 @media (max-width: 1100px) {
   .sk-settings {
     padding: 36px 40px 64px;
+  }
+}
+
+/* Narrow screens: Settings fills the screen; sections scroll in a row. */
+@media (max-width: 720px) {
+  .sm-layer {
+    padding: 0;
+  }
+
+  .sm-dialog.sk-settings {
+    width: 100%;
+    height: 100dvh;
+    flex-direction: column;
+    border-radius: 0;
+  }
+
+  .sm-nav {
+    width: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sk-settings .sm-nav-title,
+  .sm-nav-label,
+  .sk-settings .sm-nav-foot {
+    display: none;
+  }
+
+  .sm-nav-group {
+    flex-direction: row;
+    gap: 4px;
+  }
+
+  .sk-settings .sm-nav-item {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  .sm-pane {
+    min-height: 0;
+  }
+
+  .sm-pane-head {
+    height: 52px;
+    padding: 0 8px 0 16px;
+  }
+
+  .sm-pane-body {
+    padding: 4px 16px 24px;
+  }
+
+  .sm-pane-body .st-savebar,
+  .sm-savebar-slot .st-savebar {
+    position: static;
+    padding: 10px 16px;
   }
 }
 

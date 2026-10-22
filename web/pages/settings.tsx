@@ -1,23 +1,25 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
   Archive,
-  ArrowRight,
-  AudioLines,
   Bot,
-  Brain,
   Code,
   Copy,
   Cpu,
+  Database,
   Download,
   FileArchive,
   Info,
   KeyRound,
+  Link2,
   MessageCircle,
   Plus,
   Smartphone,
   Sparkles,
   Upload,
+  UserRound,
+  UsersRound,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -25,6 +27,7 @@ import {
   CardRow,
   IconBox,
   Input,
+  Keycap,
   Select,
   StatusPill,
   Toggle,
@@ -41,6 +44,7 @@ import {
   Feedback,
   InstagramIcon,
   SaveBar,
+  SaveBarSlot,
   SettingsDialog,
   SettingsPageHeader,
   SettingsSection,
@@ -65,6 +69,7 @@ import type {
   AiTestCode,
   AiTestResult,
   AiTestState,
+  AskPreferences,
   SettingsTopic,
 } from "../shared/types";
 import { api } from "../shared/api";
@@ -74,18 +79,41 @@ import {
   analysisOptions,
 } from "../shared/format";
 
-const settingsTopics: SettingsTopic[] = [
-  "overview",
-  "ai",
-  "connections",
-  "api",
-  "data",
-  "account",
-  "people",
-  "all",
+type ContentTopic = "account" | "ai" | "connections" | "api" | "data" | "people";
+
+const settingsGroups: Array<{
+  label: string;
+  adminOnly?: boolean;
+  topics: Array<{ id: ContentTopic; label: string; icon: LucideIcon }>;
+}> = [
+  { label: "Account", topics: [{ id: "account", label: "My account", icon: UserRound }] },
+  {
+    label: "Workspace",
+    topics: [
+      { id: "ai", label: "AI & models", icon: Bot },
+      { id: "connections", label: "Connections", icon: Link2 },
+      { id: "api", label: "API keys", icon: KeyRound },
+      { id: "data", label: "Data & export", icon: Database },
+    ],
+  },
+  {
+    label: "Administration",
+    adminOnly: true,
+    topics: [{ id: "people", label: "People & access", icon: UsersRound }],
+  },
 ];
 
-type ContentTopic = "account" | "ai" | "connections" | "api" | "data" | "people";
+const topicTitles: Record<ContentTopic, string> = Object.fromEntries(
+  settingsGroups.flatMap((group) => group.topics.map((topic) => [topic.id, topic.label])),
+) as Record<ContentTopic, string>;
+
+const taskModelRows = ["transcription", "analysis", "ask"] as const;
+type TaskModelRow = (typeof taskModelRows)[number];
+const taskLabels: Record<TaskModelRow, string> = {
+  transcription: "Transcription",
+  analysis: "Analysis",
+  ask: "Ask AI default",
+};
 
 const languages = [
   "English",
@@ -171,16 +199,18 @@ function describeAiChanges(
   draft: AiDraftSelections,
   providers: AiProvider[],
 ) {
-  const providerName = (selection: AiSelection | null) =>
-    selection
-      ? (providers.find((item) => item.id === selection.provider)?.name ??
-        selection.provider)
-      : "not assigned";
   const changes: string[] = [];
-  for (const task of ["transcription", "analysis"] as const) {
+  for (const task of taskModelRows) {
+    const providerName = (selection: AiSelection | null) =>
+      selection
+        ? (providers.find((item) => item.id === selection.provider)?.name ??
+          selection.provider)
+        : task === "ask"
+          ? "same as Analysis"
+          : "not assigned";
     const before = saved[task];
     const after = draft[task];
-    const label = task === "transcription" ? "Transcription" : "Analysis";
+    const label = taskLabels[task];
     if (before?.provider !== after?.provider)
       changes.push(
         `${label} provider changed from ${providerName(before)} to ${providerName(after)}`,
@@ -189,12 +219,12 @@ function describeAiChanges(
       changes.push(
         `${label} model changed from ${before?.model ?? "none"} to ${after?.model ?? "none"}`,
       );
-    else if (task === "analysis") {
+    else if (task !== "transcription") {
       const was = (before as AiAnalysisSelection | null)?.thinkingLevel ?? null;
       const now = (after as AiAnalysisSelection | null)?.thinkingLevel ?? null;
       if (was !== now)
         changes.push(
-          `Analysis thinking changed from ${was ?? "default"} to ${now ?? "default"}`,
+          `${label} thinking changed from ${was ?? "default"} to ${now ?? "default"}`,
         );
     }
   }
@@ -213,7 +243,10 @@ function sameAiSelections(left: AiDraftSelections, right: AiDraftSelections) {
     left.transcription?.model === right.transcription?.model &&
     left.analysis?.provider === right.analysis?.provider &&
     left.analysis?.model === right.analysis?.model &&
-    left.analysis?.thinkingLevel === right.analysis?.thinkingLevel
+    left.analysis?.thinkingLevel === right.analysis?.thinkingLevel &&
+    left.ask?.provider === right.ask?.provider &&
+    left.ask?.model === right.ask?.model &&
+    left.ask?.thinkingLevel === right.ask?.thinkingLevel
   );
 }
 
@@ -221,14 +254,16 @@ function selectionsForConnectedProviders(
   selections: AiDraftSelections,
   providers: AiProvider[],
 ): AiDraftSelections {
-  const selectionFor = (task: "transcription" | "analysis") => {
+  const selectionFor = (task: TaskModelRow) => {
     const selection = selections[task];
     const provider = providers.find((item) => item.id === selection?.provider);
-    return provider?.connected && provider.capabilities[task] ? selection : null;
+    const capability = task === "transcription" ? "transcription" : "analysis";
+    return provider?.connected && provider.capabilities[capability] ? selection : null;
   };
   return {
     transcription: selectionFor("transcription"),
     analysis: selectionFor("analysis") as AiAnalysisSelection | null,
+    ask: selectionFor("ask") as AiAnalysisSelection | null,
   };
 }
 
@@ -283,30 +318,101 @@ function matchesCurrentTestSelection(
     (result.selection as AiAnalysisSelection).thinkingLevel;
 }
 
+/**
+ * Settings, shown as a modal over the current page. The owner of navigation
+ * decides when it opens and closes; `onClose` is called for ×, Esc and the
+ * scrim, and should confirm unsaved edits first.
+ */
 export function Settings({
   user,
   onUserChange,
   onSignOut,
   topic,
   onTopicChange,
+  onClose,
   onUnsavedChange,
   shortcutGuideRequest = 0,
   onAiReadinessChange,
+  onAiStateChange,
+  connectionsNeedAttention = false,
+  banner,
+  askPreferences,
+  onAskPreferencesChange,
 }: {
   user: AccountUser | null;
   onUserChange: (user: AccountUser) => void;
   onSignOut: () => Promise<void>;
   topic: SettingsTopic;
   onTopicChange: (topic: SettingsTopic) => void;
+  onClose: () => void;
   /** Receives a plain-language summary of unsaved edits, or null, so navigation can ask first. */
   onUnsavedChange?: (summary: string | null) => void;
   /** Each increment opens API keys with the iPhone Shortcut setup guide expanded. */
   shortcutGuideRequest?: number;
   /** Called whenever the saved AI setup readiness is known or changes. */
   onAiReadinessChange?: (readiness: { capture: boolean; ask: boolean }) => void;
+  /** Called after providers or task models are saved, so Ask can refresh its picker. */
+  onAiStateChange?: (state: AiProviderState) => void;
+  connectionsNeedAttention?: boolean;
+  /** Context shown above the topic, such as a capture waiting on this fix. */
+  banner?: ReactNode;
+  askPreferences?: AskPreferences;
+  onAskPreferencesChange?: (patch: Partial<AskPreferences>) => Promise<boolean>;
 }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const dialog = useRef<HTMLDivElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const paneBody = useRef<HTMLDivElement>(null);
+  const [saveBarSlot, setSaveBarSlot] = useState<HTMLDivElement | null>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  // Modal contract: focus moves in, Tab stays inside, Esc closes, and focus
+  // returns to whatever opened Settings. Dialogs opened from a topic own the
+  // keyboard while they are open.
+  useEffect(() => {
+    const opener =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = window.requestAnimationFrame(() => heading.current?.focus());
+    const onKey = (event: KeyboardEvent) => {
+      const root = dialog.current;
+      if (!root || root.querySelector('[aria-modal="true"]')) return;
+      if (event.key === "Escape") {
+        if (event.defaultPrevented) return;
+        event.preventDefault();
+        closeRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = [
+        ...root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((item) => item.offsetParent !== null);
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!first || !last) return;
+      const active = document.activeElement;
+      if (!root.contains(active)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && (active === first || active === heading.current)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKey);
+      window.requestAnimationFrame(() => {
+        if (opener?.isConnected) opener.focus();
+      });
+    };
+  }, []);
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [name, setName] = useState("iPhone Shortcut");
   const [token, setToken] = useState("");
@@ -639,10 +745,12 @@ export function Settings({
         body: JSON.stringify({
           transcription: nextSelections.transcription,
           analysis: nextSelections.analysis,
+          ask: nextSelections.ask,
         }),
       });
       invalidateTests(["transcription", "analysis", "ask"]);
       applyAiState(result, true);
+      onAiStateChange?.(result);
       setProviderMessageKind("success");
       setProviderMessage("AI settings saved.");
     } catch (error) {
@@ -660,7 +768,7 @@ export function Settings({
     }
   }
   function updateTaskDraft(
-    task: "transcription" | "analysis",
+    task: TaskModelRow,
     selection: AiSelection | AiAnalysisSelection | null,
   ) {
     setDraftSelections((current) => {
@@ -683,6 +791,7 @@ export function Settings({
       );
       invalidateTests(["transcription", "analysis", "ask"]);
       applyAiState(result);
+      onAiStateChange?.(result);
       setProviderMessageKind("success");
       setProviderMessage(
         `${definition.name} disconnected. Its draft assignment was cleared.`,
@@ -720,6 +829,7 @@ export function Settings({
         { method: "PUT", body: JSON.stringify({ apiKey: providerApiKey }) },
       );
       applyAiState(state);
+      onAiStateChange?.(state);
       setProviderApiKey("");
       const current = state.providers.find(
         (item) => item.id === selectedAiProvider,
@@ -755,33 +865,12 @@ export function Settings({
     (topic === "people" && user?.role !== "admin")
       ? "account"
       : topic;
-  const deepLinked = useRef(false);
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const requested = url.searchParams.get("topic");
-    if (requested === null) return;
-    url.searchParams.delete("topic");
-    window.history.replaceState(
-      window.history.state,
-      "",
-      `${url.pathname}${url.search}${url.hash}`,
-    );
-    if ((settingsTopics as string[]).includes(requested)) {
-      deepLinked.current = true;
-      setTopic(requested as SettingsTopic);
-    }
-  }, []);
   const previousView = useRef(view);
   useEffect(() => {
     if (previousView.current === view) return;
     previousView.current = view;
-    if (deepLinked.current) {
-      deepLinked.current = false;
-      return;
-    }
-    const frame = window.requestAnimationFrame(() =>
-      document.querySelector<HTMLElement>(".settings-topic-heading")?.focus(),
-    );
+    paneBody.current?.scrollTo({ top: 0 });
+    const frame = window.requestAnimationFrame(() => heading.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [view]);
   const configuredAiProviders = aiState?.providers ?? [];
@@ -791,6 +880,7 @@ export function Settings({
   const currentAiSelections = draftSelections ?? aiState?.selections ?? {
     transcription: null,
     analysis: null,
+    ask: null,
   };
   const aiSettingsDirty = Boolean(
     aiState && !sameAiSelections(currentAiSelections, aiState.selections),
@@ -1022,8 +1112,83 @@ export function Settings({
       </ol>
     </>
   );
+  const visibleGroups = settingsGroups.filter(
+    (group) => !group.adminOnly || user?.role === "admin",
+  );
   return (
-    <div className="sk-settings settings-workspace">
+    <div
+      className="sm-layer"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialog}
+        className="sm-dialog sk-settings"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+      >
+        <nav className="sm-nav" aria-label="Settings sections">
+          <h2 className="sm-nav-title">Settings</h2>
+          {visibleGroups.map((group) => (
+            <div className="sm-nav-group" role="group" aria-label={group.label} key={group.label}>
+              <span className="sm-nav-label" aria-hidden="true">
+                {group.label}
+              </span>
+              {group.topics.map((item) => {
+                const Icon = item.icon;
+                const attention = item.id === "connections" && connectionsNeedAttention;
+                return (
+                  <button
+                    type="button"
+                    className={cx("sm-nav-item", view === item.id && "active")}
+                    aria-current={view === item.id ? "page" : undefined}
+                    onClick={() => {
+                      if (item.id !== view) goToTopic(item.id);
+                    }}
+                    key={item.id}
+                  >
+                    <Icon size={16} aria-hidden="true" />
+                    <span className="sm-nav-text">{item.label}</span>
+                    {attention && (
+                      <>
+                        <span className="sm-nav-dot" aria-hidden="true" />
+                        <span className="sr-only">, needs attention</span>
+                      </>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+          <p className="sm-nav-foot" aria-hidden="true">
+            <Keycap>Esc</Keycap> to close · <Keycap>⌘,</Keycap> to open
+          </p>
+        </nav>
+        <section className="sm-pane">
+          <div className="sm-pane-head">
+            <h1
+              ref={heading}
+              className="sm-title settings-topic-heading"
+              tabIndex={-1}
+            >
+              {topicTitles[view]}
+            </h1>
+            <button
+              type="button"
+              className="sm-close"
+              aria-label="Close Settings"
+              title="Close (Esc)"
+              onClick={onClose}
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
+          </div>
+          <SaveBarSlot.Provider value={saveBarSlot}>
+          <div className="sm-pane-body" ref={paneBody}>
+            {banner}
       <div className="st-column">
         {view === "account" && user && (
           <MyAccount
@@ -1038,6 +1203,8 @@ export function Settings({
             }}
             noteLanguage={loading || loadError ? null : defaultLanguage}
             onUnsavedChange={setAccountUnsaved}
+            askPreferences={askPreferences}
+            onAskPreferencesChange={onAskPreferencesChange}
           />
         )}
         {view === "people" && user && <PeopleAccess currentUser={user} />}
@@ -1046,7 +1213,7 @@ export function Settings({
             <SettingsPageHeader
               crumb={workspaceCrumb}
               title="AI & models"
-              description="Choose who transcribes your saved videos and who analyses them. Keys are encrypted on your server and never shown again."
+              description="Connect a provider, then choose which model handles each step."
               action={
                 <ActionButton
                   icon={Activity}
@@ -1059,7 +1226,7 @@ export function Settings({
             />
             {stateCard ?? (
               <>
-                {aiState && (
+                {aiState && !(aiState.readiness.capture && aiState.readiness.ask && !aiSettingsDirty) && (
                   <AiSetupProgress
                     step={aiSetupStep}
                     ready={aiState.readiness.capture && aiState.readiness.ask}
@@ -1068,7 +1235,7 @@ export function Settings({
                 )}
                 <SettingsSection
                   title="Providers"
-                  description="Credentials available to transcription and analysis."
+                  description="Keys are stored encrypted and never shown again after saving."
                 >
                   {configuredAiProviders.map((provider) => {
                     const look = providerLooks[provider.id];
@@ -1128,13 +1295,14 @@ export function Settings({
                     )
                   }
                 >
-                  {(["transcription", "analysis"] as const).map((task) => {
-                    const label =
-                      task === "transcription" ? "Transcription" : "Analysis";
+                  {taskModelRows.map((task) => {
+                    const label = taskLabels[task];
                     const selection = currentAiSelections[task];
+                    const capability =
+                      task === "transcription" ? "transcription" : "analysis";
                     const providers = configuredAiProviders.filter(
                       (provider) =>
-                        provider.connected && provider.capabilities[task],
+                        provider.connected && provider.capabilities[capability],
                     );
                     const selectedProvider = providers.find(
                       (provider) => provider.id === selection?.provider,
@@ -1146,11 +1314,11 @@ export function Settings({
                       : [];
                     const selectedModel = selection?.model ?? "";
                     const analysisOption =
-                      task === "analysis" && selectedProvider && selectedModel
+                      task !== "transcription" && selectedProvider && selectedModel
                         ? taskOptionFor(selectedProvider, selectedModel)
                         : null;
                     const currentThinkingLevel =
-                      task === "analysis"
+                      task !== "transcription"
                         ? ((selection as AiAnalysisSelection | null)
                             ?.thinkingLevel ?? null)
                         : null;
@@ -1178,34 +1346,31 @@ export function Settings({
                       <CardRow
                         className="st-task-row"
                         key={task}
-                        leading={
-                          <IconBox
-                            icon={task === "transcription" ? AudioLines : Brain}
-                          />
-                        }
-                        title={label}
-                        description={
-                          task === "transcription" ? (
+                        title={
+                          task === "ask" ? (
                             <>
-                              Audio and video{" "}
-                              <ArrowRight
-                                aria-label="to"
-                                className="st-inline-arrow"
-                                size={12}
-                              />{" "}
-                              searchable text
+                              {label} <span className="st-new-tag">New</span>
                             </>
                           ) : (
-                            "Summaries, topics, and Ask"
+                            label
                           )
+                        }
+                        description={
+                          task === "transcription"
+                            ? "Turns a saved video’s audio into text."
+                            : task === "analysis"
+                              ? "Writes the title, summary and takeaways for each capture."
+                              : "New chats start on this model. Change it per chat from the composer."
                         }
                       >
                         <div className="st-row-controls">
                           <Select
                             aria-label={`${label} provider`}
                             className={cx(
-                              "st-control-130",
-                              !selectedProvider && "st-select-empty",
+                              task === "ask" && !selectedProvider
+                                ? "st-control-180"
+                                : "st-control-130",
+                              !selectedProvider && task !== "ask" && "st-select-empty",
                             )}
                             dotColor={
                               selectedProvider
@@ -1226,13 +1391,16 @@ export function Settings({
                               updateSelection(provider?.id ?? null, model ?? null);
                             }}
                           >
-                            <option value="">Not assigned</option>
+                            <option value="">
+                              {task === "ask" ? "Same as Analysis" : "Not assigned"}
+                            </option>
                             {providers.map((provider) => (
                               <option key={provider.id} value={provider.id}>
                                 {provider.name}
                               </option>
                             ))}
                           </Select>
+                          {task === "ask" && !selectedProvider ? null : (
                           <Select
                             aria-label={`${label} model`}
                             className={cx(
@@ -1266,10 +1434,11 @@ export function Settings({
                               </option>
                             ))}
                           </Select>
-                          {task === "analysis" &&
+                          )}
+                          {task !== "transcription" &&
                           analysisOption?.thinkingLevels.length ? (
                             <Select
-                              aria-label="Analysis thinking level"
+                              aria-label={`${label} thinking level`}
                               className="st-control-172"
                               value={currentThinkingLevel ?? ""}
                               disabled={busy}
@@ -1282,10 +1451,10 @@ export function Settings({
                                 )
                               }
                             >
-                              <option value="">Thinking: Default</option>
+                              <option value="">Default</option>
                               {analysisOption.thinkingLevels.map((level) => (
                                 <option key={level} value={level}>
-                                  Thinking: {capitalize(level)}
+                                  {capitalize(level)}
                                 </option>
                               ))}
                             </Select>
@@ -1707,6 +1876,10 @@ curl -X POST -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
           </>
         )}
       </div>
+          </div>
+          </SaveBarSlot.Provider>
+          <div className="sm-savebar-slot" ref={setSaveBarSlot} />
+        </section>
       {testDialogOpen && (
         <SettingsDialog
           className="ai-test-dialog"
@@ -2027,6 +2200,7 @@ curl -X POST -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
           <Feedback>{platformMessage}</Feedback>
         </SettingsDialog>
       )}
+      </div>
     </div>
   );
 }
