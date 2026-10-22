@@ -23,6 +23,7 @@ Stephen reports GPT-5 Analysis diagnostics and new chats fail on the first demo 
 - [ ] Verify final real new-chat success, CI, and deployed preview after timeout correction.
 
 ## Decisions
+- The superseded CI run stalled downloading FFmpeg packages from Azure even after the earlier single-file mirror replacement. Cover every runner .list/.sources entry and both HTTP/HTTPS, using the official archive over HTTPS. Preserve signed repositories, exact FFmpeg pin, triggers and required checks. Workflow parsing, shell syntax, and replacement checks preserve unrelated repositories/signing metadata.
 - Real GPT-5 latency exceeded the old 60s turn budget. Use a shared bounded policy: 180s for planning/retrieval/generation, 240s for stale recovery. Keep user model/thinking choices and immediate cancellation unchanged. No other staging runtime runs the old sweeper.
 - Prepared and dry-ran a Dokploy API update that changes only preview AI_CREDENTIALS_KEY and AI_CREDENTIALS_PREVIOUS_KEYS: use staging’s effective current encryption secret and preserve PR64’s old effective secret. Staging environment, saved provider credentials, and production remain unchanged. Stephen explicitly approved this repair; apply through Dokploy with a protected rollback backup. Current/future staging previews inherit the corrected configuration; redeploy only PR64 for this task.
 - Persisted needs_attention would affect other previews sharing SQLite, even when those runtimes can decrypt. Project unavailable credentials locally; preserve shared status and secrets.
