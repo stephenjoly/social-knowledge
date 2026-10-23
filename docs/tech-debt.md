@@ -6,6 +6,23 @@ Each entry should name the affected area, evidence, impact, desired end state, a
 
 ## Current items
 
+### Diagnose intermittent Ask citation-format rejections
+
+On 2026-10-22, PR64's real-model conversational acceptance hit `invalid_citation`
+on two initial archive-summary turns after greeting and app help. Explicit retry
+completed with valid sources, and the following explanation separated a cited
+saved idea from the assistant's suggested checklist. The original rejected
+structured outputs were not retained, so the exact mismatch is unproven; do not
+attribute it to grouped citations or relax validation. Bounded diagnostic replays
+had valid declared/inline source sets and no out-of-range markers.
+
+Impact: a user can need Retry even when retrieval found useful evidence. Desired
+end state: safe, count-only validation reason diagnostics identify the mismatch,
+then a reproduced format problem receives a narrowly validated correction.
+Removal test: deterministic regression for the captured reason, retained rejection
+of fabricated/foreign/out-of-range citations, and live multi-turn acceptance with
+the affected model. See the [natural conversation plan](exec-plans/completed/ask-natural-conversation.md).
+
 ### PR preview storage isolation
 
 Runtime inspection on 2026-09-27 found PR #31's Dokploy preview and permanent staging mounting the same named data, vault, and media volumes. Account mutations and migrations in the preview can therefore affect staging. Dokploy v0.29.2 inherits parent Application mounts; preview environment variables do not override them.
