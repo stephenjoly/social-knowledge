@@ -81,16 +81,428 @@ describe("AskService", () => {
   });
 
   it.each([
-    { model: "gpt-5", thinkingLevel: null },
-    ...["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"].flatMap((model) =>
-      ([null, "low"] as const).map((thinkingLevel) => ({
-        model,
-        thinkingLevel,
-      })),
-    ),
+    [
+      "Test",
+      "respond",
+      "I'm here. What would you like to explore in Social Knowledge?",
+    ],
+    [
+      "Hi there",
+      "respond",
+      "Hello! I can help with your saved ideas or the app.",
+    ],
+    [
+      "Where do I configure my AI models?",
+      "respond",
+      "Open Settings → AI & models. Connect credentials, assign tasks, then Save changes.",
+    ],
+    [
+      "Explain how that helps organize ideas",
+      "respond",
+      "General explanation: topics group related ideas for easier browsing.",
+    ],
+    [
+      "Draft an intro using the outline I pasted",
+      "respond",
+      "Draft based on your outline: Here are the ideas I want to explore.",
+    ],
+    ["Do that one", "clarify", "Which saved idea or app feature do you mean?"],
+    [
+      "Write a random celebrity biography",
+      "redirect",
+      "I can help with Social Knowledge or your saved ideas. What would you like to explore there?",
+    ],
+    [
+      "mysterious-reference-123456",
+      "clarify",
+      "Is that a saved topic or something you want help with in the app?",
+    ],
   ])(
-    "answers a new chat through $model Responses with thinking=$thinkingLevel",
-    async ({ model, thinkingLevel }) => {
+    "routes %s through %s without retrieval and persists neutral sufficiency",
+    async (question, action, answer) => {
+      const store = new JobStore(":memory:");
+      stores.push(store);
+      const owner = store.createUser("natural-owner", "hash");
+      const capture = addCapture(store, owner.id, {
+        sourceHash: "natural-test",
+        title: "Test saved ideas",
+        synopsis: "Prior project",
+        transcript: "Test the project.",
+      });
+      const chat = store.createConversation(owner.id)!;
+      store.addConversationMessage(
+        owner.id,
+        chat.id,
+        "user",
+        "Let's discuss organizing my ideas.",
+      );
+      store.addConversationMessage(
+        owner.id,
+        chat.id,
+        "assistant",
+        "A saved project [1]",
+        [{ id: capture.id, title: capture.title }],
+        true,
+      );
+      const turn = store.beginConversationTurn(
+        owner.id,
+        chat.id,
+        question,
+        crypto.randomUUID(),
+      );
+      const search = vi.spyOn(store, "searchKnowledge");
+      const read = vi.spyOn(store, "ownedCapturesByIds");
+      const create = vi
+        .fn()
+        .mockResolvedValueOnce({
+          output_text: JSON.stringify({
+            action,
+            standaloneQuestion: question,
+            responseInstructions: "Answer naturally",
+            referencedCaptureIds: [],
+          }),
+        })
+        .mockResolvedValueOnce(
+          streamedJson({ answer, citedCaptureIds: [], sufficient: null }),
+        );
+      const deltas: string[] = [];
+      const statuses: string[] = [];
+      const result = await new AskService(
+        { responses: { create } } as unknown as OpenAI,
+        testConfig("/tmp/ask-natural"),
+        store,
+      ).answer({
+        userId: owner.id,
+        conversationId: chat.id,
+        assistantId: turn.assistantId,
+        question,
+        signal: new AbortController().signal,
+        onDelta: (delta) => deltas.push(delta),
+        onStatus: (status) => statuses.push(status),
+      });
+      expect(result).toMatchObject({
+        answer,
+        sources: [],
+        sufficient: null,
+        diagnostics: { action, selected: [], reusedCaptureIds: [] },
+      });
+      expect(search).not.toHaveBeenCalled();
+      expect(read).not.toHaveBeenCalled();
+      expect(deltas.join("")).toBe(answer);
+      expect(statuses.join(" ")).not.toMatch(/Searching|grounded/);
+      expect(
+        store.getConversation(owner.id, chat.id)!.messages.at(-1),
+      ).toMatchObject({
+        content: answer,
+        sufficient: null,
+        sources: [],
+        status: "complete",
+      });
+      expect(create.mock.calls[0]![0].input).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            content: "Let's discuss organizing my ideas.",
+          }),
+        ]),
+      );
+      expect(create.mock.calls[0]![0].instructions).toContain(
+        "A request to find saved test results needs search",
+      );
+      const request = create.mock.calls[1]![0];
+      expect(request.text.format).toMatchObject({
+        strict: true,
+        schema: {
+          additionalProperties: false,
+          properties: {
+            citedCaptureIds: { maxItems: 0, items: { type: "string" } },
+            sufficient: { type: "null" },
+          },
+        },
+      });
+      expect(request.instructions).toContain(
+        "Social connections use manual cookie files",
+      );
+      expect(request.instructions).toContain(
+        "no write tools, browsing, shell access",
+      );
+      expect(request.instructions).toContain("Never claim you changed settings");
+      expect(request.instructions).toContain(
+        "General explanation, suggestions, extrapolation and drafts must be clearly identified",
+      );
+      expect(request.instructions).toContain("untrusted data");
+    },
+  );
+
+  it.each([
+    { answer: "Invented saved fact [1]", citedCaptureIds: [], sufficient: null },
+    {
+      answer: "Invented saved fact",
+      citedCaptureIds: ["foreign-capture"],
+      sufficient: null,
+    },
+    { answer: "Hello", citedCaptureIds: [], sufficient: true },
+    { answer: "Hello", citedCaptureIds: [], sufficient: false },
+  ])(
+    "rejects fabricated citations or archive sufficiency on a natural reply: %j",
+    async (response) => {
+      const store = new JobStore(":memory:");
+      stores.push(store);
+      const owner = store.createUser("natural-citations", "hash");
+      const chat = store.createConversation(owner.id)!;
+      const turn = store.beginConversationTurn(
+        owner.id,
+        chat.id,
+        "Test",
+        crypto.randomUUID(),
+      );
+      const create = vi
+        .fn()
+        .mockResolvedValueOnce({
+          output_text: JSON.stringify({
+            action: "respond",
+            standaloneQuestion: "Test",
+            responseInstructions: "",
+            referencedCaptureIds: [],
+          }),
+        })
+        .mockResolvedValueOnce(streamedJson(response));
+      await expect(
+        new AskService(
+          { responses: { create } } as unknown as OpenAI,
+          testConfig("/tmp/ask-invalid-natural"),
+          store,
+        ).answer({
+          userId: owner.id,
+          conversationId: chat.id,
+          assistantId: turn.assistantId,
+          question: "Test",
+          signal: new AbortController().signal,
+          onDelta: () => undefined,
+        }),
+      ).rejects.toThrow("invalid_citation");
+      expect(
+        store.getConversation(owner.id, chat.id)!.messages.at(-1)!.status,
+      ).toBe("pending");
+    },
+  );
+
+  it.each(["respond", "clarify", "redirect"])(
+    "rejects %s plans carrying prior source references",
+    async (action) => {
+      const store = new JobStore(":memory:");
+      stores.push(store);
+      const owner = store.createUser("bad-natural-plan", "hash");
+      const capture = addCapture(store, owner.id, {
+        sourceHash: "bad-plan",
+        title: "Saved idea",
+        synopsis: "An idea",
+        transcript: "Evidence",
+      });
+      const chat = store.createConversation(owner.id)!;
+      store.addConversationMessage(
+        owner.id,
+        chat.id,
+        "assistant",
+        "Saved idea [1]",
+        [{ id: capture.id, title: capture.title }],
+        true,
+      );
+      const turn = store.beginConversationTurn(
+        owner.id,
+        chat.id,
+        "Hi",
+        crypto.randomUUID(),
+      );
+      const create = vi
+        .fn()
+        .mockResolvedValueOnce({
+          output_text: JSON.stringify({
+            action,
+            standaloneQuestion: "Hi",
+            responseInstructions: "",
+            referencedCaptureIds: [capture.id],
+          }),
+        });
+      const search = vi.spyOn(store, "searchKnowledge");
+      await expect(
+        new AskService(
+          { responses: { create } } as unknown as OpenAI,
+          testConfig("/tmp/ask-bad-plan"),
+          store,
+        ).answer({
+          userId: owner.id,
+          conversationId: chat.id,
+          assistantId: turn.assistantId,
+          question: "Hi",
+          signal: new AbortController().signal,
+          onDelta: () => undefined,
+        }),
+      ).rejects.toThrow("planner_error");
+      expect(create).toHaveBeenCalledOnce();
+      expect(search).not.toHaveBeenCalled();
+    },
+  );
+
+  it("uses archive evidence for explanations about earlier saves, labeling added reasoning", async () => {
+    const store = new JobStore(":memory:");
+    stores.push(store);
+    const owner = store.createUser("explain-owner", "hash");
+    const capture = addCapture(store, owner.id, {
+      sourceHash: "thin-coats",
+      title: "Worktop project",
+      synopsis: "Use thin coats",
+      transcript: "Apply thin coats.",
+    });
+    const chat = store.createConversation(owner.id)!;
+    store.addConversationMessage(
+      owner.id,
+      chat.id,
+      "user",
+      "What technique did I save for this worktop?",
+    );
+    store.addConversationMessage(
+      owner.id,
+      chat.id,
+      "assistant",
+      "Use thin coats [1].",
+      [{ id: capture.id, title: capture.title }],
+      true,
+    );
+    const question = "Explain why that helps, and draft a plan";
+    const turn = store.beginConversationTurn(
+      owner.id,
+      chat.id,
+      question,
+      crypto.randomUUID(),
+    );
+    const search = vi.spyOn(store, "searchKnowledge");
+    const answer =
+      "Your saved source recommends thin coats [1]. General explanation: thinner layers can help control coverage. Suggested draft: start with a small trial.";
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          action: "reuse_sources",
+          standaloneQuestion:
+            "Explain the saved thin-coat technique and draft a plan",
+          responseInstructions: "Label general reasoning and draft separately",
+          referencedCaptureIds: [capture.id],
+        }),
+      })
+      .mockResolvedValueOnce(
+        streamedJson({ answer, citedCaptureIds: [capture.id], sufficient: true }),
+      );
+    const result = await new AskService(
+      { responses: { create } } as unknown as OpenAI,
+      testConfig("/tmp/ask-explain"),
+      store,
+    ).answer({
+      userId: owner.id,
+      conversationId: chat.id,
+      assistantId: turn.assistantId,
+      question,
+      signal: new AbortController().signal,
+      onDelta: () => undefined,
+    });
+    expect(result).toMatchObject({ answer, sufficient: true });
+    expect(result.sources.map((source) => source.id)).toEqual([capture.id]);
+    expect(search).not.toHaveBeenCalled();
+    expect(create.mock.calls[0]![0].instructions).toContain(
+      "explanations or drafts making claims about earlier cited saves",
+    );
+    expect(create.mock.calls[1]![0].instructions).toContain(
+      "it cannot fill missing archive facts",
+    );
+  });
+
+  it("falls back conservatively on malformed planner output and cannot search another owner's saves", async () => {
+    const store = new JobStore(":memory:");
+    stores.push(store);
+    const owner = store.createUser("fallback-owner", "hash");
+    const other = store.createUser("fallback-other", "hash");
+    addCapture(store, other.id, {
+      sourceHash: "private-tests",
+      title: "Saved test results",
+      synopsis: "Private test results",
+      transcript: "Private result value.",
+    });
+    const chat = store.createConversation(owner.id)!;
+    const question = "Find my saved test results";
+    const turn = store.beginConversationTurn(
+      owner.id,
+      chat.id,
+      question,
+      crypto.randomUUID(),
+    );
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce({ output_text: '{"action":"invented"}' });
+    const result = await new AskService(
+      { responses: { create } } as unknown as OpenAI,
+      testConfig("/tmp/ask-fallback"),
+      store,
+    ).answer({
+      userId: owner.id,
+      conversationId: chat.id,
+      assistantId: turn.assistantId,
+      question,
+      signal: new AbortController().signal,
+      onDelta: () => undefined,
+    });
+    expect(result).toMatchObject({
+      sources: [],
+      sufficient: false,
+      diagnostics: { action: "search_archive" },
+    });
+    expect(result.answer).not.toContain("Private result value");
+    expect(create).toHaveBeenCalledOnce();
+    expect(
+      store.getConversation(owner.id, chat.id)!.messages.at(-1)!.sufficient,
+    ).toBe(false);
+  });
+
+  it("rejects foreign conversation access before contacting the planner", async () => {
+    const store = new JobStore(":memory:");
+    stores.push(store);
+    const owner = store.createUser("access-owner", "hash"),
+      other = store.createUser("access-other", "hash");
+    const chat = store.createConversation(other.id)!;
+    const create = vi.fn();
+    await expect(
+      new AskService(
+        { responses: { create } } as unknown as OpenAI,
+        testConfig("/tmp/ask-access"),
+        store,
+      ).answer({
+        userId: owner.id,
+        conversationId: chat.id,
+        assistantId: "invented",
+        question: "Hi",
+        signal: new AbortController().signal,
+        onDelta: () => undefined,
+      }),
+    ).rejects.toThrow("conversation_not_found");
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ...[
+      { model: "gpt-5", thinkingLevel: null },
+      ...["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"].flatMap((model) =>
+        ([null, "low"] as const).map((thinkingLevel) => ({
+          model,
+          thinkingLevel,
+        })),
+      ),
+    ].map((row) => ({ ...row, natural: false })),
+    { model: "gpt-6.1-sol", thinkingLevel: null, natural: true },
+  ])(
+    "answers a new chat through $model Responses with thinking=$thinkingLevel (natural=$natural)",
+    async ({ model, thinkingLevel, natural }) => {
+      const question = natural ? "Test" : "What Lisbon restaurants have I saved?";
+      const expectedAnswer = natural
+        ? "Hello! I can help with Social Knowledge."
+        : "Try Rio de Mello [1].";
       const store = new JobStore(":memory:");
       stores.push(store);
       const user = store.createUser("normal-gpt-five", "hash");
@@ -109,10 +521,7 @@ describe("AskService", () => {
           if (url.endsWith("/models"))
             return new Response(JSON.stringify({ data: [] }), { status: 200 });
           expect(url).toBe("https://api.openai.com/v1/responses");
-          const body = JSON.parse(String(init?.body)) as Record<
-            string,
-            unknown
-          >;
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
           bodies.push(body);
           if (!body.stream)
             return new Response(
@@ -128,9 +537,8 @@ describe("AskService", () => {
                         type: "output_text",
                         annotations: [],
                         text: JSON.stringify({
-                          action: "search_archive",
-                          standaloneQuestion:
-                            "What Lisbon restaurants have I saved?",
+                          action: natural ? "respond" : "search_archive",
+                          standaloneQuestion: question,
                           responseInstructions: "Answer directly",
                           referencedCaptureIds: [],
                         }),
@@ -142,9 +550,9 @@ describe("AskService", () => {
               { status: 200, headers: { "content-type": "application/json" } },
             );
           const answer = JSON.stringify({
-            answer: "Try Rio de Mello [1].",
-            citedCaptureIds: [capture.id],
-            sufficient: true,
+            answer: expectedAnswer,
+            citedCaptureIds: natural ? [] : [capture.id],
+            sufficient: natural ? null : true,
           });
           return new Response(
             [
@@ -173,7 +581,7 @@ describe("AskService", () => {
       const turn = store.beginConversationTurn(
         user.id,
         conversation.id,
-        "What Lisbon restaurants have I saved?",
+        question,
         "normal-new-chat",
       );
       const ask = new AskService(providers.routedClient(), config, store);
@@ -185,7 +593,7 @@ describe("AskService", () => {
             userId: user.id,
             conversationId: conversation.id,
             assistantId: turn.assistantId,
-            question: "What Lisbon restaurants have I saved?",
+            question,
             signal: new AbortController().signal,
             onDelta: () => undefined,
           }),
@@ -193,18 +601,23 @@ describe("AskService", () => {
         selection.model,
         selection.thinkingLevel,
       );
-      expect(result.answer).toBe("Try Rio de Mello [1].");
-      expect(result.sources.map((source) => source.id)).toEqual([capture.id]);
+      expect(result.answer).toBe(expectedAnswer);
+      expect(result.sufficient).toBe(natural ? null : true);
+      expect(result.sources.map((source) => source.id)).toEqual(
+        natural ? [] : [capture.id],
+      );
       expect(
         store.getConversation(user.id, conversation.id)!.messages.at(-1),
-      ).toMatchObject({ status: "complete", content: "Try Rio de Mello [1]." });
+      ).toMatchObject({
+        status: "complete",
+        content: expectedAnswer,
+        sufficient: natural ? null : true,
+      });
       expect(bodies).toHaveLength(2);
       for (const body of bodies) {
         expect(body.model).toBe(model);
-        if (thinkingLevel === null)
-          expect(body).not.toHaveProperty("reasoning");
-        else
-          expect(body).toHaveProperty("reasoning", { effort: thinkingLevel });
+        if (thinkingLevel === null) expect(body).not.toHaveProperty("reasoning");
+        else expect(body).toHaveProperty("reasoning", { effort: thinkingLevel });
         expect(body).not.toHaveProperty("reasoning_effort");
         expect(body).not.toHaveProperty("temperature");
       }

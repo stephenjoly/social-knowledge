@@ -2816,7 +2816,7 @@ export class JobStore {
     assistantId: string,
     content: string,
     sources: unknown[],
-    sufficient: boolean,
+    sufficient: boolean | null,
   ) {
     const result = this.database
       .prepare(
@@ -2825,7 +2825,7 @@ export class JobStore {
       .run(
         content,
         JSON.stringify(sources),
-        sufficient ? 1 : 0,
+        sufficient === null ? null : sufficient ? 1 : 0,
         assistantId,
         conversationId,
         conversationId,

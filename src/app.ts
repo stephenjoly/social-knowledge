@@ -467,7 +467,18 @@ export function buildApp(
         selection?.thinkingLevel,
       );
       request.log.info(
-        { conversationId, assistantId, retrieval: result.diagnostics },
+        {
+          conversationId,
+          assistantId,
+          retrieval: {
+            action: result.diagnostics.action,
+            selectedCount: result.diagnostics.selected.length,
+            reusedCount: result.diagnostics.reusedCaptureIds.length,
+            compacted: result.diagnostics.compacted,
+            compactionFallback: result.diagnostics.compactionFallback,
+            estimatedContextTokens: result.diagnostics.estimatedContextTokens,
+          },
+        },
         "Ask AI retrieval completed",
       );
       send("sources", {

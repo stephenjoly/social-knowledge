@@ -107,6 +107,168 @@ describe("chat-first API", () => {
     };
   }
 
+  it("keeps null sufficiency through disk reload, retry completion and owner isolation", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "ask-null-persistence-"));
+    const filename = path.join(root, "chat.sqlite");
+    let store = new JobStore(filename);
+    cleanups.push(async () => {
+      store.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    const owner = store.createUser("null-owner", "hash"),
+      other = store.createUser("null-other", "hash");
+    const chat = store.createConversation(owner.id)!;
+    const turn = store.beginConversationTurn(
+      owner.id,
+      chat.id,
+      "Test",
+      "null-turn",
+    );
+    expect(() =>
+      store.completeConversationAttempt(
+        other.id,
+        chat.id,
+        turn.assistantId,
+        "Foreign write",
+        [],
+        null,
+      ),
+    ).toThrow("attempt_not_found");
+    expect(
+      store.getConversation(owner.id, chat.id)!.messages.at(-1)!.status,
+    ).toBe("pending");
+    store.completeConversationAttempt(
+      owner.id,
+      chat.id,
+      turn.assistantId,
+      "Hello",
+      [],
+      null,
+    );
+    expect(
+      store.database
+        .prepare("SELECT sufficient FROM conversation_messages WHERE id=?")
+        .get(turn.assistantId),
+    ).toEqual({ sufficient: null });
+    store.close();
+    store = new JobStore(filename);
+    expect(store.getConversation(other.id, chat.id)).toBeNull();
+    expect(
+      store.getConversation(owner.id, chat.id)!.messages.at(-1),
+    ).toMatchObject({
+      sufficient: null,
+      sources: [],
+      content: "Hello",
+      status: "complete",
+    });
+    const retry = store.beginConversationRetry(
+      owner.id,
+      chat.id,
+      turn.assistantId,
+      "null-retry",
+    );
+    store.completeConversationAttempt(
+      owner.id,
+      chat.id,
+      retry.assistantId,
+      "Hello again",
+      [],
+      null,
+    );
+    store.close();
+    store = new JobStore(filename);
+    expect(
+      store.getConversation(owner.id, chat.id)!.messages.at(-1),
+    ).toMatchObject({
+      sufficient: null,
+      sources: [],
+      content: "Hello again",
+      status: "complete",
+      retryOf: turn.assistantId,
+    });
+  });
+
+  it("streams and reloads neutral sufficiency through the HTTP contract", async () => {
+    const { app, store, owner, headers, answer } = await fixture();
+    const logs: unknown[][] = [];
+    app.setChildLoggerFactory((logger, bindings, options) => {
+      const child = logger.child(bindings, options);
+      vi.spyOn(child, "info").mockImplementation((...args: unknown[]) => {
+        logs.push(args);
+      });
+      return child;
+    });
+    answer.mockImplementationOnce(async (input) => {
+      input.onDelta("Hello");
+      store.completeConversationAttempt(
+        input.userId,
+        input.conversationId,
+        input.assistantId,
+        "Hello",
+        [],
+        null,
+      );
+      return {
+        answer: "Hello",
+        sources: [],
+        sufficient: null,
+        diagnostics: {
+          action: "respond",
+          standaloneQuestion: "private-question",
+          terms: ["private-term"],
+          selected: [
+            {
+              captureId: "private-source-id",
+              score: 1,
+              reason: "private-source-text",
+            },
+          ],
+          reusedCaptureIds: ["private-source-id"],
+          compacted: false,
+          compactionFallback: false,
+          estimatedContextTokens: 1,
+        },
+      };
+    });
+    const chat = store.createConversation(owner.id)!;
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/conversations/${chat.id}/messages`,
+      headers,
+      payload: { message: "Test", requestId: "natural-http" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('"sufficient":null');
+    expect(response.body).toContain("event: completed");
+    expect(response.body).not.toContain("private-question");
+    const log = logs.find((entry) => entry[1] === "Ask AI retrieval completed");
+    expect(log?.[0]).toEqual({
+      conversationId: chat.id,
+      assistantId: expect.any(String),
+      retrieval: {
+        action: "respond",
+        selectedCount: 1,
+        reusedCount: 1,
+        compacted: false,
+        compactionFallback: false,
+        estimatedContextTokens: 1,
+      },
+    });
+    expect(JSON.stringify(logs)).not.toMatch(
+      /private-question|private-term|private-source-id|private-source-text/,
+    );
+    const reopened = await app.inject({
+      method: "GET",
+      url: `/api/v1/conversations/${chat.id}`,
+      headers,
+    });
+    expect(reopened.json().conversation.messages.at(-1)).toMatchObject({
+      sufficient: null,
+      sources: [],
+      content: "Hello",
+    });
+  });
+
   it("persists rename, pin, selection and latest status without leaking across owners", async () => {
     const { app, headers, otherHeaders, store, owner, other, alternate } =
       await fixture();
