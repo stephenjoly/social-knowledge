@@ -1,6 +1,6 @@
 # Subtle clockwise composer border
 
-Status: approved request; implementation pending Opus availability
+Status: completed; motion and priority scroll regression verified on the preview
 Owner: delivery lead; UI implementation by Claude Opus 5.5 high
 Date: 2026-10-22
 Branch: codex/ask-ai-ui-mockup; draft PR64, preview only
@@ -38,3 +38,10 @@ Acceptance: long synthetic answers and at least eight source cards; wheel/trackp
 - Motion checkpoint 6b1a32b adds a masked one-pixel sage border highlight, eight-second clockwise cycle, active only for focus or streaming. Reduced motion hides the moving layer and preserves a static focus/border cue; the decorative layer takes no pointer events.
 - Test checkpoint 48bfeb1 measures clockwise progression during focus and paused synthetic streaming, idle stopping, reduced-motion fallback, hit testing and unchanged document geometry at 1360 and 390px. Final combined Ask suite passes 5/5 in Chromium and 5/5 in WebKit. Lead reviewed desktop/mobile motion captures and picker/Settings comparison; no additional design changes beyond Stephen’s requested motion and current-model rows.
 - Final npm run check passes 357/357 tests, 40 files, strict TypeScript, docs, site parity and production build. Affected archive, streaming/mobile and Settings journeys pass 11/11 without skips. Deployed native-browser verification pending.
+
+## Final acceptance — 2026-10-22
+Deployed correction 932bb5d96420274350315584637ba368b72b7fac. Required CI passes: https://github.com/stephenjoly/social-knowledge/actions/runs/39876262582 (1m12s). Full check passes 357 tests in 40 files; final Ask Chromium 5/5, WebKit 5/5 and affected archive/streaming/Settings journeys 11/11 pass without skips. Temporary local servers and synthetic test databases were cleaned up. No production, provider-key or saved-default change.
+
+Lead verified the deployed eight-source conversation in the native browser at 1360×1000: document width/clientWidth both1360, height/clientHeight both1000; scrollTo(500,10000) leaves x0/y0 and shell bounds unchanged; thread and sources both independently reach scrollTop500. Preview health/login/review dataset pass (12 chats, one pinned, one pending, one failed, both simulated providers). Current-model real Luna generation evidence remains the retained demo-member verification chat, 7.944s and six cited sources.
+
+Screenshots and comparison: output/playwright/ask-chat-first/ (state1–6 and motion1360/390 phase/reduced captures). Lead review retains the approved layout. New model rows/descriptions, measured popover placement and requested subtle clockwise border are intentional; no remaining unapproved visual deviation. Earlier quota/heartbeat/publication limitations above are historical and resolved. No remaining decision.

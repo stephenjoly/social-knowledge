@@ -1,6 +1,6 @@
 # Refresh OpenAI analysis and Ask model choices
 
-Status: active; Stephen approved the bounded catalog scope
+Status: completed; bounded catalog, picker and preview acceptance verified
 Owner: Codex delivery lead
 Started: 2026-10-22
 Branch: codex/ask-ai-ui-mockup; draft PR #64 targets staging
@@ -44,7 +44,7 @@ Expose all documented efforts: new models Low/Medium/High/XHigh/Max, plus None f
 - Opus UI worker hit its provider usage limit until 19:50 America/Toronto on 2026-10-22 after writing labels but before the picker fit fix. No Codex UI substitution is allowed. Exact untouched picker measurements with new rows: 1360×1000 → y=-65.734, height=499.484; 390×844 → y=-304.484, height=499.484. Screenshots: output/playwright/model-refresh/picker-home-{1360,390}.png. Backend strict geometry regression also fails at 1360×844 (y=-143.734). Initially held at c9d3769; Stephen subsequently requested publishing this version for preview review, with the known clipping defect disclosed.
 - [x] Official catalog/capabilities and connected-account IDs checked; backend compatibility researched. Real synthetic structured-output probes using the existing demo-member connection pass for Luna (2.168s), Sol 6.1 (2.495s), and Astra (2.674s), at Low effort with no saved-selection changes.
 - [x] Stephen approved adding the models with current Low/Medium/High controls; no thinking-level schema expansion or migration.
-- [ ] Complete picker viewport correction, integrate, verify and publish to PR64 preview. Stephen subsequently authorized preview publication with this known defect; this does not satisfy final acceptance.
+- [x] Complete picker viewport correction, integrate, verify and publish to PR64 preview. Stephen subsequently authorized preview publication with this known defect; this does not satisfy final acceptance.
 
 ## Decisions and risks
 - Stephen approved the bounded scope on 2026-10-22. Use Luna → Sol → Astra before legacy choices. Verified descriptions: Efficient, Balanced, Highest capability; old GPT-5 models become Previous generation, and Qwen’s unsupported cross-provider Fastest claim becomes No thinking. Preserve the existing component design; correct hero popover clipping as needed for the larger catalog.
@@ -57,3 +57,10 @@ Stephen asked to deploy the current version after being told that the larger pic
 - c206da0 replaces fixed upward placement with measured available-space placement and constrained internal scrolling; connected model rows, footer actions and keyboard focus remain reachable.
 - Strict viewport/model and long-answer outer-scroll regressions pass in Chromium; all four Ask journeys pass in both Chromium and WebKit, including focus return. Final npm run check on the combined scroll/picker/motion source passes 357 tests in 40 files, types, docs, site parity and production build.
 - Model defaults, provider configuration and saved chats remain unchanged. Real Luna generation was verified on deployed 3f907ba in 7.944s with six sources. Final correction publication/native-browser acceptance pending.
+
+## Final acceptance — 2026-10-22
+Deployed correction 932bb5d96420274350315584637ba368b72b7fac. Required CI passes: https://github.com/stephenjoly/social-knowledge/actions/runs/39876262582 (1m12s). Full check passes 357 tests in 40 files; final Ask Chromium 5/5, WebKit 5/5 and affected archive/streaming/Settings journeys 11/11 pass without skips. Temporary local servers and synthetic test databases were cleaned up. No production, provider-key or saved-default change.
+
+Lead verified the deployed eight-source conversation in the native browser at 1360×1000: document width/clientWidth both1360, height/clientHeight both1000; scrollTo(500,10000) leaves x0/y0 and shell bounds unchanged; thread and sources both independently reach scrollTop500. Preview health/login/review dataset pass (12 chats, one pinned, one pending, one failed, both simulated providers). Current-model real Luna generation evidence remains the retained demo-member verification chat, 7.944s and six cited sources.
+
+Screenshots and comparison: output/playwright/ask-chat-first/ (state1–6 and motion1360/390 phase/reduced captures). Lead review retains the approved layout. New model rows/descriptions, measured popover placement and requested subtle clockwise border are intentional; no remaining unapproved visual deviation. Earlier quota/heartbeat/publication limitations above are historical and resolved. No remaining decision.
