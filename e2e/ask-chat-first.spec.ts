@@ -119,7 +119,7 @@ test.beforeAll(async () => {
     user.id,
     longChat.id,
     attempt.assistantId,
-    { provider: "openai", model: "gpt-5-mini", thinkingLevel: "medium" },
+    { provider: "openai", model: "gpt-6-luna", thinkingLevel: "medium" },
   );
   const longAnswer = Array.from(
     { length: 48 },
@@ -184,7 +184,7 @@ test("six approved Ask states, model persistence, sources and Settings preserve 
 
   await page.getByRole("button", { name: "Leadership advice for a new manager", exact: true }).first().click();
   await expect(page.locator(".ask-answer").first()).toContainText("Promotion strategy");
-  await expect(page.getByText("GPT-5 mini", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("GPT-6 Luna", { exact: false }).first()).toBeVisible();
   await page.screenshot({ path: path.join(screenshots, "state-2-conversation.png") });
 
   await page.getByTitle("Choose model for this chat", { exact: true }).click();
@@ -266,9 +266,9 @@ test("model default, one-off retry, persisted preferences and sidebar actions wo
   await page.getByTitle("Retry with another model", { exact: true }).first().click();
   const retryPicker = page.getByRole("dialog", { name: "Retry this answer with" });
   pauseNextAnswer = true;
-  await retryPicker.locator(".ask-opt").filter({ hasText: "gpt-5-mini" }).click();
+  await retryPicker.locator(".ask-opt").filter({ hasText: "gpt-6-luna" }).click();
   try {
-    await expect(page.locator(".ask-answer").last().locator(".ask-meta-model")).toContainText("GPT-5 mini");
+    await expect(page.locator(".ask-answer").last().locator(".ask-meta-model")).toContainText("GPT-6 Luna");
     await expect(page.locator(".ask-answer").last().locator(".ask-answer-body")).toHaveCount(0);
   } finally {
     releaseAnswer?.();
@@ -350,11 +350,11 @@ test("New chat accepts first Enter while old retry reconciles and keeps Stop on 
   });
   try {
     await page.getByTitle("Retry with another model", { exact: true }).first().click();
-    await page.getByRole("dialog", { name: "Retry this answer with" }).locator(".ask-opt").filter({ hasText: "gpt-5-mini" }).click();
+    await page.getByRole("dialog", { name: "Retry this answer with" }).locator(".ask-opt").filter({ hasText: "gpt-6-luna" }).click();
     await expect.poll(() => oldSnapshotHeld).toBe(true);
     await expect(page.getByRole("button", { name: `${oldTitle} Answering`, exact: true })).toBeVisible();
     const oldAnswer = store.getConversation(reviewUserId, firstChat)?.messages?.at(-1);
-    expect(oldAnswer).toMatchObject({ status: "complete", provider: "openai", model: "gpt-5-mini", content: expect.stringContaining("Promotion strategy") });
+    expect(oldAnswer).toMatchObject({ status: "complete", provider: "openai", model: "gpt-6-luna", content: expect.stringContaining("Promotion strategy") });
 
     await page.getByRole("button", { name: "New chat", exact: true }).first().click();
     await expect(page.getByTitle("Choose model for this chat", { exact: true })).toContainText("Qwen");
@@ -431,7 +431,8 @@ test("current model rows remain reachable by keyboard and persist answer/retry m
     await trigger.click();
     const picker = page.getByRole("dialog", { name: "Model for this chat" });
     const rows = picker.locator(".ask-opt");
-    await expect(rows).toHaveCount(6);
+    await expect(rows).toHaveCount(4);
+    await expect(rows.filter({ hasText: /gpt-5(?:[. -]|$)/ })).toHaveCount(0);
     for (let index = 0; index < models.length; index++)
       await expect(rows.nth(index)).toContainText(models[index]!.label);
     const bounds = await picker.boundingBox();
@@ -482,6 +483,15 @@ test("current model rows remain reachable by keyboard and persist answer/retry m
       await expect(trigger).toContainText(model.label);
       await trigger.click();
     }
+    await rows.filter({ hasText: "qwen-3.8-27b" }).click();
+    await expect(picker).toContainText("Reasoning · qwen-3.8-27b");
+    for (const effort of ["Low", "Medium", "High"]) {
+      const button = picker.getByRole("radio", { name: effort, exact: true });
+      await button.click();
+      await expect(button).toHaveAttribute("aria-checked", "true");
+    }
+    await expect(picker.getByRole("button", { name: "Minimal", exact: true })).toHaveCount(0);
+    await rows.filter({ hasText: "gpt-6-astra" }).click();
     await page.keyboard.press("Escape");
     const composer = page.getByRole("textbox", { name: "Ask your archive" });
     await composer.fill(`Synthetic current model summary at ${width}px`);
@@ -1095,7 +1105,7 @@ test("adversarial Ask content stays readable without sideways scrolling in any p
     const retry = page.getByRole("dialog", { name: "Retry this answer with" });
     await expect(retry).toBeVisible();
     await audit(`${width}-retry-picker`);
-    await expect(retry.locator(".ask-opt")).toHaveCount(6);
+    await expect(retry.locator(".ask-opt")).toHaveCount(4);
     await page.keyboard.press("Escape");
     await expect(retry).toHaveCount(0);
   }

@@ -569,7 +569,7 @@ async function seedSettingsFixture(store: JobStore, ownerId: string) {
     transcriptionProvider: "openai",
     transcriptionModel: "gpt-4o-transcribe",
     analysisProvider: "openai",
-    analysisModel: "gpt-5-mini",
+    analysisModel: "gpt-6-luna",
     analysisThinkingLevel: "medium",
   });
 
