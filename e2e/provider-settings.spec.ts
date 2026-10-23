@@ -165,6 +165,31 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await expect(page.getByLabel("Transcription provider")).toBeFocused();
   await expect.poll(async () => (await page.getByLabel("Transcription provider").boundingBox())!.y).toBeLessThan(844);
 
+  // Ask can be configured and tested before any capture/Analysis assignment.
+  await page.getByLabel("Ask AI default provider").selectOption("openai");
+  await page.getByLabel("Ask AI default model").selectOption("gpt-5-mini");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByText("AI settings saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Run test", exact: true }).click();
+  const askOnlyDialog = page.getByRole("dialog", { name: "Test connection" });
+  await expect(askOnlyDialog.getByRole("button", { name: "Test analysis" })).toBeDisabled();
+  await expect(askOnlyDialog.getByRole("button", { name: "Test ask" })).toBeEnabled();
+  const askOnlyResponse = page.waitForResponse((response) =>
+    response.url().endsWith("/api/v1/ai-tests/ask") && response.request().method() === "POST",
+  );
+  await askOnlyDialog.getByRole("button", { name: "Test ask" }).click();
+  expect(await (await askOnlyResponse).json()).toMatchObject({
+    ok: true,
+    selection: { provider: "openai", model: "gpt-5-mini", thinkingLevel: null },
+  });
+  await expect(askOnlyDialog.locator(".ai-test-row").filter({
+    has: page.getByRole("heading", { name: "Ask", exact: true }),
+  })).toContainText("Passed in");
+  await askOnlyDialog.getByRole("button", { name: "Close connection tests" }).click();
+  await page.getByLabel("Ask AI default provider").selectOption("");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByText("AI settings saved.")).toBeVisible();
+
   const savedRequests: unknown[] = [];
   await page.route("**/api/v1/ai-settings", async (route) => {
     if (route.request().method() === "PUT")
@@ -259,6 +284,18 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await testDialog.getByRole("button", { name: "Close connection tests" }).click();
   await expect(page.getByRole("button", { name: "Run test" })).toBeFocused();
   await expect(progress).toHaveCount(0);
+
+  // A distinct saved Ask model must pass rather than be discarded as stale.
+  await page.getByLabel("Ask AI default provider").selectOption("openai");
+  await page.getByLabel("Ask AI default model").selectOption("gpt-5-mini");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByText("AI settings saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Run test", exact: true }).click();
+  await askTest.getByRole("button", { name: "Test ask" }).click();
+  await expect(askTest).toContainText("Passed in");
+  await expect(askTest).toContainText("openai · gpt-5-mini");
+  await expect(askTest).not.toContainText("discarded");
+  await testDialog.getByRole("button", { name: "Close connection tests" }).click();
 
   await thinking.selectOption("low");
   await expect(page.getByRole("button", { name: "Save changes" })).toBeEnabled();

@@ -322,14 +322,21 @@ function formatAiTestSelection(result: AiTestResult) {
   return `${result.selection.provider} · ${result.selection.model}${thinkingLevel ? ` · ${thinkingLevel}` : ""}`;
 }
 
-function matchesCurrentTestSelection(
+/** Saved selection used by diagnostic enablement, execution and freshness. */
+export function aiTestSelection(task: AiTestTask, current: AiProviderState | null) {
+  return task === "transcription"
+    ? current?.selections.transcription
+    : task === "ask"
+      ? current?.selections.ask ?? current?.selections.analysis
+      : current?.selections.analysis;
+}
+
+export function matchesCurrentTestSelection(
   task: AiTestTask,
   current: AiProviderState | null,
   result: AiTestResult,
 ) {
-  const expected = task === "transcription"
-    ? current?.selections.transcription
-    : current?.selections.analysis;
+  const expected = aiTestSelection(task, current);
   if (!expected || !result.selection) return false;
   if (
     expected.provider !== result.selection.provider ||
@@ -691,10 +698,7 @@ export function Settings({
   async function runAiTest(task: AiTestTask) {
     if (testingTask) return;
     if (aiSettingsDirty || savingAiSelections) return;
-    const selection =
-      task === "transcription"
-        ? aiStateRef.current?.selections.transcription
-        : aiStateRef.current?.selections.analysis;
+    const selection = aiTestSelection(task, aiStateRef.current);
     if (!selection || providerMessageKind === "pending") return;
     const file = task === "transcription" ? testAudioFile : null;
     if (task === "transcription" && !file) return;
@@ -1933,9 +1937,7 @@ curl -X POST -H "Authorization: Bearer $SOCIAL_KNOWLEDGE_API_KEY" \\
                   : task === "ask"
                     ? "Ask"
                     : "Transcription";
-              const selection = isTranscription
-                ? aiState?.selections.transcription
-                : aiState?.selections.analysis;
+              const selection = aiTestSelection(task, aiState);
               const failed = state.status === "complete" && !state.result?.ok;
               return (
                 <article className="ai-test-row" key={task}>
