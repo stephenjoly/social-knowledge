@@ -1200,7 +1200,7 @@ html:has(.ask-v2) {
   width: 316px;
   height: 100%;
   flex: none;
-  overflow: hidden;
+  overflow: clip;
   border-left: 1px solid var(--border);
   background: var(--surface);
   visibility: visible;
@@ -1222,7 +1222,7 @@ html:has(.ask-v2) {
 
 .ask-sources-inner {
   display: flex;
-  width: 316px;
+  width: 315px;
   height: 100%;
   flex-direction: column;
 }
@@ -1543,7 +1543,7 @@ html:has(.ask-v2) {
   }
 
   .ask-sources-inner {
-    width: 316px;
+    width: 315px;
     max-width: 100%;
   }
 }
@@ -1565,6 +1565,7 @@ html:has(.ask-v2) {
 
   .ask-home {
     min-height: calc(100dvh - 134px);
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
   }
 
   .ask-top {
@@ -1597,6 +1598,7 @@ html:has(.ask-v2) {
   .ask-conversation {
     display: block;
     height: auto;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
   }
 
   .ask-chat {
