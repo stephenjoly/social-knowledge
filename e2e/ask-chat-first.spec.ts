@@ -11,6 +11,12 @@ import { seedAskReviewFixture, syntheticReviewAsk } from "../src/ask-review-fixt
 
 const port = 8801;
 const longChatTitle = "Synthetic long answer with eight sources";
+const sidewaysChatTitle = "Synthetic adversarial wrapping and retry history";
+const sidewaysToken = "UnbrokenEvidence".repeat(24);
+const sidewaysTitle = "LongSourceTitle".repeat(24);
+const sidewaysCreator = "CreatorLabel".repeat(24);
+const sidewaysUrl = `https://www.instagram.com/reel/${"LongUrlPath".repeat(32)}/`;
+const sidewaysQuestion = `Synthetic question ${"LongQuestionToken".repeat(32)}`;
 let root: string;
 let store: JobStore;
 let app: ReturnType<typeof buildApp>;
@@ -107,6 +113,32 @@ test.beforeAll(async () => {
     sources,
     true,
   );
+  const wrappingSources = sources.map((source, index) => {
+    const slug = `wrapping-regression-${index}`;
+    const url = index === 0 ? sidewaysUrl : `https://www.instagram.com/reel/${slug}/`;
+    const title = index === 0 ? sidewaysTitle : `Wrapping source ${index + 1}`;
+    const creator = index === 0 ? sidewaysCreator : "synthetic.author";
+    const { job } = store.createOrGet({ ownerUserId: user.id, sourceUrl: url, normalizedUrl: url, sourceHash: slug });
+    const capture = store.createCapture({ ...template, job, title, creator, sourceId: slug, analysis: { ...template.analysis, title }, notePath: `Synthetic/${slug}.md`, assets: [] })!;
+    store.complete(job.id, capture.notePath);
+    return { ...source, id: capture.id, title, creator, sourceUrl: url };
+  });
+  const wrappingChat = store.createConversation(user.id, sidewaysChatTitle)!;
+  const wrappingTurn = store.beginConversationTurn(user.id, wrappingChat.id, sidewaysQuestion, "synthetic-wrapping-turn");
+  const wrappingAnswer = [
+    `Inline code: \`${sidewaysToken}\`. [1]`,
+    `Full URL: [${sidewaysUrl}](${sidewaysUrl}). [1]`,
+    `\`\`\`text\n${sidewaysToken.repeat(2)}\n\`\`\``,
+    `| Saved item | Evidence | Original URL |\n| --- | --- | --- |\n| ${sidewaysToken} | TableCell${sidewaysToken} | [${sidewaysUrl}](${sidewaysUrl}) |`,
+    longAnswer,
+  ].join("\n\n");
+  store.completeConversationAttempt(user.id, wrappingChat.id, wrappingTurn.assistantId, wrappingAnswer, wrappingSources, true);
+  const failedRetry = store.beginConversationRetry(user.id, wrappingChat.id, wrappingTurn.assistantId, "synthetic-wrapping-failed");
+  store.setConversationAttemptSelection(user.id, wrappingChat.id, failedRetry.assistantId, { provider: "openai", model: "gpt-6.1-sol", thinkingLevel: "high" });
+  store.failConversationAttempt(user.id, wrappingChat.id, failedRetry.assistantId, "failed", "timeout");
+  const cancelledRetry = store.beginConversationRetry(user.id, wrappingChat.id, failedRetry.assistantId, "synthetic-wrapping-cancelled");
+  store.setConversationAttemptSelection(user.id, wrappingChat.id, cancelledRetry.assistantId, { provider: "openai", model: "gpt-6-astra", thinkingLevel: "medium" });
+  store.failConversationAttempt(user.id, wrappingChat.id, cancelledRetry.assistantId, "cancelled", "cancelled");
   await app.listen({ host: "127.0.0.1", port });
 });
 test.afterAll(async () => {
@@ -729,5 +761,230 @@ test("composer motion follows focus and streaming while respecting reduced motio
     await expect(page.locator(".ask-answer-body").last()).toContainText(
       "Promotion strategy",
     );
+  }
+});
+
+test("adversarial Ask content stays readable without sideways scrolling in any pane", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120000);
+  await page.goto(`http://127.0.0.1:${port}/app`);
+  await page.getByLabel("Username").fill("ask-review");
+  await page.getByLabel("Password").fill("synthetic-review-password");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "New chat", exact: true }).first(),
+  ).toBeVisible();
+  const audit = async (phase: string) => {
+    const result = await page.evaluate(() => {
+      const selectors = [
+        "html",
+        ".ask-conversation",
+        ".ask-chat",
+        ".ask-thread",
+        ".ask-bubble",
+        ".ask-answer",
+        ".ask-answer-body",
+        ".ask-answer-body pre",
+        ".ask-answer-body code",
+        ".ask-answer-body table",
+        ".ask-answer-body th",
+        ".ask-answer-body td",
+        ".ask-sources",
+        ".ask-sources-body",
+        ".ask-source",
+        ".ask-source-title",
+        ".ask-source-link",
+        ".ask-source-open",
+        ".ask-sources-question",
+        ".ask-answer-failed",
+        ".ask-composer",
+        ".ask-composer textarea",
+        ".ask-retry-picker",
+        '[role="dialog"][aria-label="Retry this answer with"]',
+      ];
+      const metrics = selectors.flatMap((selector) =>
+        Array.from(document.querySelectorAll<HTMLElement>(selector)).flatMap(
+          (element, index) => {
+            const rect = element.getBoundingClientRect();
+            if (
+              !rect.width ||
+              !rect.height ||
+              getComputedStyle(element).visibility === "hidden"
+            )
+              return [];
+            element.scrollLeft = 10000;
+            const rightScroll = element.scrollLeft;
+            element.scrollLeft = -10000;
+            const leftScroll = element.scrollLeft;
+            element.scrollLeft = 0;
+            const container =
+              element.closest<HTMLElement>(".ask-sources-body") ??
+              element.closest<HTMLElement>(".ask-thread");
+            const bounds = container?.getBoundingClientRect();
+            return [
+              {
+                selector,
+                index,
+                width: element.clientWidth,
+                scrollWidth: element.scrollWidth,
+                rightScroll,
+                leftScroll,
+                left: rect.left,
+                right: rect.right,
+                containerLeft: bounds?.left ?? 0,
+                containerRight: bounds?.right ?? innerWidth,
+              },
+            ];
+          },
+        ),
+      );
+      const clippedText: string[] = [];
+      for (const element of document.querySelectorAll<HTMLElement>(
+        ".ask-bubble, .ask-answer-body p, .ask-answer-body pre, .ask-answer-body th, .ask-answer-body td, .ask-source-title, .ask-source-link",
+      )) {
+        if (getComputedStyle(element).visibility === "hidden") continue;
+        const bounds = element.getBoundingClientRect();
+        if (!bounds.width || !bounds.height) continue;
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          if (
+            !node.textContent?.trim() ||
+            node.parentElement?.closest(".sr-only")
+          )
+            continue;
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          if (
+            Array.from(range.getClientRects()).some(
+              (rect) =>
+                rect.width > 0 &&
+                (rect.left < bounds.left - 1 ||
+                  rect.right > bounds.right + 1 ||
+                  rect.top < bounds.top - 1 ||
+                  rect.bottom > bounds.bottom + 1),
+            )
+          )
+            clippedText.push(element.className || element.tagName);
+        }
+      }
+      return { metrics, clippedText };
+    });
+    await testInfo.attach(phase, {
+      body: JSON.stringify(result),
+      contentType: "application/json",
+    });
+    const overflow = result.metrics.filter(
+      (metric) =>
+        metric.rightScroll !== 0 ||
+        metric.leftScroll !== 0 ||
+        (metric.width > 0 && metric.scrollWidth > metric.width + 1),
+    );
+    const escapedBoxes = result.metrics.filter(
+      (metric) =>
+        metric.left < metric.containerLeft - 1 ||
+        metric.right > metric.containerRight + 1,
+    );
+    expect
+      .soft(overflow, `${phase}: panes neither overflow nor move horizontally`)
+      .toEqual([]);
+    expect
+      .soft(
+        escapedBoxes,
+        `${phase}: content boxes remain inside their pane or viewport`,
+      )
+      .toEqual([]);
+    expect
+      .soft(
+        result.clippedText,
+        `${phase}: full rendered text fits, including wrapped code and cells`,
+      )
+      .toEqual([]);
+  };
+  for (const width of [1920, 1360, 1280, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto(`http://127.0.0.1:${port}/app`);
+    if (width === 390)
+      await page
+        .getByRole("button", { name: "Open menu", exact: true })
+        .click();
+    await page
+      .getByRole("button", { name: sidewaysChatTitle, exact: true })
+      .first()
+      .click();
+    await expect(page.locator(".ask-bubble").first()).toContainText(
+      sidewaysQuestion,
+    );
+    const answer = page.locator(".ask-answer-body").first();
+    await expect(answer.locator("pre")).toContainText(sidewaysToken.repeat(2));
+    await expect(answer.locator("table")).toContainText(
+      `TableCell${sidewaysToken}`,
+    );
+    await expect(
+      answer.getByRole("link", { name: sidewaysUrl, exact: true }).first(),
+    ).toHaveAttribute("href", sidewaysUrl);
+    await expect(page.locator(".ask-message.assistant.failed")).toHaveCount(1);
+    await expect(page.locator(".ask-message.assistant.cancelled")).toHaveCount(
+      1,
+    );
+    await page
+      .getByRole("button", { name: `Source 1: ${sidewaysTitle}`, exact: true })
+      .first()
+      .click();
+    const toggle = page.getByTitle("Show or hide sources (S)", { exact: true });
+    if ((await toggle.getAttribute("aria-pressed")) !== "true")
+      await toggle.click();
+    const sources = page.locator(".ask-sources-body");
+    await expect(sources.locator(".ask-source")).toHaveCount(8);
+    const source = sources.locator(".ask-source").first();
+    await expect(source.locator(".ask-source-title")).toContainText(
+      sidewaysTitle,
+    );
+    await expect(source.locator(".ask-source-link")).toContainText(
+      sidewaysCreator,
+    );
+    await expect(source.locator(".ask-source-link")).toHaveAttribute(
+      "href",
+      sidewaysUrl,
+    );
+    await expect(source.locator(".ask-source-open")).toHaveAccessibleName(
+      new RegExp(`^Open note\\s*:\\s*${sidewaysTitle}$`),
+    );
+    await page
+      .getByRole("textbox", { name: "Ask your archive" })
+      .fill(sidewaysQuestion);
+    await audit(`${width}-sources-open`);
+    await expect
+      .poll(() =>
+        sources.evaluate(
+          (element) => element.scrollHeight > element.clientHeight,
+        ),
+      )
+      .toBe(true);
+    await sources.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    expect(
+      await sources.evaluate((element) => element.scrollTop),
+    ).toBeGreaterThan(0);
+    await page.getByTitle("Hide sources (S)", { exact: true }).click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator(".ask-sources")).toBeHidden();
+    await audit(`${width}-sources-closed`);
+    const cancelled = page.locator(".ask-message.assistant.cancelled");
+    const retryTrigger = cancelled.getByTitle("Retry with another model", {
+      exact: true,
+    });
+    await retryTrigger.evaluate((element) =>
+      element.scrollIntoView({ block: "center" }),
+    );
+    await retryTrigger.click();
+    const retry = page.getByRole("dialog", { name: "Retry this answer with" });
+    await expect(retry).toBeVisible();
+    await audit(`${width}-retry-picker`);
+    await expect(retry.locator(".ask-opt")).toHaveCount(6);
+    await page.keyboard.press("Escape");
+    await expect(retry).toHaveCount(0);
   }
 });
