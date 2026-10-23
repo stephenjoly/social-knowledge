@@ -38,7 +38,7 @@ const analysisModelNotes: Record<string, string> = {
   "gpt-6-astra": "Highest capability",
   "gpt-5-mini": "Previous generation",
   "gpt-5": "Previous generation",
-  "qwen-3.8-27b": "No thinking",
+  "qwen-3.8-27b": "Reasoning",
 };
 
 export function analysisModelNote(model: string): string | null {

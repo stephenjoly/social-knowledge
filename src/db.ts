@@ -3320,6 +3320,26 @@ export class JobStore {
       .run(new Date().toISOString(), userId, provider);
   }
 
+  /** Migrate current choices only; answer provenance and job snapshots are immutable. */
+  retireGpt5Selections(userId: string): number {
+    return this.database.transaction(() => {
+      let changes = 0;
+      for (const [table, owner, provider, model, effort] of [
+        ["ai_task_selections", "user_id", "analysis_provider", "analysis_model", "analysis_thinking_level"],
+        ["ai_task_selections", "user_id", "ask_provider", "ask_model", "ask_thinking_level"],
+        ["ai_provider_configurations", "user_id", "provider", "analysis_model", "thinking_level"],
+        ["conversations", "user_id", "ask_provider", "ask_model", "ask_thinking_level"],
+      ] as const) {
+        // Identifiers are fixed internal constants, never external input.
+        changes += this.database.prepare(`UPDATE ${table}
+          SET ${model}='gpt-6-luna', ${effort}=CASE WHEN ${effort}='minimal' THEN 'low' ELSE ${effort} END
+          WHERE ${owner}=? AND ${provider}='openai'
+            AND (${model}='gpt-5' OR substr(${model},1,6) IN ('gpt-5-', 'gpt-5.'))`).run(userId).changes;
+      }
+      return changes;
+    })();
+  }
+
   aiTaskSelections(userId: string): AiTaskSelections {
     const row = this.database
       .prepare(

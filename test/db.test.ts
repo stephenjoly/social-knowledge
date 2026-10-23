@@ -7,6 +7,47 @@ import { AuthService } from "../src/auth.js";
 import { JobStore } from "../src/db.js";
 
 describe("JobStore", () => {
+  it("retires only the requested owner's live GPT-5 choices, preserving history and queued snapshots across reopen", () => {
+    const root = mkdtempSync(join(tmpdir(), "retire-model-"));
+    const filename = join(root, "db.sqlite");
+    let store = new JobStore(filename);
+    try {
+      const owner = store.createUser("retire-owner", "hash");
+      const other = store.createUser("retire-other", "hash");
+      const legacy = { provider: "openai" as const, model: "gpt-5-mini", thinkingLevel: "minimal" as const };
+      for (const user of [owner, other]) {
+        store.saveAiTaskSelections(user.id, { transcriptionProvider: "openai", transcriptionModel: "gpt-4o-transcribe", analysisProvider: "openai", analysisModel: "gpt-5.2", analysisThinkingLevel: "high", askProvider: "openai", askModel: legacy.model, askThinkingLevel: "minimal" });
+        store.saveAiProviderConfiguration(user.id, "openai", { transcriptionModel: "gpt-4o-transcribe", analysisModel: "gpt-5", thinkingLevel: null });
+      }
+      const chat = store.createConversation(owner.id, "Historical GPT-5 chat", legacy)!;
+      const untouched = store.createConversation(other.id, "Other owner", legacy)!;
+      const current = store.createConversation(owner.id, "Current choice", { ...legacy, model: "gpt-6-astra", thinkingLevel: "medium" })!;
+      const notFamily = store.createConversation(owner.id, "Different model", { ...legacy, model: "gpt-50", thinkingLevel: null })!;
+      const turn = store.beginConversationTurn(owner.id, chat.id, "Question", "historical");
+      store.setConversationAttemptSelection(owner.id, chat.id, turn.assistantId, legacy);
+      store.completeConversationAttempt(owner.id, chat.id, turn.assistantId, "Saved answer", [], false);
+      const before = store.getConversation(owner.id, chat.id)!;
+      const job = store.createOrGet({ ownerUserId: owner.id, sourceUrl: "https://www.instagram.com/reel/retire/", normalizedUrl: "https://www.instagram.com/reel/retire/", sourceHash: "retire-snapshot", transcriptionProvider: "openai", transcriptionModel: "gpt-4o-transcribe", analysisProvider: "openai", analysisModel: "gpt-5", analysisThinkingLevel: "minimal" }).job;
+      const tasksBefore = store.aiTaskSelections(owner.id);
+      const otherBefore = store.aiTaskSelections(other.id);
+      expect(store.retireGpt5Selections(owner.id)).toBe(4);
+      expect(store.retireGpt5Selections(owner.id)).toBe(0);
+      expect(store.aiTaskSelections(owner.id)).toEqual({ ...tasksBefore, analysisModel: "gpt-6-luna", askModel: "gpt-6-luna", askThinkingLevel: "low" });
+      expect(store.aiTaskSelections(other.id)).toEqual(otherBefore);
+      expect(store.getConversation(other.id, untouched.id)).toEqual(untouched);
+      expect(store.getConversation(owner.id, current.id)).toEqual(current);
+      expect(store.getConversation(owner.id, notFamily.id)).toEqual(notFamily);
+      expect(store.getConversation(owner.id, chat.id)).toEqual({ ...before, selection: { ...legacy, model: "gpt-6-luna", thinkingLevel: "low" } });
+      expect(store.aiProviderConfiguration(owner.id, "openai")).toMatchObject({ analysisModel: "gpt-6-luna", thinkingLevel: null });
+      expect(store.get(job.id)).toEqual(job);
+      store.close();
+      store = new JobStore(filename);
+      expect(store.retireGpt5Selections(owner.id)).toBe(0);
+      expect(store.getConversation(owner.id, chat.id)!.messages).toEqual(before.messages);
+      expect(store.get(job.id)).toEqual(job);
+    } finally { store.close(); rmSync(root, { recursive: true, force: true }); }
+  });
+
   it("migrates the pre-chat-picker schema in place and keeps historical rows nullable", () => {
     const root = mkdtempSync(join(tmpdir(), "chat-migration-"));
     const filename = join(root, "old.sqlite");

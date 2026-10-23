@@ -10,6 +10,9 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { AppConfig } from "./config.js";
 import type { JobStore } from "./db.js";
 
+const retiredOpenAiModel = (model: string) => /^gpt-5(?:$|[.-])/.test(model);
+const replacementModel = "gpt-6-luna";
+
 export const aiProviderIds = ["openai", "cerebras"] as const;
 export type AiProviderId = (typeof aiProviderIds)[number];
 export const thinkingLevels = ["minimal", "low", "medium", "high"] as const;
@@ -127,6 +130,7 @@ export class AiProviderService {
   }
 
   list(userId: string) {
+    this.store.retireGpt5Selections(userId);
     const connections = this.store.aiProviderConnections(userId);
     return aiProviderIds.map((id) => ({
       ...definitions[id],
@@ -273,6 +277,18 @@ export class AiProviderService {
     conversationSelection: AskSelection | null = null,
   ): AskSelection | null {
     const settings = this.settings(userId).selections;
+    // A caller may have loaded the chat just before settings migrated it.
+    if (
+      conversationSelection?.provider === "openai" &&
+      retiredOpenAiModel(conversationSelection.model)
+    ) {
+      conversationSelection = {
+        ...conversationSelection,
+        model: replacementModel,
+        thinkingLevel: conversationSelection.thinkingLevel === "minimal"
+          ? "low" : conversationSelection.thinkingLevel,
+      };
+    }
     return (
       [
         this.validAskSelection(userId, conversationSelection),
@@ -379,6 +395,7 @@ export class AiProviderService {
               };
               if (
                 !context.thinkingLevel &&
+                !retiredOpenAiModel(route.model) &&
                 !service.supportsAnyThinkingLevel(route.provider, route.model)
               )
                 delete routedRequest.reasoning;
@@ -386,11 +403,12 @@ export class AiProviderService {
                 {
                   ...routedRequest,
                   ...(context.thinkingLevel &&
-                  service.supportsThinkingLevel(
-                    route.provider,
-                    route.model,
-                    context.thinkingLevel,
-                  )
+                  (retiredOpenAiModel(route.model) ||
+                    service.supportsThinkingLevel(
+                      route.provider,
+                      route.model,
+                      context.thinkingLevel,
+                    ))
                     ? {
                         reasoning: {
                           ...(request.reasoning ?? {}),
@@ -913,6 +931,7 @@ export class AiProviderService {
     const model = expectedModel ?? this.defaultAnalysisModel(provider);
     if (
       !this.isAnalysisModel(provider, model) &&
+      !(provider === "openai" && retiredOpenAiModel(model)) &&
       !this.isTranscriptionModel(provider, model)
     )
       throw new Error("model_unavailable");
@@ -941,33 +960,26 @@ export class AiProviderService {
 
   private analysisOptions(provider: AiProviderId) {
     if (provider === "cerebras")
-      return [
-        {
-          model: this.config.cerebrasAnalysisModel,
-          thinkingLevels: [] as ThinkingLevel[],
-        },
-      ];
-    const currentModels = ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"];
-    return [
-      ...new Set([
-        ...currentModels,
-        this.config.analysisModel,
-        "gpt-5-mini",
-        "gpt-5",
-      ]),
-    ].map((model) => ({
-      model,
-      thinkingLevels: currentModels.includes(model)
-        ? (["low", "medium", "high"] as ThinkingLevel[])
-        : model === "gpt-5-mini" || model === "gpt-5"
-          ? [...thinkingLevels]
+      return [{
+        model: this.config.cerebrasAnalysisModel,
+        thinkingLevels: this.config.cerebrasAnalysisModel === "qwen-3.8-27b"
+          ? (["low", "medium", "high"] as ThinkingLevel[])
           : [],
-    }));
+      }];
+    const currentModels = [replacementModel, "gpt-6.1-sol", "gpt-6-astra"];
+    return [...new Set([...currentModels, this.defaultAnalysisModel(provider)])]
+      .map((model) => ({
+        model,
+        thinkingLevels: currentModels.includes(model)
+          ? (["low", "medium", "high"] as ThinkingLevel[])
+          : [],
+      }));
   }
 
   private defaultAnalysisModel(provider: AiProviderId) {
     return provider === "openai"
-      ? this.config.analysisModel
+      ? (retiredOpenAiModel(this.config.analysisModel)
+        ? replacementModel : this.config.analysisModel)
       : this.config.cerebrasAnalysisModel;
   }
 
@@ -1013,6 +1025,7 @@ export class AiProviderService {
   }
 
   private upgradeLegacySelections(userId: string) {
+    this.store.retireGpt5Selections(userId);
     const selected = this.store.aiTaskSelections(userId);
     const next = { ...selected };
     let changed = false;

@@ -26,7 +26,7 @@ it.each([
   ["gpt-6-astra", "GPT-6 Astra", "Highest capability"],
   ["gpt-5-mini", "GPT-5 mini", "Previous generation"],
   ["gpt-5", "GPT-5", "Previous generation"],
-  ["qwen-3.8-27b", "Qwen 3.8 27B", "No thinking"],
+  ["qwen-3.8-27b", "Qwen 3.8 27B", "Reasoning"],
 ])("labels %s consistently with its catalog note", (model, label, note) => {
   expect(modelLabel(model)).toBe(label);
   expect(analysisModelNote(model)).toBe(note);
@@ -63,13 +63,13 @@ const message = (
 });
 
 describe("Ask model selection contract", () => {
-  const analysis: AskSelection = { provider: "openai", model: "gpt-5-mini", thinkingLevel: null };
-  const askDefault: AskSelection = { provider: "openai", model: "gpt-5", thinkingLevel: null };
+  const analysis: AskSelection = { provider: "openai", model: "gpt-6-luna", thinkingLevel: null };
+  const askDefault: AskSelection = { provider: "openai", model: "gpt-6.1-sol", thinkingLevel: null };
   const cerebras: AskSelection = { provider: "cerebras", model: "qwen-3.8-27b", thinkingLevel: null };
   const provider = (id: AiProvider["id"]): AiProvider => {
     const options = id === "openai"
-      ? [{ model: "gpt-5-mini", thinkingLevels: ["low", "medium"] as const }, { model: "gpt-5", thinkingLevels: ["low", "medium", "high"] as const }]
-      : [{ model: "qwen-3.8-27b", thinkingLevels: [] as const }];
+      ? [{ model: "gpt-6-luna", thinkingLevels: ["low", "medium", "high"] as const }, { model: "gpt-6.1-sol", thinkingLevels: ["low", "medium", "high"] as const }]
+      : [{ model: "qwen-3.8-27b", thinkingLevels: ["low", "medium", "high"] as const }];
     return {
       id, name: id, docsUrl: "https://example.test/models", connected: true,
       status: "verified", keyHint: null, verifiedAt: null, supportsVision: false,
@@ -93,7 +93,7 @@ describe("Ask model selection contract", () => {
 
   it("preserves null-thinking chat > Ask default > Analysis priority", () => {
     const settings = state(askDefault);
-    const chat = { ...analysis, model: "gpt-5-mini" };
+    const chat = { ...analysis, model: "gpt-6-luna" };
     expect(defaultAskSelection(settings)).toEqual(askDefault);
     expect(resolveAskSelection(chat, settings)).toEqual(chat);
     expect(resolveAskSelection(null, settings)).toEqual(askDefault);
@@ -103,16 +103,16 @@ describe("Ask model selection contract", () => {
   it("rejects explicit unsupported levels and falls through rather than normalizing them", () => {
     const settings = state(askDefault);
     const options = askModelOptions(settings);
-    const invalidChat = { ...analysis, thinkingLevel: "high" as const };
-    const invalidNoThinking = { ...cerebras, thinkingLevel: "high" as const };
+    const invalidChat = { ...analysis, thinkingLevel: "minimal" as const };
+    const invalidQwen = { ...cerebras, thinkingLevel: "minimal" as const };
     expect(usableSelection(invalidChat, options)).toBeNull();
-    expect(usableSelection(invalidNoThinking, options)).toBeNull();
+    expect(usableSelection(invalidQwen, options)).toBeNull();
     expect(usableSelection({ ...analysis, thinkingLevel: "low" }, options)).toEqual({ ...analysis, thinkingLevel: "low" });
     expect(usableSelection(cerebras, options)).toEqual(cerebras);
     expect(resolveAskSelection(invalidChat, settings)).toEqual(askDefault);
-    settings.selections.ask = invalidNoThinking;
+    settings.selections.ask = invalidQwen;
     expect(defaultAskSelection(settings)).toEqual(analysis);
-    expect(resolveAskSelection(invalidNoThinking, settings)).toEqual(analysis);
+    expect(resolveAskSelection(invalidQwen, settings)).toEqual(analysis);
   });
 
   it("falls back from unknown models and disconnected providers, or returns no usable selection", () => {
@@ -135,12 +135,13 @@ describe("Ask model selection contract", () => {
   it("keeps provider-default thinking when choosing the default's own model", () => {
     const options = askModelOptions(state());
     expect(selectionFor(options[0]!, { ...analysis, thinkingLevel: "low" }, analysis)).toEqual(analysis);
-    expect(selectionFor(options[2]!, { ...analysis, thinkingLevel: "low" }, null)).toEqual(cerebras);
+    expect(selectionFor(options[2]!, { ...analysis, thinkingLevel: "low" }, null)).toEqual({ ...cerebras, thinkingLevel: "low" });
+    expect(selectionFor(options[2]!, analysis, cerebras)).toEqual(cerebras);
   });
 
   it("renders a null-thinking answer model without inventing a thinking level", () => {
     const answer = { ...message("assistant"), ...analysis };
-    expect(answerMeta(answer).model).toBe("GPT-5 mini");
+    expect(answerMeta(answer).model).toBe("GPT-6 Luna");
   });
 });
 

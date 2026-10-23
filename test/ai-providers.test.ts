@@ -107,7 +107,7 @@ describe("AI provider settings", () => {
       service.saveConfiguration(user.id, "cerebras", {
         transcriptionModel: null,
         analysisModel: config.cerebrasAnalysisModel,
-        thinkingLevel: "high",
+        thinkingLevel: "minimal",
       }),
     ).toThrow("invalid_thinking_level");
 
@@ -126,11 +126,11 @@ describe("AI provider settings", () => {
       thinkingLevel: "high",
     });
     const direct = service.saveSelections(user.id, {
-      analysis: { provider: "openai", model: "gpt-5", thinkingLevel: "low" },
+      analysis: { provider: "openai", model: "gpt-6-luna", thinkingLevel: "low" },
     });
     expect(direct.selections.analysis).toEqual({
       provider: "openai",
-      model: "gpt-5",
+      model: "gpt-6-luna",
       thinkingLevel: "low",
     });
 
@@ -522,36 +522,36 @@ describe("AI provider settings", () => {
       originalConfig.aiCredentialsKey = "synthetic-original-encryption-identity";
       const original = new AiProviderService(store, originalConfig);
       await original.verifyAndSave(user.id, "openai", "sk-synthetic-owner-credential");
-      original.saveSelections(user.id, { transcription: { provider: "openai", model: originalConfig.transcriptionModel }, analysis: { provider: "openai", model: "gpt-5", thinkingLevel: null } });
+      original.saveSelections(user.id, { transcription: { provider: "openai", model: originalConfig.transcriptionModel }, analysis: { provider: "openai", model: "gpt-6-luna", thinkingLevel: null } });
       const previewConfig = testConfig("/tmp/local-key-preview");
       previewConfig.aiCredentialsKey = "synthetic-preview-encryption-identity";
       const preview = new AiProviderService(store, previewConfig);
       await preview.verifyAndSave(other.id, "openai", "sk-synthetic-other-credential");
-      preview.saveSelections(other.id, { analysis: { provider: "openai", model: "gpt-5", thinkingLevel: null } });
+      preview.saveSelections(other.id, { analysis: { provider: "openai", model: "gpt-6-luna", thinkingLevel: null } });
       const metadataBefore = store.aiProviderConnection(user.id, "openai");
       const selectionsBefore = store.aiTaskSelections(user.id);
       const changesBefore = store.database.prepare("SELECT total_changes() AS count").get();
       expect(preview.settings(user.id).providers.find((provider) => provider.id === "openai")).toMatchObject({ connected: false, status: "needs_attention" });
       expect(preview.settings(user.id).readiness).toEqual({ capture: false, ask: false });
-      expect(preview.settings(user.id).selections.analysis).toEqual({ provider: "openai", model: "gpt-5", thinkingLevel: null });
+      expect(preview.settings(user.id).selections.analysis).toEqual({ provider: "openai", model: "gpt-6-luna", thinkingLevel: null });
       expect(preview.resolveAskSelection(user.id)).toBeNull();
       expect(preview.settings(other.id).providers.find((provider) => provider.id === "openai")).toMatchObject({ connected: true, status: "verified" });
       expect(preview.settings(other.id).readiness.ask).toBe(true);
-      expect(() => preview.client(user.id, "openai", "gpt-5")).toThrow("ai_credentials_unreadable");
-      expect(await preview.testConnection(user.id, "analysis")).toMatchObject({ ok: false, code: "credential_error", selection: { provider: "openai", model: "gpt-5", thinkingLevel: null } });
+      expect(() => preview.client(user.id, "openai", "gpt-6-luna")).toThrow("ai_credentials_unreadable");
+      expect(await preview.testConnection(user.id, "analysis")).toMatchObject({ ok: false, code: "credential_error", selection: { provider: "openai", model: "gpt-6-luna", thinkingLevel: null } });
       expect(await preview.testConnection(user.id, "ask")).toMatchObject({ ok: false, code: "credential_error" });
       expect(generationRequests).toBe(0);
       expect(store.aiProviderConnection(user.id, "openai")).toEqual(metadataBefore);
       expect(store.aiTaskSelections(user.id)).toEqual(selectionsBefore);
       expect(store.database.prepare("SELECT total_changes() AS count").get()).toEqual(changesBefore);
-      expect(preview.client(other.id, "openai", "gpt-5").provider).toBe("openai");
-      expect(original.client(user.id, "openai", "gpt-5").provider).toBe("openai");
+      expect(preview.client(other.id, "openai", "gpt-6-luna").provider).toBe("openai");
+      expect(original.client(user.id, "openai", "gpt-6-luna").provider).toBe("openai");
       const recoveredConfig = { ...previewConfig, aiCredentialsPreviousKeys: [originalConfig.aiCredentialsKey] };
       const recovered = new AiProviderService(store, recoveredConfig);
       expect(recovered.settings(user.id).providers.find((provider) => provider.id === "openai")).toMatchObject({ connected: true, status: "verified" });
       expect(recovered.settings(user.id).readiness).toEqual({ capture: true, ask: true });
-      expect(recovered.resolveAskSelection(user.id)).toEqual({ provider: "openai", model: "gpt-5", thinkingLevel: null });
-      expect(await recovered.testConnection(user.id, "analysis")).toMatchObject({ ok: true, code: "ok", selection: { provider: "openai", model: "gpt-5", thinkingLevel: null } });
+      expect(recovered.resolveAskSelection(user.id)).toEqual({ provider: "openai", model: "gpt-6-luna", thinkingLevel: null });
+      expect(await recovered.testConnection(user.id, "analysis")).toMatchObject({ ok: true, code: "ok", selection: { provider: "openai", model: "gpt-6-luna", thinkingLevel: null } });
       expect(generationRequests).toBe(1);
       expect(store.aiProviderConnection(user.id, "openai")).toEqual(metadataBefore);
       expect(store.aiTaskSelections(user.id)).toEqual(selectionsBefore);
@@ -602,67 +602,52 @@ describe("AI provider settings", () => {
     },
   );
 
-  it("orders current models before configured and legacy options without changing saved defaults", () => {
+  it("upgrades saved defaults and stale loaded chats before resolving a model, while preserving queued GPT-5 execution", async () => {
     const store = new JobStore(":memory:");
     try {
-      const user = store.createUser("catalog-owner", "hash");
-      const config = {
-        ...testConfig("/tmp/catalog"),
-        analysisModel: "custom-analysis",
-      };
+      const user = store.createUser("retired-default", "hash");
+      const bodies: Record<string, unknown>[] = [];
+      vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith("/models")) return Response.json({ data: [] });
+        bodies.push(JSON.parse(String(init?.body)));
+        return Response.json({ object: "response", output: [], output_text: "" });
+      }));
+      const config = { ...testConfig("/tmp/retired-default"), analysisModel: "gpt-5-mini" };
       const service = new AiProviderService(store, config);
-      store.saveAiProviderConnection(user.id, "openai", "unused", "synthetic");
-      const legacy = {
-        provider: "openai" as const,
-        model: "gpt-5",
-        thinkingLevel: "minimal" as const,
-      };
-      service.saveSelections(user.id, { analysis: legacy, ask: legacy });
-      const before = store.aiTaskSelections(user.id);
-      const options = service
-        .list(user.id)
-        .find((provider) => provider.id === "openai")!.taskOptions.analysis;
-      expect(options.map((option) => option.model)).toEqual([
-        "gpt-6-luna",
-        "gpt-6.1-sol",
-        "gpt-6-astra",
-        "custom-analysis",
-        "gpt-5-mini",
-        "gpt-5",
-      ]);
-      expect(
-        options.slice(0, 3).map((option) => option.thinkingLevels),
-      ).toEqual(Array(3).fill(["low", "medium", "high"]));
-      expect(
-        options.find((option) => option.model === "custom-analysis")!
-          .thinkingLevels,
-      ).toEqual([]);
-      expect(
-        options.find((option) => option.model === "gpt-5")!.thinkingLevels,
-      ).toEqual(["minimal", "low", "medium", "high"]);
-      expect(service.settings(user.id).selections).toMatchObject({
-        analysis: legacy,
-        ask: legacy,
-      });
-      expect(store.aiTaskSelections(user.id)).toEqual(before);
-      expect(config.analysisModel).toBe("custom-analysis");
-      const configuredCurrent = new AiProviderService(store, {
-        ...config,
-        analysisModel: "gpt-6-luna",
-      });
-      expect(
-        configuredCurrent
-          .list(user.id)[0]!
-          .models.analysis.filter((model) => model === "gpt-6-luna"),
-      ).toHaveLength(1);
-    } finally {
-      store.close();
-    }
+      await service.verifyAndSave(user.id, "openai", "synthetic-retirement-key");
+      store.saveAiTaskSelections(user.id, { transcriptionProvider: "openai", transcriptionModel: config.transcriptionModel, analysisProvider: "openai", analysisModel: "gpt-5-mini", analysisThinkingLevel: "minimal", askProvider: "openai", askModel: "gpt-5", askThinkingLevel: "medium" });
+      const staleChat = { provider: "openai" as const, model: "gpt-5", thinkingLevel: "high" as const };
+      const chat = store.createConversation(user.id, "Migrated chat", staleChat)!;
+      expect(service.resolveAskSelection(user.id, staleChat)).toEqual({ ...staleChat, model: "gpt-6-luna" });
+      expect(service.settings(user.id)).toMatchObject({ selections: { analysis: { model: "gpt-6-luna", thinkingLevel: "low" }, ask: { model: "gpt-6-luna", thinkingLevel: "medium" } }, readiness: { ask: true, capture: true } });
+      expect(store.getConversation(user.id, chat.id)!.selection).toEqual({ ...staleChat, model: "gpt-6-luna" });
+      expect(service.validAskSelection(user.id, staleChat)).toBeNull();
+      await service.runForUser(user.id, () => service.routedClient().responses.create({ model: "ignored", input: "Queued capture" }), "openai", "gpt-5-mini", "minimal");
+      expect(bodies).toEqual([expect.objectContaining({ model: "gpt-5-mini", reasoning: { effort: "minimal" } })]);
+    } finally { store.close(); }
+  });
+
+  it("offers current models and custom models, excluding retired configured defaults", () => {
+    const store = new JobStore(":memory:");
+    const user = store.createUser("catalog-owner", "hash");
+    try {
+      for (const configured of ["gpt-5", "gpt-5-mini", "gpt-5.2", "gpt-5-nano", "gpt-6-luna"]) {
+        const service = new AiProviderService(store, { ...testConfig("/tmp/catalog"), analysisModel: configured });
+        expect(service.list(user.id)[0]!.taskOptions.analysis).toEqual(
+          ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"].map(model => ({ model, thinkingLevels: ["low", "medium", "high"] })));
+        store.saveAiProviderConnection(user.id, "openai", "unused", "synthetic");
+        if (configured.startsWith("gpt-5")) expect(() => service.saveSelections(user.id, { analysis: { provider: "openai", model: configured, thinkingLevel: null } })).toThrow("invalid_model_selection");
+      }
+      const custom = new AiProviderService(store, { ...testConfig("/tmp/catalog"), analysisModel: "custom-analysis" });
+      expect(custom.list(user.id)[0]!.models.analysis).toEqual(["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra", "custom-analysis"]);
+      expect(custom.list(user.id)[1]!.taskOptions.analysis).toEqual([{ model: "qwen-3.8-27b", thinkingLevels: ["low", "medium", "high"] }]);
+    } finally { store.close(); }
   });
 
   it.each([
     ...([null, "high"] as const).map((thinkingLevel) => ({
-      model: "gpt-5",
+      model: "gpt-6-luna",
       thinkingLevel,
     })),
     ...["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"].flatMap((model) =>
