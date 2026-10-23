@@ -1,6 +1,6 @@
 # Ask never requires horizontal scrolling
 
-Status: active; explicit user bug-fix request
+Status: completed; browser and deployed preview acceptance verified
 Owner: delivery lead
 Started: 2026-10-22
 Branch: codex/ask-ai-ui-mockup; draft PR64
@@ -33,3 +33,8 @@ No provider, model/default, credential, migration, production action or unrelate
 - Follow-up c6c6dd5 passes focused adversarial Chromium case1/1 (5.760s), all12 phases:1920/1360/1280/390 ×sources open/closed/Retry menu. Actual one-pixel movement prohibition, readable text bounds, source attribution/link/accessibility names and real mobile Retry clicks retained. No forced clicks or weakened assertions. Full suites pending.
 
 - Final browser verification passes: focused adversarial1/1; full Chromium6/6, WebKit6/6, affected archive/streaming/Settings11/11, no skips. All12 adversarial phases retain real scrollLeft0, pane widths, box/text bounds, full link/accessible names and real mobile Retry clicks. Test setup3460ed1 waits for citation focus completion before the separate Settings keyboard action; assertions preserved. Temporary8801/4186 servers stopped and test data cleaned up. Final npm run check passes357/357 tests in40 files, TypeScript, docs/site parity and production build. Preview acceptance pending.
+
+## Final preview acceptance
+Correction3591f5630d9db9ff93a0e6f37a907b8118198644 deployed. Required CI passes in1m19s: https://github.com/stephenjoly/social-knowledge/actions/runs/39878917145 . Live native-browser DOM/layout verification on the affected eight-source chat at1360×1000: root1360/1360, thread765/765, outer sources315/315, source scroller300/300; attempts in both horizontal directions leave scrollLeft0 throughout. CSS bundle index-BfQxeL6n.css matches verified local bundle. Health and synthetic review fixture acceptance pass (12chats, one pinned/pending/failed, both simulated providers). No new paid model calls, credential/default changes, migrations or production action.
+
+The earlier outer-page check missed pane-level overflow; the committed adversarial regression now covers actual pane movement and full readable text, preserving all strict previous checks. Final source/body metadata intentionally wraps instead of truncating. Header/model subtitles retain approved single-line presentation without horizontal scrolling. No remaining decision or known failure. Local temporary servers/data cleaned up.
