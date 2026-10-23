@@ -52,3 +52,8 @@ Default selections stay untouched. Model-list presence does not prove generation
 
 ## Preview publication decision — 2026-10-22
 Stephen asked to deploy the current version after being told that the larger picker clips, and asked the lead to review against Opus’s design while Opus is unavailable. Publish to PR64 preview only. No merge, production action, default change or credential change. Lead compared the existing state 3 and state 6 captures against the approved references: layout, typography, sidebar, sources and modal remain close; new catalog labels/rows are intentional. The larger home picker has a known viewport regression on desktop and mobile. Strict failing geometry tests remain intact. The scheduled Opus correction stays pending; final acceptance is incomplete.
+
+## Picker correction verification
+- c206da0 replaces fixed upward placement with measured available-space placement and constrained internal scrolling; connected model rows, footer actions and keyboard focus remain reachable.
+- Strict viewport/model and long-answer outer-scroll regressions pass in Chromium; all four Ask journeys pass in both Chromium and WebKit, including focus return. Final npm run check on the combined scroll/picker/motion source passes 357 tests in 40 files, types, docs, site parity and production build.
+- Model defaults, provider configuration and saved chats remain unchanged. Real Luna generation was verified on deployed 3f907ba in 7.944s with six sources. Final correction publication/native-browser acceptance pending.

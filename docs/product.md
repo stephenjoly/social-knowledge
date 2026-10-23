@@ -120,7 +120,13 @@ panel. New chats offer grounded starter questions when saved posts exist. The
 composer picker lists connected providers’ analysis models and supported thinking
 levels. A chat remembers its model; Set as default changes the model for new chats.
 Manage models opens Settings on AI & models. With no connected model, Connect a
-model opens that setup.
+model opens that setup. The picker opens toward available space and scrolls inside
+its own bounds when the model list is taller than the visible area.
+
+On desktop the conversation and sources scroll independently while the sidebar,
+header and composer remain in place. The composer shows a subtle clockwise border
+highlight while focused or generating an answer; reduced motion keeps a static
+focus indicator instead.
 
 Each answer records the provider, model, and thinking level actually used. Its
 metadata names the model, source count, and time; historical answers without model
