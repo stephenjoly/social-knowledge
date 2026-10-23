@@ -1,6 +1,6 @@
 # Retire GPT-5 choices and expose Qwen reasoning
 
-Status: active — scope approved
+Status: completed — implementation verified; PR #67 awaits review
 Owner: delivery lead
 Started: 2026-10-23
 
@@ -40,10 +40,22 @@ Approved by Stephen: move saved GPT-5 defaults and chat selections to GPT-6 Luna
 - [x] Implement owner-scoped current-choice migration, new catalog and Qwen controls.
 - [x] Verify SDK request serialization, separated reasoning, migration isolation/idempotency/reopen, historical answers and queued snapshots.
 - [x] Chromium Ask 8/8 and Settings 2/2 pass, including desktop/mobile controls.
-- [ ] Complete full check, WebKit and staging-targeted PR preview acceptance; production promotion is separate.
+- [x] Full check: 403 tests, strict server/web types, docs and production build pass.
+- [x] WebKit Ask 8/8; native Dokploy PR preview and required CI pass.
+- [x] Deployed picker verified in Yab with the built-in synthetic review account; all four choices, Qwen effort selection and absent GPT-5 confirmed. No provider calls or new saved chats. Production promotion remains separate.
 
 ## Risks and recovery
 Removing a model without handling saved selections can disable Ask or capture readiness. Reasoning mode can affect latency; preserve current null/default behavior. Roll back the scoped source change if acceptance fails; never rewrite historical answer provenance or alter provider credentials.
 
 ## Implementation notes
 The idempotent transaction runs for the signed-in owner when AI settings/providers are read. It changes only current task assignments, provider preferences and chat choices; timestamps, answer metadata, job snapshots and credentials are untouched. A stale chat object loaded immediately before migration resolves to the same Luna choice. Private generation transport still accepts existing GPT-5 job snapshots; new Settings/Ask choices reject them. Qwen uses the existing capability-driven controls and Cerebras adapter, with no CSS or layout changes.
+
+## Handoff and review script
+- PR: https://github.com/stephenjoly/social-knowledge/pull/67 (targets staging), tracking issue #66.
+- Implementation: f3e66ec5176b8eed99bf12ded44b6d04a30bacb3.
+- Preview: https://preview-social-knowledge-staging-y3qjds-brxwmw.staging.stephenjoly.net/app
+- CI: https://github.com/stephenjoly/social-knowledge/actions/runs/40012535680
+- Local evidence: output/playwright/model-retirement-final-chromium, model-retirement-final-webkit, model-retirement-settings, model-retirement-preview.
+- In the preview login, use the built-in Synthetic Ask review account button. Choose New chat, open the model chip (design state 3), confirm Luna/Sol/Astra/Qwen and no GPT-5 rows, then select Qwen and try Low/Medium/High. Leave the chat unsent to avoid provider calls. In Settings → AI & models (design state 6), the same supported choices are available.
+- Visual difference: fewer model rows and the corrected Qwen descriptor/effort controls; no CSS/layout changes. Existing picker scrolling/placement and overflow tests remain intact.
+- Verification used synthetic API responses; it proves transport serialization and persistence, not comparative model intelligence or exhaustive archive retrieval. No production rollout, environment/credential edits, or retrieval changes.
