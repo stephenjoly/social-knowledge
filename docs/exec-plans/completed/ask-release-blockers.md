@@ -1,6 +1,6 @@
 # Resolve final Ask release blockers
 
-Status: active
+Status: completed
 Owner: delivery lead
 Started: 2026-10-23
 
@@ -27,7 +27,7 @@ Fix these three behaviors, add regression coverage, verify and publish to the ex
 - [x] Diagnostics selection corrected with red/green unit coverage; checkpoints f98fe40 and 6540d7b. Expanded provider browser suite 2/2 passes with original quota/fallback assertions preserved.
 - [x] Collapsed sidebar shortcut corrected with baseline browser failure and focused checks; checkpoints 6b0deb7 and b5eb169. Expanded navigation browser journey passes desktop and mobile focus, filtering, typing guards and stale-remount protection.
 - [x] Send-flow cause established and regression resolved in 8e0476c. Original failure plus forced reconciliation overlap pass 2/2; complete Chromium Ask suite passes 8/8.
-- [ ] Integration checks, CI and preview acceptance.
+- [x] Integration checks, CI and preview acceptance.
 
 ## Decisions
 - 2026-10-23: Retain feature branch and draft PR64 targeting staging. Use Codex workers for logic/test changes only; no layout/styling work is needed.
@@ -39,7 +39,14 @@ Focused Vitest per slice; existing provider-settings and navigation-history jour
 
 Final combined npm run check passes 393 tests across 41 files, docs/site parity, strict TypeScript and production build. Runtime CSS remains unchanged (index-BfQxeL6n.css); final JS is index-BuA0VKbu.js. Browser artifacts use separate output/playwright/ directories to avoid concurrent reporter collisions. Added diagnostic requests use a separate synthetic owner to respect the unchanged five-per-minute service limit.
 
-Final local browser acceptance: Ask Chromium 8/8, Ask WebKit 8/8, affected archive/streaming/Settings 11/11, expanded provider settings 2/2, expanded navigation history 1/1 (30 checks total, no skips). Both engines retain first-Enter send, pending old-snapshot release, correct Stop cancellation, previous completed history, picker/scroll/motion and natural-conversation checks. Local servers stopped after verification. CI and deployed preview acceptance remain pending publication.
+Final local browser acceptance: Ask Chromium 8/8, Ask WebKit 8/8, affected archive/streaming/Settings 11/11, expanded provider settings 2/2, expanded navigation history 1/1 (30 checks total, no skips). Both engines retain first-Enter send, pending old-snapshot release, correct Stop cancellation, previous completed history, picker/scroll/motion and natural-conversation checks. Local servers stopped after verification. CI and deployed preview acceptance passed as recorded below.
 
 ## Risks and recovery
 Async UI transitions can discard an early draft or allow stale work into a new chat. Test a real keyboard send and authoritative persisted result, preserving cancellation/reconciliation. Revert only scoped fix checkpoints if preview regresses; no storage or credentials change.
+
+## Published acceptance
+- Source correction f5218694b49db60350b1bd3d7462e236cb260d0f deployed through Dokploy to PR64; CI passed in1m23s: https://github.com/stephenjoly/social-knowledge/actions/runs/39949458155 .
+- Deployed browser checked collapsed desktop search expand/focus; Ask-only diagnostics enablement and acceptance with browser-simulated provider configuration/result; actual synthetic Ask first-Enter send while old reconciliation was deliberately held. New chat persisted complete (90d97543-9d07-4152-966b-a8ddca70befe). No paid provider calls or credential/default changes.
+- Preview probe setup was corrected to install config interception before Settings initial load and wait for authoritative streamed completion. Assertions were preserved; no application changes followed these probe corrections.
+- Screenshot: output/playwright/ask-chat-first/release-blockers-preview.png. Runtime layout/CSS unchanged; no new visual differences from the approved design.
+- Local test servers8801/8799/4186 stopped; work remains on the feature branch and draft PR64 targeting staging. Production and main untouched. Existing citation-format Retry debt remains separate.
