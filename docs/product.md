@@ -138,7 +138,10 @@ Check-ins and app help do not run an archive search or show an insufficient-evid
 warning. An actual archive question with no relevant evidence reports that no matching
 saves were found, concisely and without claiming exhaustive absence. A clear miss
 does not require keyword troubleshooting, an unsolicited external handoff or a
-follow-up task. Clarification is reserved for genuine ambiguity. A source-free
+follow-up task. Clarification is reserved for genuine ambiguity.
+This applies both when retrieval returns no candidates and when retrieved
+candidates do not actually answer the question. The user's reason for asking
+does not itself require advice or a narrower search. A source-free
 reply does not inherit sources from an earlier answer, and a follow-up about cited
 saves can reuse their evidence.
 

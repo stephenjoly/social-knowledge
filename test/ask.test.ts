@@ -277,7 +277,7 @@ describe("AskService", () => {
         );
         expect(policy).toContain("Answer the actual request directly and concisely");
         expect(policy).toContain(
-          "Offer clarification or a next step when it helps the user’s goal",
+          "a brief search outcome is a complete answer: finish there",
         );
         expect(policy).toContain(
           "Describe a miss as what this search found, not proof of exhaustive absence",
@@ -916,6 +916,51 @@ describe("AskService", () => {
     );
     expect(answerInput).not.toContain("stain removal");
     expect(result.answer).toContain("DIY microcement");
+  });
+
+  it("finishes a generated archive miss when retrieved candidates do not answer a clear question", async () => {
+    const store = new JobStore(":memory:");
+    stores.push(store);
+    const user = store.createUser("candidate-miss", "hash");
+    addCapture(store, user.id, {
+      sourceHash: "travel-bag",
+      title: "Travel bag checklist",
+      synopsis: "Pack a spare charger for travel.",
+      transcript: "Use a packing checklist before travel.",
+    });
+    const chat = store.createConversation(user.id)!;
+    const question = "Do I have anything in my archive about Portugal? I'm planning a trip pretty soon.";
+    const turn = store.beginConversationTurn(user.id, chat.id, question, crypto.randomUUID());
+    const answer = "I didn’t find any Portugal-related saves in this search.";
+    const create = vi.fn()
+      .mockResolvedValueOnce({ output_text: JSON.stringify({
+        action: "search_archive", standaloneQuestion: "travel", responseInstructions: "", referencedCaptureIds: [],
+      }) })
+      .mockResolvedValueOnce(streamedJson({ answer, citedCaptureIds: [], sufficient: false }));
+    const deltas: string[] = [];
+    const result = await new AskService(
+      { responses: { create } } as unknown as OpenAI,
+      testConfig("/tmp/ask-candidate-miss"), store,
+    ).answer({ userId: user.id, conversationId: chat.id, assistantId: turn.assistantId,
+      question, signal: new AbortController().signal, onDelta: delta => deltas.push(delta) });
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(result.diagnostics.selected).toHaveLength(1);
+    expect(create.mock.calls[1]![0].instructions).toContain(
+      "If retrieved candidates do not answer a clear archive question, set sufficient=false and give only the brief search outcome, then finish",
+    );
+    for (const call of create.mock.calls) {
+      expect(call[0].instructions).toContain(
+        "Clarification belongs to genuinely ambiguous requests or user-requested search refinement",
+      );
+      expect(call[0].instructions).toContain(
+        "The user's reason for asking does not itself make a clear archive question ambiguous",
+      );
+    }
+    expect(result).toMatchObject({ answer, sources: [], sufficient: false });
+    expect(deltas.join("")).toBe(answer);
+    expect(store.getConversation(user.id, chat.id)!.messages.at(-1)).toMatchObject({
+      content: answer, status: "complete", sufficient: false, sources: [],
+    });
   });
 
   it.each(["What have I saved about Portugal?", "quantum submarines"])(
