@@ -88,7 +88,10 @@ lives in `web/ai-setup-progress.tsx`; saved configuration remains authoritative.
 Ask's contextual turn planner separates app-scoped conversation, clarification and
 redirects from archive retrieval and source reuse. The existing harness owns
 history, compaction and streaming; no general agent runtime or write tools are
-exposed. General reasoning must be distinguished from saved-source facts. The
+exposed. Reasoning serves archive tasks and saved material and must be distinguished
+from saved-source facts. Empty retrieval returns a concise deterministic search
+outcome, without another generation call or an exhaustive-absence claim. External
+research is outside the assistant's mandate. The
 existing nullable message sufficiency is null when archive sufficiency does not
 apply, false for an archive miss, and true for an evidence-backed answer. Source
 IDs remain validated against owner-scoped retrieved evidence.

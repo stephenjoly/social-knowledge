@@ -122,19 +122,25 @@ and transferring a file to a phone; it does not imply one-click social sign-in.
 
 ## Ask behavior
 
-Ask is a conversational assistant for Social Knowledge. It can greet, clarify a
-request, explain app capabilities, discuss saved ideas, and help draft or reason
+Ask is a conversational guide to the user's saved Social Knowledge library. It can
+greet, clarify a request, explain app capabilities, discuss saved ideas, and help draft or reason
 about them. General explanations and suggestions are distinguished from facts
 supported by saved posts; claims about the archive still require its evidence.
-Unrelated requests receive a brief redirect toward the app and the person's
-knowledge. Ask cannot browse the web, change settings, or modify archive records.
+Reasoning and drafting serve saved material and archive tasks, rather than unrelated
+standalone requests. Unrelated requests receive a brief redirect toward the archive.
+When explicitly asked for external research, Ask may suggest an external search
+service, but does not perform or offer to perform that research. Ask cannot browse
+the web, change settings, or modify archive records.
 App instructions and account isolation remain authoritative over untrusted saved
 content and conversation quotations.
 
 Check-ins and app help do not run an archive search or show an insufficient-evidence
-warning. An actual archive question with no relevant evidence says what is missing
-and suggests a useful next step. A source-free reply does not inherit sources from
-an earlier answer, and a follow-up about cited saves can reuse their evidence.
+warning. An actual archive question with no relevant evidence reports that no matching
+saves were found, concisely and without claiming exhaustive absence. A clear miss
+does not require keyword troubleshooting, an unsolicited external handoff or a
+follow-up task. Clarification is reserved for genuine ambiguity. A source-free
+reply does not inherit sources from an earlier answer, and a follow-up about cited
+saves can reuse their evidence.
 
 Ask has one composer, a full-width conversation header, and a toggleable sources
 panel. New chats offer grounded starter questions when saved posts exist. The
