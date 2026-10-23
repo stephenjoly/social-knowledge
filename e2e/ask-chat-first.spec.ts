@@ -768,6 +768,7 @@ test("adversarial Ask content stays readable without sideways scrolling in any p
   page,
 }, testInfo) => {
   test.setTimeout(120000);
+  page.setDefaultTimeout(10000);
   await page.goto(`http://127.0.0.1:${port}/app`);
   await page.getByLabel("Username").fill("ask-review");
   await page.getByLabel("Password").fill("synthetic-review-password");
@@ -937,6 +938,11 @@ test("adversarial Ask content stays readable without sideways scrolling in any p
       await toggle.click();
     const sources = page.locator(".ask-sources-body");
     await expect(sources.locator(".ask-source")).toHaveCount(8);
+    await expect.poll(() => sources.evaluate((element) => {
+      const pane = element.closest(".ask-sources")!;
+      pane.getBoundingClientRect();
+      return pane.getAnimations().filter((animation) => animation.playState === "running").length;
+    })).toBe(0);
     const source = sources.locator(".ask-source").first();
     await expect(source.locator(".ask-source-title")).toContainText(
       sidewaysTitle,
