@@ -43,6 +43,9 @@ destination palette. G then I/A/K/Q opens Inbox, Activity, Knowledge base, or a
 new chat; / focuses chat search. The processing card links to Activity and remains
 available in the mobile menu.
 
+Chat search opens a collapsed sidebar or mobile menu before taking focus. Typing
+`/` inside the composer or another text field remains ordinary text input.
+
 The account-row gear and Command/Ctrl+, open Settings over the current page.
 Its sections are My account, AI & models, Connections, API keys, Data & export,
 and People & access for administrators. Closing restores the underlying page and
@@ -106,6 +109,10 @@ OpenAI’s current model choices include GPT-6 Luna (Efficient), GPT-6.1 Sol (Ba
 
 The bottom Test connection section’s Run test action opens explicit transcription, structured-analysis, and streaming-Ask checks using saved task settings. Save draft changes before testing. Transcription uses a short audio file selected by the user; analysis and Ask use small synthetic text samples. Tests can incur provider usage and do not create captures or conversations. Results distinguish configuration from successful provider calls and become stale when relevant settings change. These checks do not certify social downloads, archive retrieval, or the full capture pipeline.
 
+The Ask check uses Ask AI default when assigned and otherwise follows Analysis.
+An Ask-only assignment can be tested without assigning Analysis; result freshness
+is compared with that same effective Ask selection.
+
 Settings topics share their layout and reserve scrollbar space to avoid horizontal shifts when switching between short and long pages. Provider verification confirms credentials; it does not replace live model and capture acceptance before production.
 
 Setup guidance distinguishes connecting credentials, assigning tasks, saving draft
@@ -151,6 +158,9 @@ without changing the chat selection. Completed answers can be retried only while
 they are the latest answer. Earlier attempts remain in history; subsequent model
 context uses the latest completed retry instead of duplicating replaced answers.
 Interrupted pending answers recover automatically to a retryable failure.
+Starting New chat cancels and detaches an unfinished client attempt so the first
+new draft can send immediately. A previous answer already completed on the server
+stays complete; its remaining cleanup cannot take over the new chat's controls.
 A disconnected chat selection falls back to
 the Ask default, then Analysis, and records the actual fallback model.
 
