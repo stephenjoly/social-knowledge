@@ -80,6 +80,7 @@ describe("AskService", () => {
     vi.unstubAllGlobals();
   });
 
+  // These mocked plans verify routing contracts and delivered policies, not model intent quality.
   it.each([
     [
       "Test",
@@ -107,7 +108,7 @@ describe("AskService", () => {
       "General explanation: topics group related ideas for easier browsing.",
     ],
     [
-      "Draft an intro using the outline I pasted",
+      "Draft an intro for my saved project using the outline I pasted",
       "respond",
       "Draft based on your outline: Here are the ideas I want to explore.",
     ],
@@ -116,6 +117,16 @@ describe("AskService", () => {
       "Write a random celebrity biography",
       "redirect",
       "I can help with Social Knowledge or your saved ideas. What would you like to explore there?",
+    ],
+    [
+      "Rewrite this unrelated job application I pasted",
+      "redirect",
+      "I can help develop saved ideas or guide you through Social Knowledge.",
+    ],
+    [
+      "Research current Portugal travel rules on the web",
+      "redirect",
+      "For current travel rules, use an external search and check official sources.",
     ],
     [
       "mysterious-reference-123456",
@@ -213,6 +224,12 @@ describe("AskService", () => {
       expect(create.mock.calls[0]![0].instructions).toContain(
         "A request to find saved test results needs search",
       );
+      expect(create.mock.calls[0]![0].instructions).toContain(
+        "Resolve meaning from the conversation, not isolated keywords",
+      );
+      expect(create.mock.calls[0]![0].instructions).toContain(
+        "Choose redirect for unrelated standalone tasks or explicit external research requests",
+      );
       const request = create.mock.calls[1]![0];
       expect(request.text.format).toMatchObject({
         strict: true,
@@ -250,6 +267,27 @@ describe("AskService", () => {
         );
         expect(policy).toContain(
           "Do not list limitations or label the response mode unless relevant",
+        );
+        expect(policy).toContain("conversational archive guide");
+        expect(policy).toContain(
+          "Reasoning, explanations and transformations serve saved ideas, archive tasks and app help",
+        );
+        expect(policy).toContain(
+          "unrelated standalone pasted-text tasks belong outside this archive guide",
+        );
+        expect(policy).toContain("Answer the actual request directly and concisely");
+        expect(policy).toContain(
+          "Offer clarification or a next step when it helps the user’s goal",
+        );
+        expect(policy).toContain(
+          "Describe a miss as what this search found, not proof of exhaustive absence",
+        );
+        expect(policy).toContain(
+          "When the user explicitly requests external research, briefly and truthfully point them to external search if useful",
+        );
+        expect(policy).toContain("Do not browse or offer to perform that research");
+        expect(policy).toContain(
+          "Keep ordinary archive misses focused on the retrieval result, without an unsolicited external-search handoff",
         );
       }
       expect(request.instructions).toContain(
@@ -880,40 +918,71 @@ describe("AskService", () => {
     expect(result.answer).toContain("DIY microcement");
   });
 
-  it("returns insufficiency without an answer-generation call when evidence is absent", async () => {
-    const store = new JobStore(":memory:");
-    stores.push(store);
-    const user = store.createUser("empty", "hash");
-    const conversation = store.createConversation(user.id)!;
-    const create = vi.fn().mockResolvedValueOnce({
-      output_text: JSON.stringify({
-        action: "search_archive",
-        standaloneQuestion: "quantum submarines",
-        responseInstructions: "Answer directly.",
-        referencedCaptureIds: [],
-      }),
-    });
-    const turn = store.beginConversationTurn(
-      user.id,
-      String(conversation.id),
-      "quantum submarines",
-      crypto.randomUUID(),
-    );
-    const result = await new AskService(
-      { responses: { create } } as unknown as OpenAI,
-      testConfig("/tmp/ask-empty"),
-      store,
-    ).answer({
-      userId: user.id,
-      conversationId: String(conversation.id),
-      assistantId: turn.assistantId,
-      question: "quantum submarines",
-      signal: new AbortController().signal,
-      onDelta: () => undefined,
-    });
-    expect(result.sufficient).toBe(false);
-    expect(create).toHaveBeenCalledOnce();
-  });
+  it.each(["What have I saved about Portugal?", "quantum submarines"])(
+    "returns a concise search miss without answer generation for %s",
+    async (question) => {
+      const store = new JobStore(":memory:");
+      stores.push(store);
+      const user = store.createUser("empty", "hash");
+      addCapture(store, user.id, {
+        sourceHash: "unrelated-own-save",
+        title: "Kitchen worktop",
+        synopsis: "Coating a worktop",
+        transcript: "Prime and seal the worktop.",
+      });
+      const otherOwner = store.createUser("other-owner", "hash");
+      addCapture(store, otherOwner.id, {
+        sourceHash: "foreign-match",
+        title: question,
+        synopsis: question,
+        transcript: question,
+      });
+      const conversation = store.createConversation(user.id)!;
+      const create = vi.fn().mockResolvedValueOnce({
+        output_text: JSON.stringify({
+          action: "search_archive",
+          standaloneQuestion: question,
+          responseInstructions: "Answer directly.",
+          referencedCaptureIds: [],
+        }),
+      });
+      const turn = store.beginConversationTurn(
+        user.id,
+        String(conversation.id),
+        question,
+        crypto.randomUUID(),
+      );
+      const deltas: string[] = [];
+      const result = await new AskService(
+        { responses: { create } } as unknown as OpenAI,
+        testConfig("/tmp/ask-empty"),
+        store,
+      ).answer({
+        userId: user.id,
+        conversationId: String(conversation.id),
+        assistantId: turn.assistantId,
+        question,
+        signal: new AbortController().signal,
+        onDelta: (delta) => deltas.push(delta),
+      });
+      expect(result).toMatchObject({
+        answer: "I didn’t find matching saves for that question.",
+        sources: [],
+        sufficient: false,
+        diagnostics: { action: "search_archive", selected: [] },
+      });
+      expect(deltas.join("")).toBe(result.answer);
+      expect(
+        store.getConversation(user.id, conversation.id)!.messages.at(-1),
+      ).toMatchObject({
+        content: result.answer,
+        sources: [],
+        sufficient: false,
+        status: "complete",
+      });
+      expect(create).toHaveBeenCalledOnce();
+    },
+  );
 
   it("keeps the full transcript while falling back to a local compaction checkpoint", async () => {
     const store = new JobStore(":memory:");
