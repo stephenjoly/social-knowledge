@@ -698,16 +698,16 @@ export function Sidebar(props: SidebarProps) {
   useEffect(() => {
     if (props.chatSearchRequest === handledSearchRequest.current) return;
     revealSearch();
-    // The history input is unmounted while collapsed. Keep the request pending
-    // until expansion mounts it, then let the sidebar's own focus restoration finish.
-    if (collapsed) return;
+    // Keep the request pending until the input is mounted and its drawer is
+    // visible, then let the sidebar's own focus restoration finish.
+    if (collapsed || (!desktop && !mobileOpen)) return;
     const frame = window.requestAnimationFrame(() => {
       chatSearch.current?.focus();
       chatSearch.current?.select();
       handledSearchRequest.current = props.chatSearchRequest;
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [props.chatSearchRequest, collapsed, revealSearch]);
+  }, [props.chatSearchRequest, collapsed, desktop, mobileOpen, revealSearch]);
   return (
     <aside
       ref={sidebar.layoutRef}
