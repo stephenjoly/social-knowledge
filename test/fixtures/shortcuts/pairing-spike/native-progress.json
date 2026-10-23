@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-19",
+  "platform": "macOS 27.0.1 (26A434)",
+  "syntheticOnly": true,
+  "status": "macos_pairing_and_independent_capture_verified",
+  "verified": {
+    "syntheticFolderChosenInNativeEditor": true,
+    "nativeSeedExportedAndDecoded": true,
+    "tokenFreeProbeSignedAndImported": true,
+    "safariUrlSchemeHandoffStartsProbe": true,
+    "loopbackRedemptionAccepted": true,
+    "nativeSyntheticJsonSavedAsTextFile": true,
+    "persistedCredentialReadbackAcknowledged": true,
+    "independentCaptureWithSavedCredentialAccepted": true,
+    "replayedPairingTicketRejected": true
+  },
+  "nativeActionContracts": {
+    "saveFile": "is.workflow.actions.documentpicker.save",
+    "getFileFromFolder": "is.workflow.actions.documentpicker.open",
+    "getDictionaryFromInput": "is.workflow.actions.detect.dictionary",
+    "matchTextInputParameter": "text"
+  },
+  "unverified": [
+    "storage across restart or reboot",
+    "fresh-user and cross-device folder binding portability",
+    "iPhone installation and Share Sheet",
+    "custom native transport error message and sound",
+    "visual Connected/Saved result confirmation; capture CLI interrupted after server acceptance"
+  ],
+  "blocker": "iPhone storage portability and fresh-install flow remain unverified. No physical iPhone available in this session.",
+  "nativeEvents": [
+    {
+      "event": "redeem",
+      "accepted": true
+    },
+    {
+      "event": "ack",
+      "accepted": true
+    },
+    {
+      "event": "redeem",
+      "accepted": false
+    },
+    {
+      "event": "capture",
+      "accepted": true
+    }
+  ],
+  "evidenceSource": "Observed loopback /events response before mock shutdown; shutdown export was not produced."
+}
