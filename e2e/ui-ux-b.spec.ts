@@ -135,7 +135,8 @@ function seedConversation(title: string, long = false) {
 }
 
 async function openConversation(page: Page, title: string) {
-  await page.locator(".ask-recent-row").filter({ hasText: title }).click();
+  if (await page.getByRole("button", { name: "Open menu", exact: true }).isVisible()) await page.getByRole("button", { name: "Open menu", exact: true }).click();
+  await page.locator(".app-chat-open").filter({ hasText: title }).click();
   await expect(page.locator(".ask-title")).toContainText(title);
 }
 
@@ -147,14 +148,14 @@ test("12–13 evidence labels track selected answers and never support an uncite
   await login(page);
   await openConversation(page, title);
   const panel = page.locator("#ask-sources");
-  await expect(panel).toContainText("Latest answer");
-  await expect(panel).toContainText("absent topic");
+  await expect(panel).toContainText("Cited in latest answer");
+  await expect(page.locator(`#ask-answer-${ids[2]}`)).toContainText("without evidence");
   await expect(panel.locator(".ask-source")).toHaveCount(0);
   await expect(panel).toContainText("didn’t have enough evidence");
   await panel
     .getByRole("button", { name: /Show sources for the earlier answer/ })
     .click();
-  await expect(panel).toContainText("Earlier answer");
+  await expect(panel).toContainText("Cited in an earlier answer");
   await expect(panel).toContainText("deadlift setup");
   await expect(panel.locator(".ask-source-open")).toContainText(
     sources[1]!.title,
@@ -169,7 +170,7 @@ test("12–13 evidence labels track selected answers and never support an uncite
     .getByRole("button", { name: "Show sources for the latest answer" })
     .click();
   await expect(panel.locator(".ask-source")).toHaveCount(0);
-  await expect(panel).toContainText("Latest answer");
+  await expect(panel).toContainText("Cited in latest answer");
 });
 
 test("15 reopening persisted failures preserves known recovery and safely handles prototype names", async ({
@@ -294,22 +295,24 @@ test("16,28 mobile citation opens its own note and returns to the same answer po
     await citation.scrollIntoViewIfNeeded();
     const before = await citation.boundingBox();
     expect(before).not.toBeNull();
-    const originalY = await page.evaluate(() => window.scrollY);
+    const originalY = await page.locator(".ask-thread").evaluate((element) => element.scrollTop);
     await citation.tap();
+    const sourceCard = page.locator(`.ask-source[data-source-id="${sources[0]!.id}"]`);
+    await expect(sourceCard).toHaveClass(/hl/);
+    await sourceCard.getByRole("button", { name: /Open note/ }).click();
     await expect(
       page.getByRole("heading", { level: 1, name: sources[0]!.title }),
     ).toBeVisible();
     await page
       .getByRole("button", { name: "Back to Ask", exact: true })
       .click();
-    await expect(citation).toBeFocused();
+    await expect(sourceCard.getByRole("button", { name: /Open note/ })).toBeFocused();
     await expect
       .poll(async () =>
-        Math.abs((await page.evaluate(() => window.scrollY)) - originalY),
+        Math.abs((await page.locator(".ask-thread").evaluate((element) => element.scrollTop)) - originalY),
       )
       .toBeLessThan(8);
-    const after = await citation.boundingBox();
-    expect(Math.abs(after!.y - before!.y)).toBeLessThan(8);
+    await expect(citation).toHaveClass(/hl/);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -393,13 +396,13 @@ test("21 avatar saves immediately while profile draft survives all navigation gu
   ).toBeVisible();
   await dismissGuard(page, () =>
     page
-      .locator(".app-sidebar")
-      .getByRole("button", { name: "Back to archive", exact: true })
+      .locator(".sm-dialog")
+      .getByRole("button", { name: "Close Settings", exact: true })
       .click(),
   );
   await dismissGuard(page, () =>
     page
-      .locator(".st-column")
+      .getByRole("navigation", { name: "Settings sections" })
       .getByRole("button", { name: "Data & export", exact: true })
       .click(),
   );
@@ -414,10 +417,9 @@ test("21 avatar saves immediately while profile draft survives all navigation gu
   await page
     .getByRole("heading", { level: 1, name: "My account", exact: true })
     .click();
-  await page.keyboard.press("g");
-  await dismissGuard(page, () => page.keyboard.press("i"));
+  await dismissGuard(page, () => page.keyboard.press("Escape"));
   await dismissGuard(page, () => page.goBack());
-  await expect(page).toHaveURL(/tab=settings/);
+  await expect(page).toHaveURL(/settings=/);
   await dismissGuard(page, () =>
     page
       .locator(".st-column")
@@ -451,7 +453,7 @@ test("24–25 phone cookie help and language discovery explain manual setup and 
   await expect(phoneHelp).toContainText(/phone|iPhone/i);
   await expect(phoneHelp).toContainText(/saved.*session/i);
   await expect(phoneHelp).toContainText(/file.*phone.*upload/is);
-  await page.goto(`${baseUrl}/?tab=settings&topic=account`);
+  await page.goto(`${baseUrl}/app?settings=account`);
   await page
     .getByRole("button", { name: "Change language", exact: true })
     .click();
@@ -488,49 +490,24 @@ test("24–25 phone cookie help and language discovery explain manual setup and 
   ).toBe(true);
 });
 
-test("21 same-tab topic Back/Forward protects drafts and restores matching history state", async ({
-  page,
-}) => {
-  await login(
-    page,
-    fixtureAccount.username,
-    fixtureAccount.password,
-    "settings",
-  );
-  const sidebar = page.locator(".app-sidebar");
-  await sidebar
-    .getByRole("button", { name: "Data & export", exact: true })
-    .click();
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Data & export", exact: true }),
-  ).toBeVisible();
-  await sidebar
-    .getByRole("button", { name: "My account", exact: true })
-    .click();
+test("21 modal Back/Forward protects drafts and returns to the preserved page", async ({ page }) => {
+  await login(page, fixtureAccount.username, fixtureAccount.password, "inbox");
+  await page.getByRole("button", { name: "Open Settings", exact: true }).click();
+  const sections = page.getByRole("navigation", { name: "Settings sections" });
+  await sections.getByRole("button", { name: "Data & export", exact: true }).click();
+  await expect(page).toHaveURL(/settings=data/);
+  await sections.getByRole("button", { name: "My account", exact: true }).click();
   await page.getByLabel("Display name").fill("Unsaved QA B draft");
   await dismissGuard(page, () => page.goBack());
-  expect(await page.evaluate(() => window.history.state.settingsTopic)).toBe(
-    "account",
-  );
-  await expect(page).toHaveURL(/tab=settings/);
-  const dialog = page.waitForEvent("dialog");
+  await expect(page).toHaveURL(/settings=account/);
+  const confirmation = page.waitForEvent("dialog");
   const back = page.goBack();
-  await (await dialog).accept();
+  await (await confirmation).accept();
   await back;
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Data & export", exact: true }),
-  ).toBeVisible();
-  expect(await page.evaluate(() => window.history.state.settingsTopic)).toBe(
-    "data",
-  );
+  await expect(page.getByRole("button", { name: "Close Settings" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
   await page.goForward();
-  await expect(
-    page.getByRole("heading", { level: 1, name: "My account", exact: true }),
-  ).toBeVisible();
-  expect(await page.evaluate(() => window.history.state.settingsTopic)).toBe(
-    "account",
-  );
-  await expect(page.getByLabel("Display name")).toHaveValue(
-    fixtureAccount.displayName,
-  );
+  await expect(page.getByRole("heading", { level: 1, name: "My account", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/settings=account/);
+  await expect(page.getByLabel("Display name")).toHaveValue(fixtureAccount.displayName);
 });

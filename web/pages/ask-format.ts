@@ -1,4 +1,12 @@
-import type { AskSource, ChatMessage } from "../shared/types.js";
+import type {
+  AiProvider,
+  AiProviderState,
+  AiThinkingLevel,
+  AskSelection,
+  AskSource,
+  ChatMessage,
+} from "../shared/types.js";
+import { analysisModelLabel } from "../shared/format.js";
 
 export type CaptureFacets = {
   categories: Array<{ label: string; kind: string; count: number }>;
@@ -30,54 +38,82 @@ export function answerWithCaptureLinks(content: string, sources: AskSource[]) {
   });
 }
 
-const fallbackSuggestions = [
-  "What are the most useful things I've saved?",
-  "Which recommendations came up more than once?",
-  "What places have I saved?",
-  "Which products have creators recommended?",
+/** A suggested question and the library category it came from, for its icon. */
+export type AskSuggestion = { text: string; category: string | null };
+
+/** Chips stay short enough for three to sit in one row beside each other. */
+export const suggestionMaxLength = 32;
+
+/** Short, lower-case names for the library domains, e.g. "wellness". */
+const domainShortNames: Record<string, string> = {
+  Travel: "travel",
+  "Food & Drink": "food",
+  "Shopping & Products": "shopping",
+  "Home & Design": "home",
+  Music: "music",
+  "Technology & Tools": "tech",
+  Learning: "learning",
+  "Culture & Entertainment": "culture",
+  "Health & Wellness": "wellness",
+};
+
+const fallbackSuggestions: AskSuggestion[] = [
+  { text: "Summarise my recent saves", category: null },
+  { text: "Compare themes in my saves", category: null },
+  { text: "Find useful takeaways", category: null },
 ];
 
-const shortLabel = (label: string) => label.trim().slice(0, 60);
-
-/** Four prompts built from the account's own categories and topics. */
-export function suggestionsFrom(facets: CaptureFacets | null): string[] {
-  if (!facets) return fallbackSuggestions;
+/** Up to three short prompts built from the account's own categories and topics. */
+export function suggestionsFrom(facets: CaptureFacets | null): AskSuggestion[] {
   const byCount = <T extends { count: number }>(items: T[]) =>
     [...items].sort((a, b) => b.count - a.count);
-  const subcategories = byCount(
-    facets.categories.filter((category) => category.kind === "subcategory"),
-  );
   const domains = byCount(
-    facets.categories.filter((category) => category.kind === "domain"),
+    (facets?.categories ?? []).filter(
+      (category) =>
+        category.kind === "domain" && category.label in domainShortNames,
+    ),
   );
-  const topics = byCount(facets.topics);
-  const prompts: string[] = [];
-  const add = (prompt: string | null) => {
-    if (prompt && !prompts.includes(prompt)) prompts.push(prompt);
+  const subcategories = byCount(
+    (facets?.categories ?? []).filter(
+      (category) =>
+        category.kind === "subcategory" && category.label.trim() !== "Other",
+    ),
+  );
+  const topics = byCount(facets?.topics ?? []);
+  const prompts: AskSuggestion[] = [];
+  const add = (text: string, category: string | null) => {
+    const clean = text.replace(/\s+/g, " ").trim();
+    if (
+      clean.length <= suggestionMaxLength &&
+      !prompts.some((prompt) => prompt.text === clean)
+    )
+      prompts.push({ text: clean, category });
   };
-  const subcategory = subcategories[0] ?? domains[0];
-  add(
-    subcategory
-      ? `Summarise my saved ${shortLabel(subcategory.label)} recommendations`
-      : null,
-  );
-  add(topics[0] ? `What did I save about ${shortLabel(topics[0].label)}?` : null);
-  const domain = domains.find((item) => item.label !== subcategory?.label);
-  add(
-    domain
-      ? `What are the key takeaways from my ${shortLabel(domain.label)} saves?`
-      : null,
-  );
-  add(
-    topics[1]
-      ? `Which ${shortLabel(topics[1].label)} tips came up more than once?`
-      : null,
-  );
+  for (const domain of domains.slice(0, 2))
+    add(`Summarise my ${domainShortNames[domain.label]} saves`, domain.label);
+  for (const subcategory of subcategories.slice(0, 2))
+    add(
+      `${subcategory.label.trim()} I saved this month`,
+      subcategory.label.trim(),
+    );
+  for (const topic of topics.slice(0, 2))
+    add(`What I saved about ${topic.label.trim().toLowerCase()}`, null);
+  // Keep one prompt per source kind before filling with more of the same.
+  const ordered = [
+    prompts.find((prompt) => prompt.text.startsWith("Summarise")),
+    prompts.find((prompt) => prompt.text.endsWith("this month")),
+    prompts.find((prompt) => prompt.text.startsWith("What I saved")),
+  ].filter((prompt): prompt is AskSuggestion => Boolean(prompt));
+  const result = [
+    ...ordered,
+    ...prompts.filter((prompt) => !ordered.includes(prompt)),
+  ];
   for (const fallback of fallbackSuggestions) {
-    if (prompts.length >= 4) break;
-    add(fallback);
+    if (result.length >= 3) break;
+    if (!result.some((prompt) => prompt.text === fallback.text))
+      result.push(fallback);
   }
-  return prompts.slice(0, 4);
+  return result.slice(0, 3);
 }
 
 const dayMs = 24 * 60 * 60 * 1000;
@@ -217,7 +253,9 @@ export function askFailure(
 ): AskFailure {
   const known = errorCode ? askFailures.get(errorCode) : undefined;
   if (known) return known;
-  return status === "cancelled" ? askFailures.get("cancelled")! : genericFailure;
+  return status === "cancelled"
+    ? askFailures.get("cancelled")!
+    : genericFailure;
 }
 
 /** The question an answer responds to: its linked message, else the one before it. */
@@ -276,4 +314,208 @@ export function sourcePanelFor(
 export function questionExcerpt(text: string, limit = 80) {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > limit ? `${flat.slice(0, limit - 1).trimEnd()}…` : flat;
+}
+
+/**
+ * Keeps one citation chip per point: every linked citation on a line moves to
+ * the end of that line, once per source. Code blocks and table rows are left
+ * alone because moving text inside them would change their meaning.
+ */
+export function citationsPerPoint(markdown: string) {
+  const citation = /[ \t]*\[(\d+)]\(capture:([^)\s]+)\)/g;
+  let fenced = false;
+  return markdown
+    .split("\n")
+    .map((line) => {
+      if (/^\s*(```|~~~)/.test(line)) {
+        fenced = !fenced;
+        return line;
+      }
+      if (fenced || /^\s*\|/.test(line)) return line;
+      const found = [...line.matchAll(citation)];
+      if (!found.length) return line;
+      const seen = new Set<string>();
+      const chips: string[] = [];
+      for (const [, number, id] of found) {
+        if (seen.has(id!)) continue;
+        seen.add(id!);
+        chips.push(`[${number}](capture:${id})`);
+      }
+      const text = line
+        .replace(citation, "")
+        .replace(/[ \t]+([.,;:!?)])/g, "$1")
+        .trimEnd();
+      return `${text} ${chips.join(" ")}`;
+    })
+    .join("\n");
+}
+
+const thinkingNames: Record<AiThinkingLevel, string> = {
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+};
+
+export function thinkingName(level: AiThinkingLevel) {
+  return thinkingNames[level];
+}
+
+/** A readable name for a provider model id, e.g. `gpt-5-mini` → `GPT-5 mini`. */
+export function modelLabel(model: string) {
+  const official = analysisModelLabel(model.trim());
+  if (official) return official;
+  const parts = model.trim().split("-").filter(Boolean);
+  if (!parts.length) return model;
+  const word = (part: string) =>
+    /^\d+(\.\d+)?[bmk]$/i.test(part) ? part.toUpperCase() : part;
+  if (parts[0]!.toLowerCase() === "gpt") {
+    const [, family, ...rest] = parts;
+    return [`GPT${family ? `-${family}` : ""}`, ...rest.map(word)].join(" ");
+  }
+  const [first, ...rest] = parts;
+  return [
+    `${first!.slice(0, 1).toUpperCase()}${first!.slice(1)}`,
+    ...rest.map(word),
+  ].join(" ");
+}
+
+export type AskModelOption = {
+  provider: AiProvider["id"];
+  providerName: string;
+  model: string;
+  thinkingLevels: AiThinkingLevel[];
+};
+
+/** Analysis models of connected providers, in provider order. */
+export function askModelOptions(
+  state: AiProviderState | null,
+): AskModelOption[] {
+  if (!state) return [];
+  return state.providers
+    .filter((provider) => provider.connected && provider.capabilities.analysis)
+    .flatMap((provider) => {
+      const options = provider.taskOptions?.analysis?.length
+        ? provider.taskOptions.analysis
+        : provider.models.analysis.map((model) => ({
+            model,
+            thinkingLevels: [] as AiThinkingLevel[],
+          }));
+      return options.map((option) => ({
+        provider: provider.id,
+        providerName: provider.name,
+        model: option.model,
+        thinkingLevels: option.thinkingLevels ?? [],
+      }));
+    });
+}
+
+export function sameSelection(
+  a: AskSelection | null | undefined,
+  b: AskSelection | null | undefined,
+) {
+  return Boolean(
+    a &&
+    b &&
+    a.provider === b.provider &&
+    a.model === b.model &&
+    (a.thinkingLevel ?? null) === (b.thinkingLevel ?? null),
+  );
+}
+
+export function sameModel(
+  a: Pick<AskSelection, "provider" | "model"> | null | undefined,
+  b: Pick<AskSelection, "provider" | "model"> | null | undefined,
+) {
+  return Boolean(a && b && a.provider === b.provider && a.model === b.model);
+}
+
+/**
+ * A selection is usable when its provider is connected and offers that model.
+ * A null thinking level means the provider's default and is always allowed;
+ * an explicit level the model does not offer is rejected, as the server does
+ * (including any level for a model without thinking levels).
+ */
+export function usableSelection(
+  selection: AskSelection | null | undefined,
+  options: AskModelOption[],
+): AskSelection | null {
+  if (!selection) return null;
+  const option = options.find((item) => sameModel(item, selection));
+  if (!option) return null;
+  const thinkingLevel = selection.thinkingLevel ?? null;
+  if (thinkingLevel === null) return { ...selection, thinkingLevel: null };
+  return option.thinkingLevels.includes(thinkingLevel) ? selection : null;
+}
+
+/** The model the next answer uses: this chat's choice, else Ask default, else Analysis. */
+export function resolveAskSelection(
+  chat: AskSelection | null | undefined,
+  state: AiProviderState | null,
+) {
+  const options = askModelOptions(state);
+  return (
+    usableSelection(chat, options) ??
+    usableSelection(state?.selections.ask, options) ??
+    usableSelection(state?.selections.analysis, options)
+  );
+}
+
+/** The default new chats start on: Ask default, else Analysis. */
+export function defaultAskSelection(state: AiProviderState | null) {
+  return resolveAskSelection(null, state);
+}
+
+/** Picks a thinking level for a newly chosen model, keeping the current one when allowed. */
+export function selectionFor(
+  option: AskModelOption,
+  current: AskSelection | null,
+  fallback: AskSelection | null,
+): AskSelection {
+  const levels = option.thinkingLevels;
+  if (!levels.length)
+    return {
+      provider: option.provider,
+      model: option.model,
+      thinkingLevel: null,
+    };
+  // Keep the default's own level for its model, including null (provider default).
+  if (fallback && sameModel(fallback, option)) {
+    const level = fallback.thinkingLevel ?? null;
+    if (level === null || levels.includes(level))
+      return {
+        provider: option.provider,
+        model: option.model,
+        thinkingLevel: level,
+      };
+  }
+  const pick = (level: AiThinkingLevel | null | undefined) =>
+    level && levels.includes(level) ? level : null;
+  const thinkingLevel =
+    pick(current?.thinkingLevel) ?? pick("medium") ?? levels[0]!;
+  return { provider: option.provider, model: option.model, thinkingLevel };
+}
+
+/** `14:02` for an answer's time. */
+export function answerTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : new Intl.DateTimeFormat("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(date);
+}
+
+/** The meta line parts for a stored answer; the model only when it was recorded. */
+export function answerMeta(message: ChatMessage) {
+  const parts: string[] = [];
+  const count = message.sources.length;
+  if (count) parts.push(`${count} saved ${count === 1 ? "post" : "posts"}`);
+  const time = answerTime(message.createdAt);
+  if (time) parts.push(time);
+  const model = message.model
+    ? `${modelLabel(message.model)}${message.thinkingLevel ? ` · ${thinkingName(message.thinkingLevel)}` : ""}`
+    : null;
+  return { model, parts };
 }

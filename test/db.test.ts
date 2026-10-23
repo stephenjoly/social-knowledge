@@ -7,6 +7,139 @@ import { AuthService } from "../src/auth.js";
 import { JobStore } from "../src/db.js";
 
 describe("JobStore", () => {
+  it("migrates the pre-chat-picker schema in place and keeps historical rows nullable", () => {
+    const root = mkdtempSync(join(tmpdir(), "chat-migration-"));
+    const filename = join(root, "old.sqlite");
+    let store = new JobStore(filename);
+    try {
+      const owner = store.createUser("legacy-chat-owner", "hash");
+      const other = store.createUser("legacy-other", "hash");
+      const chat = store.createConversation(owner.id, "Legacy chat")!;
+      store.addConversationMessage(
+        owner.id,
+        chat.id,
+        "user",
+        "Historical question",
+      );
+      store.addConversationMessage(
+        owner.id,
+        chat.id,
+        "assistant",
+        "Historical answer",
+      );
+      const pending = store.beginConversationTurn(
+        owner.id,
+        chat.id,
+        "Interrupted question",
+        "legacy-request",
+      );
+      store.updatePreferences(owner.id, {
+        defaultLanguage: "French",
+        translateForeign: false,
+      });
+      store.saveAiTaskSelections(owner.id, {
+        transcriptionProvider: null,
+        transcriptionModel: null,
+        analysisProvider: "openai",
+        analysisModel: "gpt-5-mini",
+        analysisThinkingLevel: "low",
+      });
+      store.close();
+      // Remove only the new columns: this restores the exact schema preceding M1.
+      const legacy = new Database(filename);
+      for (const [table, columns] of Object.entries({
+        users: ["ask_sources_panel", "send_with"],
+        conversations: [
+          "pinned_at",
+          "ask_provider",
+          "ask_model",
+          "ask_thinking_level",
+        ],
+        conversation_messages: ["provider", "model", "thinking_level"],
+        ai_task_selections: ["ask_provider", "ask_model", "ask_thinking_level"],
+      }))
+        for (const column of columns)
+          legacy.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+      legacy.close();
+      store = new JobStore(filename);
+      expect(store.getConversation(owner.id, chat.id)).toMatchObject({
+        title: "Legacy chat",
+        pinnedAt: null,
+        selection: null,
+      });
+      expect(
+        store.getConversation(owner.id, chat.id)!.messages[1],
+      ).toMatchObject({
+        content: "Historical answer",
+        provider: null,
+        model: null,
+        thinkingLevel: null,
+      });
+      expect(store.getConversation(other.id, chat.id)).toBeNull();
+      expect(store.preferences(owner.id)).toEqual({
+        defaultLanguage: "French",
+        translateForeign: false,
+        askSourcesPanel: true,
+        sendWith: "enter",
+      });
+      expect(store.aiTaskSelections(owner.id)).toMatchObject({
+        analysisProvider: "openai",
+        analysisModel: "gpt-5-mini",
+        analysisThinkingLevel: "low",
+        askProvider: null,
+        askModel: null,
+        askThinkingLevel: null,
+      });
+      expect(
+        store.getConversation(owner.id, chat.id)!.messages.at(-1)!.status,
+      ).toBe("pending");
+      expect(store.recoverInterruptedConversationAttempts()).toBe(0);
+      store.database.prepare("UPDATE conversation_messages SET created_at=? WHERE id=?").run(new Date(Date.now() - 300000).toISOString(), pending.assistantId);
+      expect(store.recoverInterruptedConversationAttempts()).toBe(1);
+      expect(store.recoverInterruptedConversationAttempts()).toBe(0);
+      const recovered = store
+        .getConversation(owner.id, chat.id)!
+        .messages.find((message) => message.id === pending.assistantId)!;
+      expect(recovered).toMatchObject({
+        id: pending.assistantId,
+        status: "failed",
+        errorCode: "provider_error",
+      });
+      const retry = store.beginConversationRetry(
+        owner.id,
+        chat.id,
+        pending.assistantId,
+        "recovered-retry",
+      );
+      store.setConversationAttemptSelection(
+        owner.id,
+        chat.id,
+        retry.assistantId,
+        { provider: "openai", model: "gpt-5", thinkingLevel: "high" },
+      );
+      store.completeConversationAttempt(
+        owner.id,
+        chat.id,
+        retry.assistantId,
+        "Recovered answer",
+        [],
+        false,
+      );
+      expect(
+        store.getConversation(owner.id, chat.id)!.messages.at(-1),
+      ).toMatchObject({ model: "gpt-5", status: "complete" });
+      store.updateConversation(owner.id, chat.id, { pinned: true });
+      store.close();
+      store = new JobStore(filename);
+      expect(store.getConversation(owner.id, chat.id)!.pinnedAt).not.toBeNull();
+      expect(
+        store.getConversation(owner.id, chat.id)!.messages.at(-1),
+      ).toMatchObject({ content: "Recovered answer", model: "gpt-5" });
+    } finally {
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
   it("creates at most one initial administrator", () => {
     const store = new JobStore(":memory:");
     expect(store.createInitialUser("first-admin", "hash")).toMatchObject({
@@ -407,6 +540,9 @@ describe("JobStore", () => {
       analysisModel: "analysis-model",
     });
     expect(store.aiTaskSelections(second.id)).toEqual({
+      askProvider: null,
+      askModel: null,
+      askThinkingLevel: null,
       transcriptionProvider: null,
       transcriptionModel: null,
       analysisProvider: null,
