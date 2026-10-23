@@ -115,6 +115,20 @@ and transferring a file to a phone; it does not imply one-click social sign-in.
 
 ## Ask behavior
 
+Ask is a conversational assistant for Social Knowledge. It can greet, clarify a
+request, explain app capabilities, discuss saved ideas, and help draft or reason
+about them. General explanations and suggestions are distinguished from facts
+supported by saved posts; claims about the archive still require its evidence.
+Unrelated requests receive a brief redirect toward the app and the person's
+knowledge. Ask cannot browse the web, change settings, or modify archive records.
+App instructions and account isolation remain authoritative over untrusted saved
+content and conversation quotations.
+
+Check-ins and app help do not run an archive search or show an insufficient-evidence
+warning. An actual archive question with no relevant evidence says what is missing
+and suggests a useful next step. A source-free reply does not inherit sources from
+an earlier answer, and a follow-up about cited saves can reuse their evidence.
+
 Ask has one composer, a full-width conversation header, and a toggleable sources
 panel. New chats offer grounded starter questions when saved posts exist. The
 composer picker lists connected providers’ analysis models and supported thinking
@@ -148,7 +162,8 @@ point are consolidated. Streaming follows new text while the reader is at the
 bottom and stops following when the reader scrolls up.
 
 Reopened failures use controlled recovery copy. Missing AI setup links to AI &
-models. Empty archives offer capture and explain that answers need saved posts.
+models. Empty archives offer capture; app help and conversation remain available,
+while questions about saved content require saved posts.
 My account preferences control default source visibility and whether Enter or
 Command/Ctrl+Enter sends messages; Shift+Enter inserts a new line.
 

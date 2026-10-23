@@ -39,6 +39,25 @@ test.beforeAll(async () => {
   const synthetic = syntheticReviewAsk(store);
   app = buildApp(config, store, new EventHub(), undefined, undefined, {
     answer: async (input) => {
+      // Presentation/transport contract only; real intent routing is covered by
+      // AskService tests with structured planner and generation responses.
+      const conversationalReplies: Record<string, string> = {
+        "Test natural conversation": "Yep, I’m here. What would you like to do with your saved posts?",
+        "How do I export a chat?": "Open the chat menu and choose Export as Markdown. I can explain the steps, but I can’t export it for you.",
+        "Thanks, that helps": "You’re welcome. Want to explore another idea from your saves?",
+      };
+      const conversationalAnswer = conversationalReplies[input.question];
+      if (conversationalAnswer) {
+        input.onStatus?.("Thinking about your request…");
+        input.onDelta(conversationalAnswer);
+        store.completeConversationAttempt(input.userId, input.conversationId, input.assistantId, conversationalAnswer, [], null);
+        return {
+          answer: conversationalAnswer,
+          sources: [],
+          sufficient: null,
+          diagnostics: { action: "respond" as const, standaloneQuestion: input.question, terms: [], selected: [], reusedCaptureIds: [], compacted: false, compactionFallback: false, estimatedContextTokens: 0 },
+        };
+      }
       if (pauseNextAnswer) {
         pauseNextAnswer = false;
         await new Promise<void>((resolve) => {
@@ -996,4 +1015,52 @@ test("adversarial Ask content stays readable without sideways scrolling in any p
     await page.keyboard.press("Escape");
     await expect(retry).toHaveCount(0);
   }
+});
+
+test("natural conversation stays source-free across follow-ups, reload and retry", async ({ page }) => {
+  await page.setViewportSize({ width: 1360, height: 1000 });
+  await page.goto(`http://127.0.0.1:${port}/app`);
+  await page.getByLabel("Username").fill("ask-review");
+  await page.getByLabel("Password").fill("synthetic-review-password");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "New chat", exact: true }).first().click();
+  const composer = page.getByRole("textbox", { name: "Ask your archive" });
+  const send = async (question: string, expected: string) => {
+    await composer.fill(question);
+    await composer.press("Enter");
+    await expect(page.locator(".ask-answer").last()).toContainText(expected);
+    await expect(page.locator(".ask-answer").last().getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
+  };
+  await send("Test natural conversation", "Yep, I’m here.");
+  await expect(page.locator(".ask-insufficient")).toHaveCount(0);
+  await send("How do I export a chat?", "Export as Markdown");
+  await expect(page.locator(".ask-answer").last().getByRole("button", { name: /^Source \d+:/ })).toHaveCount(0);
+  await send("Show my leadership saves", "Promotion strategy");
+  await expect(page.locator(".ask-answer").last().getByRole("button", { name: /Source 1:/ }).first()).toBeVisible();
+  await send("Thanks, that helps", "You’re welcome.");
+  const latest = page.locator(".ask-answer").last();
+  await expect(latest.locator(".ask-insufficient")).toHaveCount(0);
+  const sourceToggle = page.getByRole("button", { name: /^Sources/ }).first();
+  if (!(await page.locator(".ask-sources").isVisible())) await sourceToggle.click();
+  await expect(page.locator(".ask-sources-empty")).not.toContainText("enough evidence");
+  await expect(page.locator(".ask-source-list .ask-source")).toHaveCount(0);
+  const persisted = await page.evaluate(async () => {
+    const { conversations } = await (await fetch("/api/v1/conversations")).json();
+    const chat = conversations.find((item: { title: string }) => item.title === "Test natural conversation");
+    const { conversation } = await (await fetch(`/api/v1/conversations/${chat.id}`)).json();
+    return { id: chat.id as string, latest: conversation.messages.at(-1) };
+  });
+  expect(persisted.latest).toMatchObject({ status: "complete", sufficient: null, sources: [] });
+  await page.reload();
+  await page.getByRole("button", { name: "Test natural conversation", exact: true }).first().click();
+  await expect(latest).toContainText("You’re welcome.");
+  await latest.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.locator(".ask-answer")).toHaveCount(5);
+  await expect(latest).toContainText("You’re welcome.");
+  await expect(latest.locator(".ask-insufficient")).toHaveCount(0);
+  await expect.poll(() => page.evaluate(async (id) => {
+    const { conversation } = await (await fetch(`/api/v1/conversations/${id}`)).json();
+    return conversation.messages.at(-1).status;
+  }, persisted.id)).toBe("complete");
+  await page.screenshot({ path: path.join(screenshots, "natural-conversation.png") });
 });
