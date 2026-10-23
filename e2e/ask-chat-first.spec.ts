@@ -569,3 +569,165 @@ test("long answers and eight sources scroll independently without moving the des
   expect(await thread.evaluate((element) => element.scrollTop)).toBe(wideThreadTop);
   await assertShell("wide-independent-wheel-scroll");
 });
+
+test("composer motion follows focus and streaming while respecting reduced motion", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(60000);
+  await page.goto(`http://127.0.0.1:${port}/app`);
+  await page.getByLabel("Username").fill("ask-review");
+  await page.getByLabel("Password").fill("synthetic-review-password");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "New chat", exact: true }).first(),
+  ).toBeVisible();
+  const composer = page.locator(".ask-composer");
+  const input = page.getByRole("textbox", { name: "Ask your archive" });
+  const rootMetrics = () =>
+    page.evaluate(() => ({
+      x: scrollX,
+      y: scrollY,
+      width: document.documentElement.scrollWidth,
+      height: document.documentElement.scrollHeight,
+      clientWidth: document.documentElement.clientWidth,
+      clientHeight: document.documentElement.clientHeight,
+    }));
+  const decoration = () =>
+    composer.evaluate((element) => {
+      const ring = getComputedStyle(element, "::before");
+      const form = getComputedStyle(element);
+      return {
+        animation: ring.animationName,
+        opacity: Number(ring.opacity),
+        angle: Number.parseFloat(ring.getPropertyValue("--ask-border-angle")),
+        shadow: form.boxShadow,
+        border: form.borderColor,
+      };
+    });
+  const observeTravel = async (phase: string) => {
+    const travel = await composer.evaluate(async (element) => {
+      const angle = () =>
+        Number.parseFloat(
+          getComputedStyle(element, "::before").getPropertyValue(
+            "--ask-border-angle",
+          ),
+        );
+      const before = angle();
+      for (let frame = 0; frame < 12; frame++)
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => resolve()),
+        );
+      return { before, after: angle() };
+    });
+    await testInfo.attach(phase, {
+      body: JSON.stringify(travel),
+      contentType: "application/json",
+    });
+    const clockwiseDelta = (travel.after - travel.before + 360) % 360;
+    expect(
+      clockwiseDelta,
+      `${phase}: clockwise angle progresses`,
+    ).toBeGreaterThan(1);
+    expect(clockwiseDelta, `${phase}: bounded clockwise movement`).toBeLessThan(
+      90,
+    );
+  };
+  const hitTest = async (control: import("@playwright/test").Locator) => {
+    expect(
+      await control.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          rect.x + rect.width / 2,
+          rect.y + rect.height / 2,
+        );
+        return hit !== null && element.contains(hit);
+      }),
+    ).toBe(true);
+  };
+  for (const width of [1360, 390]) {
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(`http://127.0.0.1:${port}/app`);
+    if (width === 390)
+      await page
+        .getByRole("button", { name: "Open menu", exact: true })
+        .click();
+    await page
+      .getByRole("button", { name: "New chat", exact: true })
+      .first()
+      .click();
+    await expect(input).toBeVisible();
+    await input.blur();
+    const idle = await decoration();
+    expect(idle.animation).toBe("none");
+    const homeBounds = await rootMetrics();
+    await input.focus();
+    await expect.poll(async () => (await decoration()).opacity).toBe(1);
+    await page.screenshot({
+      path: path.join(screenshots, `motion-${width}-phase-1.png`),
+    });
+    await observeTravel(`focused-${width}`);
+    await page.screenshot({
+      path: path.join(screenshots, `motion-${width}-phase-2.png`),
+    });
+    expect(await rootMetrics()).toEqual(homeBounds);
+    await hitTest(input);
+    await hitTest(
+      page.getByTitle("Choose model for this chat", { exact: true }),
+    );
+    await input.blur();
+    await expect.poll(async () => (await decoration()).animation).toBe("none");
+    const idleAngle = (await decoration()).angle;
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    expect((await decoration()).angle).toBe(idleAngle);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await input.focus();
+    await expect.poll(async () => (await decoration()).opacity).toBe(0);
+    const reduced = await decoration();
+    expect(reduced.animation).toBe("none");
+    expect(reduced.opacity).toBe(0);
+    expect(
+      reduced.shadow !== idle.shadow || reduced.border !== idle.border,
+    ).toBe(true);
+    expect(await rootMetrics()).toEqual(homeBounds);
+    await page.screenshot({
+      path: path.join(screenshots, `motion-${width}-reduced.png`),
+    });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await input.fill(`Synthetic paused motion check at ${width}px`);
+    pauseNextAnswer = true;
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    try {
+      await expect.poll(() => Boolean(releaseAnswer)).toBe(true);
+      const stop = page.getByRole("button", { name: "Stop", exact: true });
+      await expect(stop).toBeVisible();
+      await input.blur();
+      const streamingBounds = await rootMetrics();
+      await expect.poll(async () => (await decoration()).opacity).toBe(1);
+      await observeTravel(`streaming-unfocused-${width}`);
+      await hitTest(input);
+      await hitTest(stop);
+      expect(await rootMetrics()).toEqual(streamingBounds);
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await expect.poll(async () => (await decoration()).opacity).toBe(0);
+      const reducedStreaming = await decoration();
+      expect(reducedStreaming.animation).toBe("none");
+      expect(reducedStreaming.opacity).toBe(0);
+      expect(reducedStreaming.border).not.toBe(idle.border);
+      expect(await rootMetrics()).toEqual(streamingBounds);
+      await hitTest(stop);
+    } finally {
+      releaseAnswer?.();
+      releaseAnswer = undefined;
+      pauseNextAnswer = false;
+    }
+    await expect(page.locator(".ask-answer-body").last()).toContainText(
+      "Promotion strategy",
+    );
+  }
+});
