@@ -17,6 +17,12 @@ html:has(.ask-v2) {
   scrollbar-gutter: auto;
 }
 
+/* Hidden labels must not widen panes after long, unclipped text. */
+.ask-v2 .sr-only {
+  top: 0;
+  left: 0;
+}
+
 .shell:has(> .ask-v2),
 .app-frame .shell:has(> .ask-v2) {
   width: 100%;
@@ -917,6 +923,11 @@ html:has(.ask-v2) {
   flex-direction: column;
 }
 
+.ask-answer,
+.ask-v2 .ask-sources {
+  overflow-wrap: anywhere;
+}
+
 .ask-v2 .ask-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1036,13 +1047,21 @@ html:has(.ask-v2) {
 .ask-answer-body pre {
   margin: 0 0 8px;
   padding: 10px 12px;
-  overflow-x: auto;
+  overflow-x: visible;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   border-radius: var(--radius-control);
   background: var(--subtle);
 }
 
 .ask-answer-body pre code {
   padding: 0;
+  white-space: inherit;
+}
+
+.ask-answer-body img {
+  max-width: 100%;
+  height: auto;
 }
 
 .ask-answer-body blockquote {
@@ -1054,15 +1073,18 @@ html:has(.ask-v2) {
 
 .ask-answer-body table {
   margin: 0 0 8px;
+  max-width: 100%;
   border-collapse: collapse;
   font-size: var(--type-control);
 }
 
 .ask-answer-body th,
 .ask-answer-body td {
+  min-width: 0;
   padding: 6px 10px;
   border: 1px solid var(--border);
   text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .ask-answer-body hr {
@@ -1377,13 +1399,13 @@ html:has(.ask-v2) {
 .ask-v2 .ask-source-link {
   max-width: 100%;
   margin-top: 3px;
-  overflow: hidden;
+  overflow: visible;
   color: var(--muted);
   font-size: var(--type-metadata);
   line-height: 1.5;
   text-decoration: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .ask-v2 a.ask-source-link:hover {
@@ -1528,6 +1550,19 @@ html:has(.ask-v2) {
 
 /* Phones: the page scrolls, the composer stays above the tab bar. */
 @media (max-width: 780px) {
+  .ask-answer-actions {
+    position: relative;
+  }
+
+  .ask-answer-actions .ask-picker-anchor {
+    position: static;
+  }
+
+  .ask-v2 .ask-retry-menu {
+    right: 0;
+    width: auto;
+  }
+
   .ask-home {
     min-height: calc(100dvh - 134px);
   }
