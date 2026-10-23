@@ -48,6 +48,7 @@ test.beforeAll(async () => {
   config.appUrl = `http://127.0.0.1:${port}`;
   store = new JobStore(config.databasePath);
   store.createUser("qa-user", await hash("a-strong-qa-password"));
+  store.createUser("qa-ask-only", await hash("a-strong-qa-password"));
   originalFetch = globalThis.fetch;
   globalThis.fetch = (async (
     input: string | URL | Request,
@@ -115,6 +116,43 @@ test.afterAll(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+test("tests a saved Ask-only assignment without Analysis", async ({ page }) => {
+  await page.goto(`http://127.0.0.1:${port}/app?settings=ai`);
+  await page.getByLabel("Username").fill("qa-ask-only");
+  await page.getByLabel("Password").fill("a-strong-qa-password");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("button", { name: "Capture a post", exact: true })).toBeVisible();
+  await page.goto(`http://127.0.0.1:${port}/app?settings=ai`);
+  await expect(page.getByRole("heading", { level: 1, name: "AI & models" })).toBeVisible();
+  await page.locator(".st-provider-row").filter({ hasText: "OpenAI" })
+    .getByRole("button", { name: "Connect", exact: true }).click();
+  const providerDialog = page.getByRole("dialog", { name: "Connect provider" });
+  await providerDialog.getByLabel("OpenAI API key").fill("sk-browser-secret-ask-only");
+  await providerDialog.getByRole("button", { name: "Connect provider" }).click();
+  await expect(page.getByText("OpenAI connected. Assign it to a task below.")).toBeVisible();
+  // Ask can be configured and tested before any capture/Analysis assignment.
+  await page.getByLabel("Ask AI default provider").selectOption("openai");
+  await page.getByLabel("Ask AI default model").selectOption("gpt-5-mini");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByText("AI settings saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Run test", exact: true }).click();
+  const askOnlyDialog = page.getByRole("dialog", { name: "Test connection" });
+  await expect(askOnlyDialog.getByRole("button", { name: "Test analysis" })).toBeDisabled();
+  await expect(askOnlyDialog.getByRole("button", { name: "Test ask" })).toBeEnabled();
+  const askOnlyResponse = page.waitForResponse((response) =>
+    response.url().endsWith("/api/v1/ai-tests/ask") && response.request().method() === "POST",
+  );
+  await askOnlyDialog.getByRole("button", { name: "Test ask" }).click();
+  expect(await (await askOnlyResponse).json()).toMatchObject({
+    ok: true,
+    selection: { provider: "openai", model: "gpt-5-mini", thinkingLevel: null },
+  });
+  await expect(askOnlyDialog.locator(".ai-test-row").filter({
+    has: page.getByRole("heading", { name: "Ask", exact: true }),
+  })).toContainText("Passed in");
+  await askOnlyDialog.getByRole("button", { name: "Close connection tests" }).click();
+});
+
 test("saves an explicit AI draft and runs diagnostics without archive data", async ({
   page,
 }) => {
@@ -164,31 +202,6 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   await progress.getByRole("button", { name: "Choose models", exact: true }).click();
   await expect(page.getByLabel("Transcription provider")).toBeFocused();
   await expect.poll(async () => (await page.getByLabel("Transcription provider").boundingBox())!.y).toBeLessThan(844);
-
-  // Ask can be configured and tested before any capture/Analysis assignment.
-  await page.getByLabel("Ask AI default provider").selectOption("openai");
-  await page.getByLabel("Ask AI default model").selectOption("gpt-5-mini");
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(page.getByText("AI settings saved.")).toBeVisible();
-  await page.getByRole("button", { name: "Run test", exact: true }).click();
-  const askOnlyDialog = page.getByRole("dialog", { name: "Test connection" });
-  await expect(askOnlyDialog.getByRole("button", { name: "Test analysis" })).toBeDisabled();
-  await expect(askOnlyDialog.getByRole("button", { name: "Test ask" })).toBeEnabled();
-  const askOnlyResponse = page.waitForResponse((response) =>
-    response.url().endsWith("/api/v1/ai-tests/ask") && response.request().method() === "POST",
-  );
-  await askOnlyDialog.getByRole("button", { name: "Test ask" }).click();
-  expect(await (await askOnlyResponse).json()).toMatchObject({
-    ok: true,
-    selection: { provider: "openai", model: "gpt-5-mini", thinkingLevel: null },
-  });
-  await expect(askOnlyDialog.locator(".ai-test-row").filter({
-    has: page.getByRole("heading", { name: "Ask", exact: true }),
-  })).toContainText("Passed in");
-  await askOnlyDialog.getByRole("button", { name: "Close connection tests" }).click();
-  await page.getByLabel("Ask AI default provider").selectOption("");
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(page.getByText("AI settings saved.")).toBeVisible();
 
   const savedRequests: unknown[] = [];
   await page.route("**/api/v1/ai-settings", async (route) => {
