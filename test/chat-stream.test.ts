@@ -45,6 +45,36 @@ function message(
 }
 
 describe("SSE stream helpers", () => {
+  it.each([null, true, false])(
+    "preserves sufficiency %s and source count through completion and pending readback",
+    (sufficient) => {
+      const sources = sufficient === true ? ["saved-post"] : [];
+      const decoder = new SseDecoder();
+      let state = initialStreamState<string>();
+      const events = decoder.push(
+        `event: sources\ndata: ${JSON.stringify({ sources, sufficient })}\n\nevent: delta\ndata: {"text":"Answer"}\n\nevent: completed\ndata: {}\n\n`,
+      );
+      for (const event of events) state = applyStreamEvent(state, event);
+      state = finishStream(state);
+      expect(state).toMatchObject({ sufficient, sources, status: "complete", text: "Answer" });
+      const current: TestConversation = {
+        id: "chat",
+        messages: [{ ...message("a", "assistant", state.text, state.status), sufficient: state.sufficient, sources: state.sources }],
+      };
+      const pending: TestConversation = {
+        id: "chat", messages: [message("a", "assistant", "", "pending")],
+      };
+      const merged = mergeConversationSnapshot(current, pending, { assistantId: "a" });
+      expect(merged.messages[0]).toMatchObject({ sufficient, sources, status: "complete", content: "Answer" });
+      // A completed reload is authoritative, even over stale local archive state.
+      const stale: TestConversation = {
+        id: "chat", messages: [{ ...message("a", "assistant", "Old answer", "complete"), sufficient: false }],
+      };
+      expect(mergeConversationSnapshot(stale, current).messages).toEqual(current.messages);
+      expect(mergeConversationSnapshot(null, current).messages).toEqual(current.messages);
+    },
+  );
+
   it("accepts resolved model metadata before text and preserves it across malformed model events", () => {
     const decoder = new SseDecoder();
     const selection = { provider: "cerebras", model: "qwen-3.8-27b", thinkingLevel: null };

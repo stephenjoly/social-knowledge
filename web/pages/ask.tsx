@@ -872,6 +872,39 @@ function Composer({
   );
 }
 
+/** Historical blank archive misses still need an explanation. Answer text owns its own guidance. */
+export function ArchiveMissNotice({
+  message,
+}: {
+  message: Pick<ChatMessage, "sufficient" | "content">;
+}) {
+  return message.sufficient === false && !message.content.trim() ? (
+    <p className="ask-insufficient">
+      The saved archive did not contain enough evidence.
+    </p>
+  ) : null;
+}
+
+export function EmptyAnswerSources({
+  message,
+}: {
+  message: Pick<ChatMessage, "status" | "sufficient"> | null;
+}) {
+  return (
+    <p className="ask-sources-empty">
+      {!message
+        ? "Saved posts an answer cites will appear here."
+        : message.status === "pending"
+          ? "Sources will appear here if this answer cites saved posts."
+          : message.status !== "complete"
+            ? "This answer didn’t finish, so it cites no saved posts."
+            : message.sufficient === false
+              ? "Your archive didn’t have enough evidence for this answer, so it cites no saved posts."
+              : "This answer doesn’t cite any saved posts."}
+    </p>
+  );
+}
+
 export type AskAIProps = {
   onOpen: (id: string) => void;
   /** Opens a Settings topic in the Settings modal, e.g. AI & models. */
@@ -1457,7 +1490,7 @@ export function AskAI({
     setStreaming(true);
     setError("");
     setReconciliationNotice("");
-    setLiveMessage("Searching your archive…");
+    setLiveMessage("Understanding your request…");
     chats.upsert({
       ...conversation,
       messages: undefined,
@@ -1899,8 +1932,8 @@ export function AskAI({
             <div className="ask-home-heading">
               <h1 id="ask-title">What do you want to find?</h1>
               <p>
-                Answers come only from your saved posts, with sources you can
-                open.
+                Ask about your saves, explore ideas, or get help with Social
+                Knowledge. Claims about saved posts include sources you can open.
               </p>
             </div>
             <div className="ask-home-column">
@@ -2163,14 +2196,10 @@ export function AskAI({
                           </AnswerContext.Provider>
                         ) : message.status === "pending" ? (
                           <p className="ask-pending">
-                            {message.statusText || "Searching your archive…"}
+                            {message.statusText || "Understanding your request…"}
                           </p>
                         ) : null}
-                        {message.sufficient === false && (
-                          <p className="ask-insufficient">
-                            The saved archive did not contain enough evidence.
-                          </p>
-                        )}
+                        <ArchiveMissNotice message={message} />
                         {(message.status === "failed" ||
                           message.status === "cancelled") &&
                           (() => {
@@ -2402,17 +2431,7 @@ export function AskAI({
                 </p>
               )}
               {panelCount === 0 ? (
-                <p className="ask-sources-empty">
-                  {!panel.answer
-                    ? "Saved posts an answer cites will appear here."
-                    : panel.answer.status === "pending"
-                      ? "Looking for saved posts for this answer…"
-                      : panel.answer.status !== "complete"
-                        ? "This answer didn’t finish, so it cites no saved posts."
-                        : panel.answer.sufficient === false
-                          ? "Your archive didn’t have enough evidence for this answer, so it cites no saved posts."
-                          : "This answer doesn’t cite any saved posts."}
-                </p>
+                <EmptyAnswerSources message={panel.answer} />
               ) : (
                 <ol className="ask-source-list">
                   {panelSources.map((source) => {

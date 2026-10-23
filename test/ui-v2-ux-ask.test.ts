@@ -1,3 +1,6 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ArchiveMissNotice, EmptyAnswerSources } from "../web/pages/ask.js";
 import { describe, expect, it } from "vitest";
 import {
   askFailure,
@@ -206,5 +209,49 @@ describe("UX 15: failure reasons survive an actual SQLite close/reopen", () => {
       store.close();
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("Ask conversation evidence copy", () => {
+  const renderSources = (sufficient: boolean | null, status: ChatMessage["status"] = "complete") =>
+    renderToStaticMarkup(createElement(EmptyAnswerSources, { message: { sufficient, status } }));
+
+  it("uses neutral copy for conversational answers without treating them as evidence failures", () => {
+    const html = renderSources(null);
+    expect(html).toContain("This answer doesn’t cite any saved posts.");
+    expect(html).not.toContain("enough evidence");
+    expect(renderToStaticMarkup(createElement(ArchiveMissNotice, {
+      message: { sufficient: null, content: "Hello! How can I help with Social Knowledge?" },
+    }))).toBe("");
+  });
+
+  it("keeps historical archive misses honest without repeating guidance beneath an answer", () => {
+    expect(renderSources(false)).toContain("Your archive didn’t have enough evidence");
+    expect(renderSources(true)).toContain("This answer doesn’t cite any saved posts.");
+    expect(renderToStaticMarkup(createElement(ArchiveMissNotice, {
+      message: { sufficient: false, content: "I couldn’t find saved posts about that. Try another topic." },
+    }))).toBe("");
+    expect(renderToStaticMarkup(createElement(ArchiveMissNotice, {
+      message: { sufficient: false, content: "  " },
+    }))).toContain("The saved archive did not contain enough evidence.");
+  });
+
+  it("keeps pending, failed and cancelled explanations separate from completed conversation", () => {
+    expect(renderSources(null, "pending")).toContain("Sources will appear here if this answer cites saved posts.");
+    for (const status of ["failed", "cancelled"] as const)
+      expect(renderSources(null, status)).toContain("This answer didn’t finish");
+    expect(renderToStaticMarkup(createElement(EmptyAnswerSources, { message: null })))
+      .toContain("Saved posts an answer cites will appear here.");
+  });
+
+  it("never inherits saved-source cards into a conversational follow-up", () => {
+    const conversational = { ...a3, sufficient: null, content: "Here is a general way to explore that idea." };
+    const messages = [q1, a1, q3, conversational];
+    const latest = sourcePanelFor(messages, null);
+    expect(latest.answer).toBe(conversational);
+    expect(latest.answer?.sources).toHaveLength(0);
+    expect(latest.earlierCited).toBe(a1);
+    expect(sourcePanelFor(messages, a1.id).answer?.sources).toHaveLength(1);
+    expect(sourcePanelFor(messages, conversational.id).answer?.sufficient).toBeNull();
   });
 });
