@@ -197,6 +197,9 @@ test("six approved Ask states, model persistence, sources and Settings preserve 
   await page.screenshot({ path: path.join(screenshots, "state-5-focus.png") });
   await page.getByRole("button", { name: /Source 1:/ }).first().click();
   await expect(page.locator(".ask-sources")).toBeVisible();
+  // Citation activation schedules focus into its source card on the next frame.
+  // Complete that interaction before establishing a different keyboard opener.
+  await expect(page.locator(".ask-source.hl .ask-source-open")).toBeFocused();
 
   // Focus return is a keyboard contract; Safari intentionally does not focus
   // buttons on pointer click, so establish the actual keyboard opener.
