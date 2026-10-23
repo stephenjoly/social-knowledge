@@ -124,7 +124,9 @@ model opens that setup. The picker opens toward available space and scrolls insi
 its own bounds when the model list is taller than the visible area.
 
 On desktop the conversation and sources scroll independently while the sidebar,
-header and composer remain in place. The composer shows a subtle clockwise border
+header and composer remain in place. Long text, source attribution, code and table
+cells wrap within the chat; reading Ask never requires horizontal scrolling.
+The composer shows a subtle clockwise border
 highlight while focused or generating an answer; reduced motion keeps a static
 focus indicator instead.
 
