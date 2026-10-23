@@ -563,7 +563,7 @@ describe("AskService", () => {
 
   it.each([
     ...[
-      { model: "gpt-5", thinkingLevel: null },
+      { model: "gpt-6-luna", thinkingLevel: null },
       ...["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"].flatMap((model) =>
         ([null, "low"] as const).map((thinkingLevel) => ({
           model,

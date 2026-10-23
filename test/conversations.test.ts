@@ -40,7 +40,7 @@ describe("chat-first API", () => {
     store.saveAiProviderConnection(owner.id, "cerebras", "unused", "synthetic");
     const analysis: AskSelection = {
       provider: "openai",
-      model: "gpt-5-mini",
+      model: "gpt-6-luna",
       thinkingLevel: "low",
     };
     const alternate: AskSelection = {
@@ -376,7 +376,7 @@ describe("chat-first API", () => {
       { pinned: "yes" },
       { unknown: true },
       { selection: { ...alternate, model: "unknown" } },
-      { selection: { ...alternate, thinkingLevel: "high" } },
+      { selection: { ...alternate, thinkingLevel: "minimal" } },
     ]) {
       expect(
         (await app.inject({ method: "PATCH", url, headers, payload }))
@@ -385,7 +385,7 @@ describe("chat-first API", () => {
     }
     for (const selection of [
       { ...alternate, model: "unknown" },
-      { ...alternate, thinkingLevel: "high" },
+      { ...alternate, thinkingLevel: "minimal" },
       { ...alternate, provider: "anthropic" },
     ]) {
       expect(

@@ -132,7 +132,7 @@ test("tests a saved Ask-only assignment without Analysis", async ({ page }) => {
   await expect(page.getByText("OpenAI connected. Assign it to a task below.")).toBeVisible();
   // Ask can be configured and tested before any capture/Analysis assignment.
   await page.getByLabel("Ask AI default provider").selectOption("openai");
-  await page.getByLabel("Ask AI default model").selectOption("gpt-5-mini");
+  await page.getByLabel("Ask AI default model").selectOption("gpt-6-luna");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByText("AI settings saved.")).toBeVisible();
   await page.getByRole("button", { name: "Run test", exact: true }).click();
@@ -145,7 +145,7 @@ test("tests a saved Ask-only assignment without Analysis", async ({ page }) => {
   await askOnlyDialog.getByRole("button", { name: "Test ask" }).click();
   expect(await (await askOnlyResponse).json()).toMatchObject({
     ok: true,
-    selection: { provider: "openai", model: "gpt-5-mini", thinkingLevel: null },
+    selection: { provider: "openai", model: "gpt-6-luna", thinkingLevel: null },
   });
   await expect(askOnlyDialog.locator(".ai-test-row").filter({
     has: page.getByRole("heading", { name: "Ask", exact: true }),
@@ -216,7 +216,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   );
 
   await page.getByLabel("Analysis provider").selectOption("openai");
-  await page.getByLabel("Analysis model").selectOption("gpt-5");
+  await page.getByLabel("Analysis model").selectOption("gpt-6.1-sol");
   const thinking = page.getByLabel("Analysis thinking level");
   await thinking.selectOption("high");
   expect(savedRequests).toHaveLength(0);
@@ -243,7 +243,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
     {
       ask: null,
       transcription: { provider: "openai", model: config.transcriptionModel },
-      analysis: { provider: "openai", model: "gpt-5", thinkingLevel: "high" },
+      analysis: { provider: "openai", model: "gpt-6.1-sol", thinkingLevel: "high" },
     },
   ]);
   await openAiTopic();
@@ -262,7 +262,7 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
   });
   await page.setViewportSize({ width: 1440, height: 1020 });
 
-  await expect(page.getByLabel("Analysis model")).toHaveValue("gpt-5");
+  await expect(page.getByLabel("Analysis model")).toHaveValue("gpt-6.1-sol");
   await expect(thinking).toHaveValue("high");
 
   await page.getByRole("button", { name: "Run test" }).click();
@@ -300,13 +300,13 @@ test("saves an explicit AI draft and runs diagnostics without archive data", asy
 
   // A distinct saved Ask model must pass rather than be discarded as stale.
   await page.getByLabel("Ask AI default provider").selectOption("openai");
-  await page.getByLabel("Ask AI default model").selectOption("gpt-5-mini");
+  await page.getByLabel("Ask AI default model").selectOption("gpt-6-luna");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByText("AI settings saved.")).toBeVisible();
   await page.getByRole("button", { name: "Run test", exact: true }).click();
   await askTest.getByRole("button", { name: "Test ask" }).click();
   await expect(askTest).toContainText("Passed in");
-  await expect(askTest).toContainText("openai · gpt-5-mini");
+  await expect(askTest).toContainText("openai · gpt-6-luna");
   await expect(askTest).not.toContainText("discarded");
   await testDialog.getByRole("button", { name: "Close connection tests" }).click();
 

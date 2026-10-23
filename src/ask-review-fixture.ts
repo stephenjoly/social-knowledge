@@ -34,7 +34,7 @@ export function seedAskReviewFixture(store: JobStore, userId: string) {
   });
   store.saveAiProviderConnection(userId, "openai", "synthetic-review-no-credential", "Simulated",);
   store.saveAiProviderConnection(userId, "cerebras", "synthetic-review-no-credential", "Simulated",);
-  store.saveAiTaskSelections(userId, { transcriptionProvider: "openai", transcriptionModel: "gpt-4o-mini-transcribe", analysisProvider: "openai", analysisModel: "gpt-5-mini", analysisThinkingLevel: "medium", askProvider: "openai", askModel: "gpt-5-mini", askThinkingLevel: "medium" });
+  store.saveAiTaskSelections(userId, { transcriptionProvider: "openai", transcriptionModel: "gpt-4o-mini-transcribe", analysisProvider: "openai", analysisModel: "gpt-6-luna", analysisThinkingLevel: "medium", askProvider: "openai", askModel: "gpt-6-luna", askThinkingLevel: "medium" });
   const titles = ["Leadership advice for a new manager", "Lower back stretches under 10 minutes", "What have I saved about Lisbon?", "Sourdough starter troubleshooting", "Negotiating a raise — scripts I saved", "Rainy day activities for kids", "Compare the budgeting methods I saved", "Houseplants that survive low light", "AI agent demos worth rewatching", "Beginner running plans", "Desk setup ideas", "Weekly meal plan from my recipe saves"];
   const ages = [0, 0, 1, 1, 3, 4, 5, 6, 35, 36, 37, 2];
   const ids: string[] = [];
@@ -47,7 +47,7 @@ export function seedAskReviewFixture(store: JobStore, userId: string) {
     date.setDate(date.getDate() - ages[index]!);
     date.setHours(index === 0 ? 14 : 12, 2, 0, 0);
     const stamp = date.toISOString();
-    store.database.prepare("UPDATE conversations SET created_at=?,updated_at=?,pinned_at=?,ask_provider='openai',ask_model='gpt-5-mini',ask_thinking_level='medium' WHERE id=? AND user_id=?").run(stamp, stamp, index === 11 ? stamp : null, conversation.id, userId);
+    store.database.prepare("UPDATE conversations SET created_at=?,updated_at=?,pinned_at=?,ask_provider='openai',ask_model='gpt-6-luna',ask_thinking_level='medium' WHERE id=? AND user_id=?").run(stamp, stamp, index === 11 ? stamp : null, conversation.id, userId);
     store.database.prepare("UPDATE conversation_messages SET created_at=?,provider=CASE WHEN role='assistant' THEN 'openai' END,model=CASE WHEN role='assistant' THEN 'gpt-5-mini' END,thinking_level=CASE WHEN role='assistant' THEN 'medium' END WHERE conversation_id=?").run(stamp, conversation.id);
     ids.push(conversation.id);
   }

@@ -41,7 +41,7 @@ const schema = z.object({
   API_TOKEN: z.string().min(24),
   OPENAI_API_KEY: z.string().min(1).optional(),
   OPENAI_TRANSCRIPTION_MODEL: z.string().default("gpt-4o-mini-transcribe"),
-  OPENAI_ANALYSIS_MODEL: z.string().default("gpt-5-mini"),
+  OPENAI_ANALYSIS_MODEL: z.string().default("gpt-6-luna"),
   CEREBRAS_ANALYSIS_MODEL: z.string().default("qwen-3.8-27b"),
   COOKIES_FILE: z.string().optional(),
   FACEBOOK_COOKIES_FILE: z.string().optional(),
