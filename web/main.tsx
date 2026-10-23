@@ -21,6 +21,11 @@ import type {
 } from "./shared/types";
 import { api } from "./shared/api";
 import { confirmDiscardUnsaved } from "./unsaved-changes";
+import {
+  useAskPreferences,
+  useConversations,
+  type ConversationsController,
+} from "./shared/conversations";
 import { ActionButton } from "./components/ui/primitives";
 import { Auth, ProviderOnboarding } from "./pages/auth";
 import { InboxPage } from "./pages/inbox";
@@ -56,13 +61,13 @@ import "./inbox.css";
 import "./typography.css";
 import "./shell.css";
 
-/** `?tab=capture` opens the dialog over Inbox. */
+/**
+ * `?tab=capture` opens the dialog over Inbox. Settings is a modal, so the
+ * legacy `?tab=settings` shows the Inbox behind it.
+ */
 function tabFromLocation(): AppTab {
   const value = new URLSearchParams(window.location.search).get("tab");
-  return value === "library" ||
-    value === "ask" ||
-    value === "activity" ||
-    value === "settings"
+  return value === "library" || value === "ask" || value === "activity"
     ? value
     : "inbox";
 }
@@ -78,17 +83,24 @@ const settingsTopicValues: SettingsTopic[] = [
   "all",
 ];
 
+/** Valid topics; `overview` and `all` were Settings landing pages and now mean My account. */
 function validTopic(value: unknown): SettingsTopic | null {
-  return typeof value === "string" && (settingsTopicValues as string[]).includes(value)
-    ? (value as SettingsTopic)
-    : null;
+  if (typeof value !== "string" || !(settingsTopicValues as string[]).includes(value))
+    return null;
+  return value === "overview" || value === "all" ? "account" : (value as SettingsTopic);
 }
 
-/** The Settings topic lives in history state so Back and Forward move between topics. */
-function topicFromLocation(): SettingsTopic {
+/**
+ * The open Settings topic, or null when Settings is closed. `?settings=<topic>`
+ * works on any tab; legacy `?tab=settings&topic=<topic>` links still open it.
+ */
+function settingsFromLocation(state: unknown = window.history.state): SettingsTopic | null {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has("settings")) return validTopic(params.get("settings")) ?? "account";
+  if (params.get("tab") !== "settings") return null;
   return (
-    validTopic(new URLSearchParams(window.location.search).get("topic")) ??
-    validTopic((window.history.state as { settingsTopic?: unknown } | null)?.settingsTopic) ??
+    validTopic(params.get("topic")) ??
+    validTopic((state as { settingsTopic?: unknown } | null)?.settingsTopic) ??
     "account"
   );
 }
@@ -142,8 +154,14 @@ function App() {
     return token;
   });
   const [tab, setTab] = useState<AppTab>(tabFromLocation);
-  const [settingsTopic, setSettingsTopic] = useState<SettingsTopic>(topicFromLocation);
-  const lastArchiveTab = useRef<AppTab>(tab === "settings" ? "inbox" : tab);
+  const [settingsTopic, setSettingsTopic] = useState<SettingsTopic>(
+    () => settingsFromLocation() ?? "account",
+  );
+  const [settingsOpen, setSettingsOpen] = useState(() => settingsFromLocation() !== null);
+  const settingsOpenRef = useRef(settingsOpen);
+  settingsOpenRef.current = settingsOpen;
+  const [aiRevision, setAiRevision] = useState(0);
+  const [chatSearchRequest, setChatSearchRequest] = useState(0);
   const [captureOpen, setCaptureOpen] = useState(captureFromLocation);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [inboxRefresh, setInboxRefresh] = useState(0);
@@ -157,6 +175,28 @@ function App() {
   const [returnRetrying, setReturnRetrying] = useState(false);
   const [shortcutGuideRequest, setShortcutGuideRequest] = useState(0);
   const unsavedSettings = useRef<string | null>(null);
+  const ownerId = authState === "ready" ? (user?.id ?? null) : null;
+  const conversations = useConversations(ownerId);
+  const askPreferences = useAskPreferences(ownerId);
+  /** Opening or starting a chat from anywhere shows it on the Ask page. */
+  const chats = useMemo<ConversationsController>(
+    () => ({
+      ...conversations,
+      open: (id) => {
+        if (tabRef.current !== "ask" && !navigateRef.current("ask")) return;
+        if (settingsOpenRef.current && !navigateRef.current("ask")) return;
+        conversations.open(id);
+      },
+      startNew: () => {
+        if (tabRef.current !== "ask" && !navigateRef.current("ask")) return;
+        if (settingsOpenRef.current && !navigateRef.current("ask")) return;
+        conversations.startNew();
+      },
+    }),
+    [conversations],
+  );
+  const chatsRef = useRef(chats);
+  chatsRef.current = chats;
   const [linkedJob, setLinkedJob] = useState(() => new URLSearchParams(window.location.search).get("job"));
   const [focusJob, setFocusJob] = useState<string | null>(null);
   const highlightedJob = focusJob ?? linkedJob;
@@ -560,31 +600,78 @@ function App() {
       if (generation === sessionGeneration.current) setRetryPending(false);
     }
   }
-  const navigateRef = useRef<(nextTab: AppTab) => void>(() => undefined);
+  const navigateRef = useRef<(nextTab: AppTab) => boolean>(() => false);
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
   const writeLocation = (
     update: (params: URLSearchParams) => void,
     historyMode: "push" | "replace",
-    /** Settings topic for this entry; null clears it, undefined keeps the current state. */
-    topic?: SettingsTopic | null,
+    /** History state for the new entry; undefined keeps the current state on replace. */
+    state?: Record<string, unknown>,
   ) => {
     const nextUrl = new URL(window.location.href);
     update(nextUrl.searchParams);
     const path = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
-    const current = (window.history.state ?? {}) as { settingsTopic?: unknown };
     const samePath =
       path ===
       `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    const sameTopic = topic === undefined || (current.settingsTopic ?? null) === topic;
-    if (samePath && sameTopic) return;
-    const state = topic === undefined ? window.history.state : { ...current, settingsTopic: topic };
-    window.history[historyMode === "replace" ? "replaceState" : "pushState"](state, "", path);
+    if (samePath && state === undefined) return;
+    const nextState =
+      state ?? (historyMode === "replace" ? window.history.state : null);
+    window.history[historyMode === "replace" ? "replaceState" : "pushState"](nextState, "", path);
   };
   const topicRef = useRef(settingsTopic);
   topicRef.current = settingsTopic;
-  /** Records a topic switch as its own history entry. */
-  const pushSettingsTopic = (topic: SettingsTopic) => {
-    if (topic !== topicRef.current) writeLocation(() => undefined, "push", topic);
-    setSettingsTopic(topic);
+  /** Opens Settings over the current page, or switches topic when it is open. */
+  const openSettings = (topic?: SettingsTopic) => {
+    const next = validTopic(topic ?? topicRef.current) ?? "account";
+    setSettingsTopic(next);
+    topicRef.current = next;
+    if (settingsOpenRef.current) {
+      writeLocation((params) => params.set("settings", next), "replace");
+      return;
+    }
+    setMobileMenuOpen(false);
+    setPaletteOpen(false);
+    setCaptureOpen(false);
+    setSettingsOpen(true);
+    settingsOpenRef.current = true;
+    writeLocation(
+      (params) => {
+        params.delete("capture");
+        params.set("settings", next);
+      },
+      "push",
+      { settingsModal: true },
+    );
+  };
+  /** Topic switches inside Settings replace the entry, so Back closes the modal. */
+  const changeSettingsTopic = (topic: SettingsTopic) => {
+    const next = validTopic(topic) ?? "account";
+    setSettingsTopic(next);
+    topicRef.current = next;
+    writeLocation((params) => params.set("settings", next), "replace");
+  };
+  /** Asks before discarding unsaved Settings edits; true when Settings may close. */
+  const leaveSettingsAllowed = () => {
+    if (!settingsOpenRef.current) return true;
+    if (!confirmDiscardUnsaved(unsavedSettings.current)) return false;
+    unsavedSettings.current = null;
+    return true;
+  };
+  const dismissSettings = () => {
+    setSettingsOpen(false);
+    settingsOpenRef.current = false;
+    setReturnContext(null);
+    setReturnFeedback("");
+  };
+  /** ×, Esc and the scrim: return to the page behind, undoing the modal's history entry. */
+  const closeSettings = () => {
+    if (!settingsOpenRef.current || !leaveSettingsAllowed()) return;
+    dismissSettings();
+    if ((window.history.state as { settingsModal?: unknown } | null)?.settingsModal)
+      window.history.back();
+    else writeLocation((params) => params.delete("settings"), "replace");
   };
   const openCapture = () => {
     setCaptureMessage("");
@@ -599,19 +686,6 @@ function App() {
     setCaptureOpen(false);
     writeLocation((params) => params.delete("capture"), "replace");
   };
-  /** Settings reports unsaved edits; leaving or switching topic asks first. */
-  const leaveSettingsAllowed = () => {
-    if (tab !== "settings") return true;
-    if (!confirmDiscardUnsaved(unsavedSettings.current)) return false;
-    unsavedSettings.current = null;
-    return true;
-  };
-  const changeSettingsTopic = (topic: SettingsTopic) => {
-    if (topic !== settingsTopic && !leaveSettingsAllowed()) return false;
-    pushSettingsTopic(topic);
-    setMobileMenuOpen(false);
-    return true;
-  };
   const navigateTo = (
     nextTab: AppTab,
     historyMode: "push" | "replace" = "push",
@@ -621,56 +695,60 @@ function App() {
       openCapture();
       return true;
     }
-    const topicChanges =
-      nextTab === "settings" && tab === "settings" && topic !== undefined && topic !== settingsTopic;
-    if ((nextTab !== "settings" || topicChanges) && !leaveSettingsAllowed()) return false;
-    const nextTopic =
-      nextTab === "settings" ? (topic ?? (tab === "settings" ? settingsTopic : "account")) : null;
-    if (nextTopic) setSettingsTopic(nextTopic);
+    if (nextTab === "settings") {
+      openSettings(topic);
+      return true;
+    }
+    if (!leaveSettingsAllowed()) return false;
+    if (settingsOpenRef.current) dismissSettings();
     else {
       setReturnContext(null);
       setReturnFeedback("");
     }
     if (nextTab !== "activity") setFocusJob(null);
-    if (nextTab !== "settings") lastArchiveTab.current = nextTab;
     setDetail(null);
     setTab(nextTab);
     setCaptureOpen(false);
     setMobileMenuOpen(false);
     writeLocation((params) => {
       params.delete("capture");
+      params.delete("settings");
+      params.delete("topic");
       if (nextTab === "inbox") params.delete("tab");
       else params.set("tab", nextTab);
-    }, historyMode, nextTopic);
+    }, historyMode);
     return true;
   };
   navigateRef.current = navigateTo;
-  const tabRef = useRef(tab);
-  tabRef.current = tab;
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("tab") === "capture")
-      writeLocation((params) => {
-        params.delete("tab");
-        params.set("capture", "1");
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "capture")
+      writeLocation((next) => {
+        next.delete("tab");
+        next.set("capture", "1");
       }, "replace");
-    if (tabFromLocation() === "settings") writeLocation(() => undefined, "replace", topicRef.current);
+    // Legacy Settings links open the modal over the Inbox at `?settings=`.
+    if (params.get("tab") === "settings" || params.has("topic") || params.has("settings"))
+      writeLocation((next) => {
+        if (next.get("tab") === "settings") next.delete("tab");
+        next.delete("topic");
+        if (settingsOpenRef.current) next.set("settings", topicRef.current);
+        else next.delete("settings");
+      }, "replace");
     const restore = (event: PopStateEvent) => {
       const nextCapture = captureFromLocation();
       const nextTab = tabFromLocation();
-      const nextTopic =
-        nextTab === "settings"
-          ? (validTopic((event.state as { settingsTopic?: unknown } | null)?.settingsTopic) ?? "account")
-          : null;
+      const nextSettings = settingsFromLocation(event.state);
       const leavingTopic =
-        tabRef.current === "settings" && (nextTab !== "settings" || nextTopic !== topicRef.current);
+        settingsOpenRef.current && nextSettings !== topicRef.current;
       if (leavingTopic) {
         if (!confirmDiscardUnsaved(unsavedSettings.current)) {
-          // Stay on the edited topic and put its address and state back.
+          // Stay on the edited topic and put its address back.
           const stay = new URL(window.location.href);
           stay.searchParams.delete("capture");
-          stay.searchParams.set("tab", "settings");
+          stay.searchParams.set("settings", topicRef.current);
           window.history.pushState(
-            { ...((event.state ?? {}) as object), settingsTopic: topicRef.current },
+            { settingsModal: true },
             "",
             `${stay.pathname}${stay.search}${stay.hash}`,
           );
@@ -678,29 +756,42 @@ function App() {
         }
         unsavedSettings.current = null;
       }
-      if (nextTopic) setSettingsTopic(nextTopic);
+      if (nextSettings) {
+        setSettingsTopic(nextSettings);
+        topicRef.current = nextSettings;
+      } else {
+        setReturnContext(null);
+        setReturnFeedback("");
+      }
+      setSettingsOpen(nextSettings !== null);
+      settingsOpenRef.current = nextSettings !== null;
       if (nextCapture) {
         setCaptureReceipt(null);
         setCaptureMessage("");
       }
-      if (nextTab !== "settings") {
-        lastArchiveTab.current = nextTab;
-        setReturnContext(null);
-      }
       setTab(nextTab);
-      setCaptureOpen(nextCapture);
+      setCaptureOpen(nextCapture && nextSettings === null);
     };
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
   }, []);
+  const openSettingsRef = useRef(openSettings);
+  openSettingsRef.current = openSettings;
   useEffect(() => {
     if (authState !== "ready") return;
     let pendingG = 0;
     const onKey = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && key === "k") {
+      const commandOnly =
+        (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey;
+      if (commandOnly && key === "k") {
         event.preventDefault();
         setPaletteOpen((open) => !open);
+        return;
+      }
+      if (commandOnly && key === ",") {
+        event.preventDefault();
+        if (!settingsOpenRef.current) openSettingsRef.current();
         return;
       }
       if (
@@ -717,8 +808,14 @@ function App() {
         const destination = appDestinations.find((item) => item.shortcut === key);
         if (destination) {
           event.preventDefault();
-          navigateRef.current(destination.tab);
+          if (destination.tab === "ask") chatsRef.current.startNew();
+          else navigateRef.current(destination.tab);
         }
+        return;
+      }
+      if (event.key === "/" && !event.shiftKey) {
+        event.preventDefault();
+        setChatSearchRequest((current) => current + 1);
         return;
       }
       pendingG = key === "g" && !event.shiftKey ? Date.now() : 0;
@@ -728,9 +825,9 @@ function App() {
   }, [authState]);
   useEffect(() => {
     if (authState !== "ready") return;
-    if (tab === "settings" || tab === "activity") void loadConnectionAttention();
+    if (settingsOpen || tab === "activity") void loadConnectionAttention();
     if (tab === "inbox") void loadAiReadiness();
-  }, [authState, tab, settingsTopic]);
+  }, [authState, tab, settingsOpen, settingsTopic]);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
   const paletteNavigate = useCallback((nextTab: AppTab) => navigateRef.current(nextTab), []);
   const paletteCapture = useCallback(() => navigateRef.current("capture"), []);
@@ -831,7 +928,10 @@ function App() {
                   ? e.message
                   : "Submission failed",
       );
-      if (providerRequired) navigateTo("settings", "replace", "ai");
+      if (providerRequired) {
+        closeCapture();
+        openSettings("ai");
+      }
     } finally {
       if (generation === sessionGeneration.current) setSubmitting(false);
     }
@@ -851,17 +951,17 @@ function App() {
     return true;
   };
   const fixConnection = (job: ActivityJob) => {
-    if (!navigateTo("settings", "push", "connections")) return;
+    openSettings("connections");
     setReturnContext({ kind: "connection", job });
     setReturnFeedback("");
   };
   const setUpAi = (job: ActivityJob | null) => {
-    if (!navigateTo("settings", "push", "ai")) return;
+    openSettings("ai");
     if (job) setReturnContext({ kind: "setup", job });
     setReturnFeedback("");
   };
   const setUpIphone = () => {
-    if (!navigateTo("settings", "push", "api")) return;
+    openSettings("api");
     setShortcutGuideRequest((current) => current + 1);
   };
   const backToCapture = () => {
@@ -885,17 +985,61 @@ function App() {
       setReturnFeedback("Retried. Your link is queued; open Activity to follow it.");
   }
   const showReturnBanner =
-    tab === "settings" &&
+    settingsOpen &&
     returnContext !== null &&
     ((returnContext.kind === "connection" && settingsTopic === "connections") ||
       (returnContext.kind === "setup" && settingsTopic === "ai"));
   const liveWork = activityCounts.active + activityCounts.queued > 0;
   const renderedGeneration = sessionGeneration.current;
+  const returnBanner = showReturnBanner && returnContext && (
+    <section
+      className="app-return-banner"
+      aria-label={
+        returnContext.kind === "connection"
+          ? "Return to capture"
+          : "Saved link waiting for AI setup"
+      }
+    >
+      <div className="app-return-banner-text">
+        <strong>
+          {returnContext.kind === "connection"
+            ? `Reconnect ${platformOf(returnContext.job.normalizedUrl) ?? "the account"} for “${jobIdentity(returnContext.job)}”`
+            : `“${jobIdentity(returnContext.job)}” is saved and waiting for AI setup`}
+        </strong>
+        <span>
+          {returnContext.kind === "connection"
+            ? "Reconnecting doesn’t retry the capture by itself. When the session shows Connected, go back and choose Retry."
+            : aiReadiness?.capture
+              ? "AI setup is ready. Retry the saved link now."
+              : "Save a transcription and an analysis model below, then retry the saved link."}
+        </span>
+        {returnFeedback && (
+          <span className="app-return-banner-feedback" role="status">
+            {returnFeedback}
+          </span>
+        )}
+      </div>
+      <div className="app-return-banner-actions">
+        {returnContext.kind === "setup" && (
+          <ActionButton
+            variant={aiReadiness?.capture ? "primary" : "default"}
+            icon={RotateCcw}
+            disabled={returnRetrying}
+            onClick={() => void retryFromBanner()}
+          >
+            {returnRetrying ? "Retrying…" : "Retry saved link"}
+          </ActionButton>
+        )}
+        <ActionButton icon={ArrowLeft} variant="ghost" onClick={backToCapture}>
+          Back to capture
+        </ActionButton>
+      </div>
+    </section>
+  );
   return (
-    <div className={`app-frame${tab === "settings" ? " app-frame-settings" : ""}`}>
+    <div className="app-frame">
       <Sidebar
         tab={tab}
-        settingsTopic={settingsTopic}
         isAdmin={user?.role === "admin"}
         connectionsNeedAttention={connectionsNeedAttention}
         activityCounts={activityCounts}
@@ -904,10 +1048,13 @@ function App() {
         username={user?.username ?? null}
         avatarColor={user?.avatarColor || undefined}
         mobileOpen={mobileMenuOpen}
+        onOpenMobile={() => setMobileMenuOpen(true)}
         onCloseMobile={() => setMobileMenuOpen(false)}
         onNavigate={navigateTo}
-        onSettingsTopic={changeSettingsTopic}
-        onBack={() => navigateTo(lastArchiveTab.current)}
+        chats={chats}
+        chatSearchRequest={chatSearchRequest}
+        settingsOpen={settingsOpen}
+        onOpenSettings={() => openSettings()}
         onCapture={openCapture}
         onOpenPalette={() => {
           setMobileMenuOpen(false);
@@ -991,82 +1138,54 @@ function App() {
           {tab === "ask" && (
             <AskAI
               onOpen={setDetail}
-              onOpenSettings={(topic) => navigateTo("settings", "push", topic)}
+              onOpenSettings={(topic) => openSettings(topic)}
               onCapture={openCapture}
-            />
-          )}
-          {showReturnBanner && returnContext && (
-            <section
-              className="app-return-banner"
-              aria-label={
-                returnContext.kind === "connection"
-                  ? "Return to capture"
-                  : "Saved link waiting for AI setup"
-              }
-            >
-              <div className="app-return-banner-text">
-                <strong>
-                  {returnContext.kind === "connection"
-                    ? `Reconnect ${platformOf(returnContext.job.normalizedUrl) ?? "the account"} for “${jobIdentity(returnContext.job)}”`
-                    : `“${jobIdentity(returnContext.job)}” is saved and waiting for AI setup`}
-                </strong>
-                <span>
-                  {returnContext.kind === "connection"
-                    ? "Reconnecting doesn’t retry the capture by itself. When the session shows Connected, go back and choose Retry."
-                    : aiReadiness?.capture
-                      ? "AI setup is ready. Retry the saved link now."
-                      : "Save a transcription and an analysis model below, then retry the saved link."}
-                </span>
-                {returnFeedback && (
-                  <span className="app-return-banner-feedback" role="status">
-                    {returnFeedback}
-                  </span>
-                )}
-              </div>
-              <div className="app-return-banner-actions">
-                {returnContext.kind === "setup" && (
-                  <ActionButton
-                    variant={aiReadiness?.capture ? "primary" : "default"}
-                    icon={RotateCcw}
-                    disabled={returnRetrying}
-                    onClick={() => void retryFromBanner()}
-                  >
-                    {returnRetrying ? "Retrying…" : "Retry saved link"}
-                  </ActionButton>
-                )}
-                <ActionButton icon={ArrowLeft} variant="ghost" onClick={backToCapture}>
-                  Back to capture
-                </ActionButton>
-              </div>
-            </section>
-          )}
-          {tab === "settings" && (
-            <Settings
-              user={user}
-              onUserChange={(next) => {
-                if (renderedGeneration === sessionGeneration.current && activeOwnerId.current === next.id)
-                  setUser(next);
-              }}
-              onSignOut={async () => {
-                if (renderedGeneration === sessionGeneration.current && activeOwnerId.current === user?.id)
-                  await signOut();
-              }}
-              topic={settingsTopic}
-              onTopicChange={pushSettingsTopic}
-              onUnsavedChange={(summary: string | null) => {
-                if (renderedGeneration === sessionGeneration.current && activeOwnerId.current === user?.id)
-                  unsavedSettings.current = summary;
-              }}
-              shortcutGuideRequest={shortcutGuideRequest}
-              onAiReadinessChange={(readiness: AiProviderState["readiness"]) => {
-                if (renderedGeneration === sessionGeneration.current && activeOwnerId.current === user?.id)
-                  setAiReadiness(readiness);
+              chats={chats}
+              preferences={askPreferences.preferences}
+              onPreferencesChange={askPreferences.update}
+              aiRevision={aiRevision}
+              onAiStateChange={(state: AiProviderState) => {
+                if (renderedGeneration === sessionGeneration.current)
+                  setAiReadiness(state.readiness);
               }}
             />
           )}
         </main>
         <MobileTabBar tab={tab} live={liveWork} onNavigate={navigateTo} />
       </section>
+      {settingsOpen && (
+        <Settings
+          user={user}
+          onUserChange={(next) => {
+            if (renderedGeneration === sessionGeneration.current && activeOwnerId.current === next.id)
+              setUser(next);
+          }}
+          onSignOut={async () => {
+            if (renderedGeneration === sessionGeneration.current && activeOwnerId.current === user?.id)
+              await signOut();
+          }}
+          topic={settingsTopic}
+          onTopicChange={changeSettingsTopic}
+          onClose={closeSettings}
+          onUnsavedChange={(summary: string | null) => {
+            if (renderedGeneration === sessionGeneration.current && activeOwnerId.current === user?.id)
+              unsavedSettings.current = summary;
+          }}
+          shortcutGuideRequest={shortcutGuideRequest}
+          onAiReadinessChange={(readiness: AiProviderState["readiness"]) => {
+            if (renderedGeneration === sessionGeneration.current && activeOwnerId.current === user?.id)
+              setAiReadiness(readiness);
+          }}
+          onAiStateChange={() => {
+            if (renderedGeneration === sessionGeneration.current)
+              setAiRevision((current) => current + 1);
+          }}
+          connectionsNeedAttention={connectionsNeedAttention}
+          banner={returnBanner}
+          askPreferences={askPreferences.preferences}
+          onAskPreferencesChange={askPreferences.update}
+        />
+      )}
       {captureOpen && (
         <CaptureDialog
           url={captureUrl}

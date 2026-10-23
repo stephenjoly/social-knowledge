@@ -1,15 +1,36 @@
 import { describe, expect, it } from "vitest";
 import {
   answerWithCaptureLinks,
+  answerMeta,
+  askModelOptions,
   conversationTimeLabel,
+  defaultAskSelection,
   latestSources,
+  modelLabel,
+  resolveAskSelection,
   safeSourceUrl,
+  selectionFor,
   sourceAttribution,
   suggestionsFrom,
+  suggestionMaxLength,
   thumbTint,
+  usableSelection,
 } from "../web/pages/ask-format";
+import { analysisModelNote } from "../web/shared/format";
 import { invitationTokenFrom } from "../web/pages/auth";
-import type { AskSource, ChatMessage } from "../web/shared/types";
+import type { AiProvider, AiProviderState, AskSelection, AskSource, ChatMessage } from "../web/shared/types";
+
+it.each([
+  ["gpt-6-luna", "GPT-6 Luna", "Efficient"],
+  ["gpt-6.1-sol", "GPT-6.1 Sol", "Balanced"],
+  ["gpt-6-astra", "GPT-6 Astra", "Highest capability"],
+  ["gpt-5-mini", "GPT-5 mini", "Previous generation"],
+  ["gpt-5", "GPT-5", "Previous generation"],
+  ["qwen-3.8-27b", "Qwen 3.8 27B", "No thinking"],
+])("labels %s consistently with its catalog note", (model, label, note) => {
+  expect(modelLabel(model)).toBe(label);
+  expect(analysisModelNote(model)).toBe(note);
+});
 
 const source = (citation: number, id = `capture-${citation}`): AskSource => ({
   id,
@@ -31,11 +52,96 @@ const message = (
   content: "",
   sources,
   sufficient: null,
+  provider: null,
+  model: null,
+  thinkingLevel: null,
   status: "complete",
   errorCode: null,
   retryOf: null,
   userMessageId: null,
   createdAt: new Date().toISOString(),
+});
+
+describe("Ask model selection contract", () => {
+  const analysis: AskSelection = { provider: "openai", model: "gpt-5-mini", thinkingLevel: null };
+  const askDefault: AskSelection = { provider: "openai", model: "gpt-5", thinkingLevel: null };
+  const cerebras: AskSelection = { provider: "cerebras", model: "qwen-3.8-27b", thinkingLevel: null };
+  const provider = (id: AiProvider["id"]): AiProvider => {
+    const options = id === "openai"
+      ? [{ model: "gpt-5-mini", thinkingLevels: ["low", "medium"] as const }, { model: "gpt-5", thinkingLevels: ["low", "medium", "high"] as const }]
+      : [{ model: "qwen-3.8-27b", thinkingLevels: [] as const }];
+    return {
+      id, name: id, docsUrl: "https://example.test/models", connected: true,
+      status: "verified", keyHint: null, verifiedAt: null, supportsVision: false,
+      capabilities: { transcription: id === "openai", analysis: true },
+      models: { transcription: [], analysis: options.map((option) => option.model) },
+      taskOptions: { transcription: [], analysis: options.map((option) => ({ ...option, thinkingLevels: [...option.thinkingLevels] })) },
+    };
+  };
+  const state = (ask: AskSelection | null = null): AiProviderState => ({
+    providers: [provider("openai"), provider("cerebras")],
+    selections: { transcription: null, analysis, ask },
+    readiness: { capture: false, ask: true },
+  });
+
+  it("keeps a historical null-thinking Analysis selection usable as the new-chat default", () => {
+    const settings = state();
+    expect(usableSelection(analysis, askModelOptions(settings))).toEqual(analysis);
+    expect(defaultAskSelection(settings)).toEqual(analysis);
+    expect(resolveAskSelection(null, settings)).toEqual(analysis);
+  });
+
+  it("preserves null-thinking chat > Ask default > Analysis priority", () => {
+    const settings = state(askDefault);
+    const chat = { ...analysis, model: "gpt-5-mini" };
+    expect(defaultAskSelection(settings)).toEqual(askDefault);
+    expect(resolveAskSelection(chat, settings)).toEqual(chat);
+    expect(resolveAskSelection(null, settings)).toEqual(askDefault);
+    expect(resolveAskSelection(null, state())).toEqual(analysis);
+  });
+
+  it("rejects explicit unsupported levels and falls through rather than normalizing them", () => {
+    const settings = state(askDefault);
+    const options = askModelOptions(settings);
+    const invalidChat = { ...analysis, thinkingLevel: "high" as const };
+    const invalidNoThinking = { ...cerebras, thinkingLevel: "high" as const };
+    expect(usableSelection(invalidChat, options)).toBeNull();
+    expect(usableSelection(invalidNoThinking, options)).toBeNull();
+    expect(usableSelection({ ...analysis, thinkingLevel: "low" }, options)).toEqual({ ...analysis, thinkingLevel: "low" });
+    expect(usableSelection(cerebras, options)).toEqual(cerebras);
+    expect(resolveAskSelection(invalidChat, settings)).toEqual(askDefault);
+    settings.selections.ask = invalidNoThinking;
+    expect(defaultAskSelection(settings)).toEqual(analysis);
+    expect(resolveAskSelection(invalidNoThinking, settings)).toEqual(analysis);
+  });
+
+  it("falls back from unknown models and disconnected providers, or returns no usable selection", () => {
+    const settings = state(askDefault);
+    const unknown = { ...analysis, model: "unknown-model" };
+    expect(usableSelection(unknown, askModelOptions(settings))).toBeNull();
+    expect(resolveAskSelection(unknown, settings)).toEqual(askDefault);
+    settings.selections.ask = unknown;
+    expect(defaultAskSelection(settings)).toEqual(analysis);
+    settings.providers[0]!.connected = false;
+    settings.selections.ask = askDefault;
+    settings.selections.analysis = cerebras;
+    expect(usableSelection(analysis, askModelOptions(settings))).toBeNull();
+    expect(resolveAskSelection(analysis, settings)).toEqual(cerebras);
+    settings.providers[1]!.connected = false;
+    expect(resolveAskSelection(analysis, settings)).toBeNull();
+    expect(resolveAskSelection(analysis, null)).toBeNull();
+  });
+
+  it("keeps provider-default thinking when choosing the default's own model", () => {
+    const options = askModelOptions(state());
+    expect(selectionFor(options[0]!, { ...analysis, thinkingLevel: "low" }, analysis)).toEqual(analysis);
+    expect(selectionFor(options[2]!, { ...analysis, thinkingLevel: "low" }, null)).toEqual(cerebras);
+  });
+
+  it("renders a null-thinking answer model without inventing a thinking level", () => {
+    const answer = { ...message("assistant"), ...analysis };
+    expect(answerMeta(answer).model).toBe("GPT-5 mini");
+  });
 });
 
 describe("answerWithCaptureLinks", () => {
@@ -55,7 +161,7 @@ describe("answerWithCaptureLinks", () => {
 });
 
 describe("suggestionsFrom", () => {
-  it("builds four prompts from the account's categories and topics", () => {
+  it("builds three short prompts with category attribution from the account's facets", () => {
     expect(
       suggestionsFrom({
         categories: [
@@ -69,19 +175,53 @@ describe("suggestionsFrom", () => {
         ],
       }),
     ).toEqual([
-      "Summarise my saved Lisbon recommendations",
-      "What did I save about restaurants?",
-      "What are the key takeaways from my Travel saves?",
-      "Which endurance tips came up more than once?",
+      { text: "Summarise my travel saves", category: "Travel" },
+      { text: "Lisbon I saved this month", category: "Lisbon" },
+      { text: "What I saved about restaurants", category: null },
     ]);
   });
 
   it("falls back to generic prompts for an empty archive", () => {
     const prompts = suggestionsFrom({ categories: [], topics: [] });
-    expect(prompts).toHaveLength(4);
-    expect(new Set(prompts).size).toBe(4);
+    expect(prompts).toEqual([
+      { text: "Summarise my recent saves", category: null },
+      { text: "Compare themes in my saves", category: null },
+      { text: "Find useful takeaways", category: null },
+    ]);
+    expect(new Set(prompts.map((prompt) => prompt.text)).size).toBe(3);
     expect(suggestionsFrom(null)).toEqual(prompts);
   });
+
+  it("fills sparse leadership facets with neutral prompts without inventing travel or repetition", () => {
+    const prompts = suggestionsFrom({ categories: [], topics: [{ label: "Leadership", count: 3 }] });
+    expect(prompts).toEqual([
+      { text: "What I saved about leadership", category: null },
+      { text: "Summarise my recent saves", category: null },
+      { text: "Compare themes in my saves", category: null },
+    ]);
+    expect(prompts.every((prompt) => prompt.category === null)).toBe(true);
+    expect(prompts.map((prompt) => prompt.text).join(" ")).not.toMatch(/travel|places|more than once|repeated|duplicate/i);
+    expect(prompts.every((prompt) => prompt.text.length <= suggestionMaxLength)).toBe(true);
+  });
+  it("drops oversized chips while keeping one short prompt per available kind", () => {
+    const prompts = suggestionsFrom({
+      categories: [
+        { label: "Health & Wellness", kind: "domain", count: 5 },
+        { label: "Food & Drink", kind: "domain", count: 3 },
+        { label: "Clothing & Accessories", kind: "subcategory", count: 9 },
+        { label: "Recipes", kind: "subcategory", count: 3 },
+        { label: "Other", kind: "domain", count: 100 },
+      ],
+      topics: [{ label: "Leadership", count: 4 }],
+    });
+    expect(prompts).toEqual([
+      { text: "Summarise my wellness saves", category: "Health & Wellness" },
+      { text: "Recipes I saved this month", category: "Recipes" },
+      { text: "What I saved about leadership", category: null },
+    ]);
+    expect(prompts.every((prompt) => prompt.text.length <= suggestionMaxLength)).toBe(true);
+  });
+
 });
 
 describe("conversationTimeLabel", () => {
