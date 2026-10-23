@@ -535,6 +535,25 @@ export function buildApp(
     prefix: "/",
     index: false,
   });
+  app.get("/docs", async (request, reply) =>
+    reply.redirect(`/docs/${new URL(request.raw.url!, "http://local.invalid").search}`),
+  );
+  app.get<{ Params: { "*": string } }>("/docs/*", async (request, reply) => {
+    const relative = request.params["*"];
+    const segments = relative.replace(/\/$/, "").split("/");
+    if (relative && (/[\\\x00-\x1f]/.test(relative) ||
+        segments.some((segment) => !segment || segment === "." || segment === ".."))) {
+      return reply.code(404).send({ error: "not_found" });
+    }
+    if (relative && !relative.endsWith("/")) {
+      const candidate = await stat(path.join(config.uiDir, "docs", relative)).catch(() => null);
+      if (candidate?.isDirectory()) {
+        return reply.redirect(`/docs/${relative}/${new URL(request.raw.url!, "http://local.invalid").search}`);
+      }
+    }
+    const file = !relative || relative.endsWith("/") ? `${relative}index.html` : relative;
+    return reply.sendFile(`docs/${file}`, { cacheControl: !file.endsWith(".html") });
+  });
   app.get("/", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     const params = new URL(request.raw.url!, "http://local.invalid").searchParams;

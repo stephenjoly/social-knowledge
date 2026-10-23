@@ -34,6 +34,24 @@ approval does not certify those flows. The existing GitHub Pages workflow
 publishes `site/` on matching `main` changes; preparing a feature-branch bundle
 does not deploy the public page or the private application.
 
+## Documentation site
+
+The application serves static project documentation at `/docs/`. Its intended
+production address is `https://social-knowledge.stephenjoly.net/docs/`; a feature
+branch does not make that route live in production. The normal staging and
+approved production promotion path publishes it with the application.
+
+`docs/guide/` holds the public Markdown sources. `docs-site/manifest.json`
+explicitly selects the published pages and assets, and the normal application
+build generates `dist-ui/docs/`. Docker includes those source/build inputs and
+ships only the generated output. Adding an internal plan or another repository
+Markdown file does not publish it automatically.
+
+Documentation requires no account and shares the instance's network reachability.
+It does not require a new hostname, DNS change, service, database or external
+search provider. Existing `/app`, API, OAuth and MCP access rules remain in force.
+GitHub Pages continues to publish the separate project landing page under `site/`.
+
 ## Promotion
 
 1. Create a `codex/*` branch from freshly fetched `origin/staging` and open a feature PR targeting `staging`.

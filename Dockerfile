@@ -7,6 +7,11 @@ COPY src ./src
 COPY web ./web
 COPY scripts/copy-roadmap.mjs ./scripts/copy-roadmap.mjs
 COPY scripts/package-landing.mjs ./scripts/package-landing.mjs
+COPY scripts/build-docs.mjs ./scripts/build-docs.mjs
+COPY docs-site ./docs-site
+COPY docs/guide ./docs/guide
+COPY docs/readme ./docs/readme
+COPY docs/screenshots ./docs/screenshots
 COPY site ./site
 COPY docs/roadmap/2026-09-24 ./docs/roadmap/2026-09-24
 RUN npm run build && npm prune --omit=dev --no-audit --no-fund
