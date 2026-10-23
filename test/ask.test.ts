@@ -92,6 +92,11 @@ describe("AskService", () => {
       "Hello! I can help with your saved ideas or the app.",
     ],
     [
+      "What can you help me do in Social Knowledge?",
+      "respond",
+      "I can search and discuss your saved posts, help you develop saved ideas, and explain the app.",
+    ],
+    [
       "Where do I configure my AI models?",
       "respond",
       "Open Settings → AI & models. Connect credentials, assign tasks, then Save changes.",
@@ -228,6 +233,39 @@ describe("AskService", () => {
       expect(request.instructions).toContain("Never claim you changed settings");
       expect(request.instructions).toContain(
         "General explanation, suggestions, extrapolation and drafts must be clearly identified",
+      );
+      for (const call of create.mock.calls) {
+        const policy = String(call[0].instructions);
+        expect(policy).toContain(
+          "The backend can search and retrieve the signed-in owner's saved posts as evidence",
+        );
+        expect(policy).toContain(
+          "do not claim you cannot access or search their saved archive",
+        );
+        expect(policy).toContain(
+          "does not include live settings/account-state inspection or another owner's data",
+        );
+        expect(policy).toContain(
+          "For greetings and conversational check-ins, give a brief, warm confirmation and a useful invitation",
+        );
+        expect(policy).toContain(
+          "Do not list limitations or label the response mode unless relevant",
+        );
+      }
+      expect(request.instructions).toContain(
+        "separate canonical numeric markers such as [1] [2]",
+      );
+      expect(request.instructions).toContain(
+        "never grouped markers like [1,2] or ranges like [1–2]",
+      );
+      expect(request.instructions).toContain(
+        "Each marker number must match the corresponding SOURCE number",
+      );
+      expect(request.instructions).toContain(
+        "citedCaptureIds must list exactly the matching capture_id values",
+      );
+      expect(request.instructions).toContain(
+        "Describing your own-archive retrieval capability does not require citations",
       );
       expect(request.instructions).toContain("untrusted data");
     },
