@@ -1065,6 +1065,14 @@ export function AskAI({
     );
   }
   function resetToNewChat(keepQuestion = false) {
+    // A new draft owns its own controls. The previous request still reconciles
+    // its persisted history, but must no longer block Send or own Stop here.
+    abortRef.current?.abort();
+    abortRef.current = null;
+    activeAttemptRef.current = null;
+    setStreaming(false);
+    setReconciliationNotice("");
+    setLiveMessage("");
     selectedConversationIdRef.current = null;
     setCurrent(null);
     setDraftSelection(null);
@@ -1506,11 +1514,12 @@ export function AskAI({
         signal: controller.signal,
       });
       outcome = await consumeStream(response, temporaryId);
-      setLiveMessage(
-        outcome.status === "complete"
-          ? "Answer ready."
-          : `The answer did not finish. ${askFailure(outcome.errorCode, outcome.status).text}`,
-      );
+      if (selectedConversationIdRef.current === conversationId)
+        setLiveMessage(
+          outcome.status === "complete"
+            ? "Answer ready."
+            : `The answer did not finish. ${askFailure(outcome.errorCode, outcome.status).text}`,
+        );
     } catch (cause) {
       const aborted =
         (cause instanceof DOMException && cause.name === "AbortError") ||
@@ -1541,13 +1550,14 @@ export function AskAI({
         status: outcome.status,
         errorCode,
       });
-      setLiveMessage(
-        aborted
-          ? "Answer stopped."
-          : `The answer did not finish. ${askFailure(errorCode, "failed").text}`,
-      );
+      if (selectedConversationIdRef.current === conversationId)
+        setLiveMessage(
+          aborted
+            ? "Answer stopped."
+            : `The answer did not finish. ${askFailure(errorCode, "failed").text}`,
+        );
     } finally {
-      abortRef.current = null;
+      if (abortRef.current === controller) abortRef.current = null;
       try {
         if (outcome) {
           await reconcileAttempt(conversationId, outcome, [
@@ -1559,10 +1569,11 @@ export function AskAI({
       } finally {
         partialAnswersRef.current.delete(temporaryId);
         serverAssistantIdsRef.current.delete(temporaryId);
-        if (activeAttemptRef.current?.temporaryId === temporaryId)
+        if (activeAttemptRef.current?.temporaryId === temporaryId) {
           activeAttemptRef.current = null;
-        setReconciliationNotice("");
-        setStreaming(false);
+          setReconciliationNotice("");
+          setStreaming(false);
+        }
       }
     }
   }

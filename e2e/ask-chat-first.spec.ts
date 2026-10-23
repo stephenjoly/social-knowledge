@@ -21,6 +21,7 @@ let root: string;
 let store: JobStore;
 let app: ReturnType<typeof buildApp>;
 let firstChat: string;
+let reviewUserId: string;
 let pauseNextAnswer = false;
 let releaseAnswer: (() => void) | undefined;
 const screenshots = path.resolve("output/playwright/ask-chat-first");
@@ -36,6 +37,7 @@ test.beforeAll(async () => {
     "ask-review",
     await hash("synthetic-review-password"),
   );
+  reviewUserId = user.id;
   const synthetic = syntheticReviewAsk(store);
   app = buildApp(config, store, new EventHub(), undefined, undefined, {
     answer: async (input) => {
@@ -280,10 +282,18 @@ test("model default, one-off retry, persisted preferences and sidebar actions wo
   await page.getByRole("button", { name: "New chat", exact: true }).first().click();
   await expect(page.getByTitle("Choose model for this chat", { exact: true })).toContainText("Qwen");
   const composer = page.getByRole("textbox", { name: "Ask your archive" });
+  await expect(composer).toHaveAttribute("aria-keyshortcuts", "Enter");
   await composer.fill("Give me a synthetic leadership summary");
   await composer.press("Enter");
   await expect(page.locator(".ask-answer")).toContainText("Promotion strategy");
   await expect(page.locator(".ask-meta-model")).toContainText("Qwen");
+  await expect.poll(() => {
+    const chat = store.listConversations(reviewUserId).find(({ title }) => title === "Give me a synthetic leadership summary");
+    return chat ? store.getConversation(reviewUserId, chat.id)?.messages?.map(({ role, content, status, provider }) => ({ role, content, status, provider })) : null;
+  }).toEqual([
+    expect.objectContaining({ role: "user", content: "Give me a synthetic leadership summary", status: "complete" }),
+    expect.objectContaining({ role: "assistant", content: expect.stringContaining("Promotion strategy"), status: "complete", provider: "cerebras" }),
+  ]);
 
   await page.locator("body").click({ position: { x: 600, y: 60 } });
   await page.keyboard.press("s");
@@ -308,6 +318,80 @@ test("model default, one-off retry, persisted preferences and sidebar actions wo
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("menuitem", { name: "Delete…", exact: true }).click();
   await expect(page.getByRole("button", { name: "Synthetic renamed Lisbon chat", exact: true })).toHaveCount(0);
+});
+
+test("New chat accepts first Enter while old retry reconciles and keeps Stop on the new attempt", async ({ page }) => {
+  await page.setViewportSize({ width: 1360, height: 1000 });
+  await page.goto(`http://127.0.0.1:${port}/app`);
+  await page.getByLabel("Username").fill("ask-review");
+  await page.getByLabel("Password").fill("synthetic-review-password");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  const oldTitle = "Leadership advice for a new manager";
+  await page.getByRole("button", { name: oldTitle, exact: true }).first().click();
+  await page.getByTitle("Choose model for this chat", { exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Model for this chat" });
+  await picker.getByRole("button", { name: /Qwen/ }).click();
+  const setDefault = picker.getByRole("button", { name: "Set as default", exact: true });
+  if (await setDefault.isEnabled()) await setDefault.click();
+  await expect.poll(() => page.evaluate(async () => (await (await fetch("/api/v1/ai-providers")).json()).selections.ask?.provider)).toBe("cerebras");
+  await page.keyboard.press("Escape");
+
+  let releaseOldSnapshot!: () => void;
+  const oldSnapshotGate = new Promise<void>((resolve) => { releaseOldSnapshot = resolve; });
+  let oldSnapshotHeld = false;
+  const oldChatUrl = `**/api/v1/conversations/${firstChat}`;
+  // Hold the authoritative snapshot after the retry's stream finishes. This
+  // forces the lifecycle overlap rather than hoping network timing reproduces it.
+  await page.route(oldChatUrl, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    oldSnapshotHeld = true;
+    await oldSnapshotGate;
+    await route.continue();
+  });
+  try {
+    await page.getByTitle("Retry with another model", { exact: true }).first().click();
+    await page.getByRole("dialog", { name: "Retry this answer with" }).locator(".ask-opt").filter({ hasText: "gpt-5-mini" }).click();
+    await expect.poll(() => oldSnapshotHeld).toBe(true);
+    await expect(page.getByRole("button", { name: `${oldTitle} Answering`, exact: true })).toBeVisible();
+    const oldAnswer = store.getConversation(reviewUserId, firstChat)?.messages?.at(-1);
+    expect(oldAnswer).toMatchObject({ status: "complete", provider: "openai", model: "gpt-5-mini", content: expect.stringContaining("Promotion strategy") });
+
+    await page.getByRole("button", { name: "New chat", exact: true }).first().click();
+    await expect(page.getByTitle("Choose model for this chat", { exact: true })).toContainText("Qwen");
+    const composer = page.getByRole("textbox", { name: "Ask your archive" });
+    await expect(composer).toHaveAttribute("aria-keyshortcuts", "Enter");
+    pauseNextAnswer = true;
+    const created = page.waitForResponse((response) => response.url().endsWith("/api/v1/conversations") && response.request().method() === "POST", { timeout: 5000 });
+    const question = "Synthetic new draft during previous retry cleanup";
+    await composer.fill(question);
+    await composer.press("Enter");
+    const { conversation } = await (await created).json();
+    await expect.poll(() => Boolean(releaseAnswer)).toBe(true);
+    await expect(page.locator(".ask-bubble")).toHaveText(question);
+    await expect(page.locator(".ask-meta-model")).toContainText("Qwen");
+    expect(store.getConversation(reviewUserId, conversation.id)?.messages?.at(-1)).toMatchObject({ status: "pending", provider: "cerebras" });
+
+    releaseOldSnapshot();
+    // The sidebar refresh is the old run's last awaited operation. Its settled
+    // status proves cleanup ran while the new answer still owns the controls.
+    await expect(page.getByRole("button", { name: oldTitle, exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: `${oldTitle} Answering`, exact: true })).toHaveCount(0);
+    const stop = page.getByRole("button", { name: "Stop", exact: true });
+    await expect(stop).toBeVisible();
+    await stop.click();
+    releaseAnswer?.();
+    releaseAnswer = undefined;
+    await expect.poll(() => store.getConversation(reviewUserId, conversation.id)?.messages?.at(-1)?.status).toBe("cancelled");
+    await expect(page.locator(".ask-message.assistant.cancelled")).toHaveCount(1);
+    await expect(composer).toHaveValue("");
+    expect(store.getConversation(reviewUserId, firstChat)?.messages?.at(-1)).toEqual(oldAnswer);
+  } finally {
+    releaseOldSnapshot();
+    releaseAnswer?.();
+    releaseAnswer = undefined;
+    pauseNextAnswer = false;
+    if (!page.isClosed()) await page.unrouteAll({ behavior: "wait" });
+  }
 });
 
 
