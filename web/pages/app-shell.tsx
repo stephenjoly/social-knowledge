@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import {
   Activity,
   Command,
@@ -555,32 +555,18 @@ function ChatRow({
 function ChatHistory({
   chats,
   activeChatId,
-  searchRequest,
-  onRequestVisible,
+  searchRef,
   onAfterOpen,
 }: {
   chats: ConversationsController;
   activeChatId: string | null;
-  searchRequest: number;
-  onRequestVisible: () => void;
+  searchRef: Ref<HTMLInputElement>;
   onAfterOpen: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [menu, setMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const search = useRef<HTMLInputElement>(null);
-  const handledRequest = useRef(searchRequest);
-  useEffect(() => {
-    if (searchRequest === handledRequest.current) return;
-    handledRequest.current = searchRequest;
-    onRequestVisible();
-    const frame = window.requestAnimationFrame(() => {
-      search.current?.focus();
-      search.current?.select();
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [searchRequest, onRequestVisible]);
   const closeMenu = useCallback(
     (restoreFocus: boolean) => {
       const anchor = menu?.anchor;
@@ -600,7 +586,7 @@ function ChatHistory({
       <label className={cx("app-chat-search", searching && "active")}>
         <Search size={15} aria-hidden="true" />
         <input
-          ref={search}
+          ref={searchRef}
           id="sidebar-chat-search"
           type="search"
           placeholder="Search chats"
@@ -707,6 +693,21 @@ export function Sidebar(props: SidebarProps) {
     if (!desktop) onOpenMobile();
     else if (collapsed) expand();
   }, [desktop, collapsed, expand, onOpenMobile]);
+  const chatSearch = useRef<HTMLInputElement>(null);
+  const handledSearchRequest = useRef(props.chatSearchRequest);
+  useEffect(() => {
+    if (props.chatSearchRequest === handledSearchRequest.current) return;
+    revealSearch();
+    // The history input is unmounted while collapsed. Keep the request pending
+    // until expansion mounts it, then let the sidebar's own focus restoration finish.
+    if (collapsed) return;
+    const frame = window.requestAnimationFrame(() => {
+      chatSearch.current?.focus();
+      chatSearch.current?.select();
+      handledSearchRequest.current = props.chatSearchRequest;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [props.chatSearchRequest, collapsed, revealSearch]);
   return (
     <aside
       ref={sidebar.layoutRef}
@@ -786,8 +787,7 @@ export function Sidebar(props: SidebarProps) {
         <ChatHistory
           chats={chats}
           activeChatId={onAsk ? chats.currentId : null}
-          searchRequest={props.chatSearchRequest}
-          onRequestVisible={revealSearch}
+          searchRef={chatSearch}
           onAfterOpen={onCloseMobile}
         />
       )}
