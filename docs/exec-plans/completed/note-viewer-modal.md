@@ -1,6 +1,6 @@
 # Implement approved B note modal
 
-Status: approved for implementation by Stephen: “B is definitely the way to go.” Production release remains a separate step.
+Status: implemented and verified in PR #70 for staging review. Stephen approved B; production release remains a separate step.
 Design authority: Opus 5.5 mock-ups at /Users/stephenjoly/.paseo/worktrees/19wvwyxn/note-viewer-mockups/designs/app/note-viewer, latest mock-up commit 5d99ec0. Use B modal.html, shared assets/app.css and app.js, screenshots desktop-b-modal-* and mobile-b-modal-*. A is rejected for this milestone. Do not publish the comparison/demo assets as production app data.
 
 ## Scope and design contract
@@ -48,3 +48,21 @@ No worker builds shared dist while another runs browser tests. Runtime worker ru
 
 - Final visual comparison exposed legacy global `header` styling in the new semantic note heading: dark blurred toolbar, fixed height and horizontal flex. Scoped `.nvm .nv-head` now explicitly uses a normal, unblurred surface block with automatic height, no sticky positioning/border/z-index, and wrapped metadata below the title. This applies to loaded, loading/error and phone states without changing global headers.
 - Acceptance worker adds a four-viewport regression checking effective heading/modal surface background equality and title-above-metadata geometry, with screenshots. Typecheck and whitespace checks passed; lead owns the coordinated rebuild and browser verification.
+
+## Integration acceptance — 2026-10-23
+
+- Runtime checkpoints: `2b990f1`, `e15a44a`, `dfdc952`; acceptance: `4fbdb65`, `7636469`. Browser review caught and fixed mobile Sources covering the dialog and legacy global header styling leaking into the title area. Dedicated guards cover both.
+- Final `npm run check`: documentation, landing assets, strict server/web types, production build and 42 files / 403 tests passed. Final browser bundle: `index-Bk3ebhTK.js` and `index-DLo3mMk8.css`.
+- New modal matrix: 13/13 Chromium and 13/13 WebKit. Across modal and affected journeys: Chromium 41/41; WebKit 38/41. The three unchanged WebKit failures reproduce on an isolated build of exact staging base `3edfec624a43f491952d9f0d3f9a658e242a90bb`: provider-settings return focus after pointer opening, capture-view return focus after pointer opening, and settings-alignment signed Shortcut download event timeout. No unrelated assertions were weakened or changed.
+- Baseline provenance, screenshots and traces: local `output/playwright/note-modal-baseline-provenance.json`, `note-modal-green-chromium-confirmed`, `note-modal-green-webkit-confirmed`, and the affected/journeys/baseline folders. Temporary fixtures and baseline source/build were removed; owned test ports were released. No paid provider calls or production data used.
+- Lead visually compared desktop portrait and phone layouts with B and verified the deployed synthetic preview using Yab: Inbox opens over the same workspace; Ask opens from sources; paging follows the answer order; closing restores the original source button. Live preview uses existing synthetic captures, including explicit unavailable-video recovery. Real synthetic MP4 playback and aspect ratios are covered locally.
+- Review: https://github.com/stephenjoly/social-knowledge/pull/70. Preview: https://preview-social-knowledge-staging-y3qjds-40w3bc.staging.stephenjoly.net/app.
+
+## Review script
+
+1. Open the preview and choose the `ask-review` demo account.
+2. In Inbox, open a capture: B appears over the Inbox; use Next/Previous and close to return to the same list.
+3. Open “What leadership tips do you have?” in the chat sidebar, then a source's Open note. Check Note, Transcript and Details; step through the three sources, then close or press Escape. The chat and original source focus remain.
+4. At phone width, confirm the fullscreen viewer's close button and tabs remain reachable. Synthetic preview captures without video correctly offer their original link; local acceptance artifacts show portrait/landscape playback.
+
+The prototype's fabricated transcript timings and source-context chip were deliberately not copied: only stored evidence timestamps seek; Ask about this fills an unsent title-based draft.
