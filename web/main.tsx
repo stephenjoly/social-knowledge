@@ -9,6 +9,7 @@ import {
 import { createRoot } from "react-dom/client";
 import { ArrowLeft, RotateCcw } from "lucide-react";
 import type {
+  NoteOpeningContext,
   ActivityJob,
   ActivityDetails,
   ActivityCounts,
@@ -223,6 +224,11 @@ function App() {
   const failedRequest = useRef(0);
   const liveRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
+  const [noteContext, setNoteContext] = useState<NoteOpeningContext | null>(null);
+  const openNote = (id: string, context?: NoteOpeningContext) => {
+    setNoteContext(context ?? { captureIds: [id], label: "Saved note" });
+    setDetail(id);
+  };
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [captureUrl, setCaptureUrl] = useState("");
   const [note, setNote] = useState("");
@@ -281,6 +287,7 @@ function App() {
     activityFilterRef.current = "all";
     lastNewestActive.current = null;
     setDetail(null);
+    setNoteContext(null);
     setCaptureUrl("");
     setNote("");
     setCaptureReceipt(null);
@@ -781,6 +788,7 @@ function App() {
     if (authState !== "ready") return;
     let pendingG = 0;
     const onKey = (event: KeyboardEvent) => {
+      if (document.querySelector(".nvm-layer")) return;
       const key = event.key.toLowerCase();
       const commandOnly =
         (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey;
@@ -1078,11 +1086,10 @@ function App() {
           onCapture={openCapture}
         />
         <main className="shell" id="main-content">
-          {detail && <Detail id={detail} from={tab} restoreFocus={tab !== "ask"} onClose={() => setDetail(null)} />}
           {tab === "inbox" && (
             <InboxPage
               refreshToken={inboxRefresh}
-              onOpen={setDetail}
+              onOpen={openNote}
               userId={user?.id ?? null}
               captureReady={aiReadiness?.capture ?? null}
               pendingWork={activityCounts.active + activityCounts.queued}
@@ -1134,10 +1141,11 @@ function App() {
               onRestore={(job) => void setArchived(job, false)}
             />
           )}
-          {tab === "library" && <Library onOpen={setDetail} />}
+          {tab === "library" && <Library onOpen={openNote} />}
           {tab === "ask" && (
             <AskAI
-              onOpen={setDetail}
+              onOpen={openNote}
+              noteOpen={detail !== null}
               onOpenSettings={(topic) => openSettings(topic)}
               onCapture={openCapture}
               chats={chats}
@@ -1153,6 +1161,10 @@ function App() {
         </main>
         <MobileTabBar tab={tab} live={liveWork} onNavigate={navigateTo} />
       </section>
+      {detail && (
+        <Detail id={detail} from={tab} context={noteContext ?? undefined}
+          onSelect={setDetail} onClose={() => setDetail(null)} />
+      )}
       {settingsOpen && (
         <Settings
           user={user}
