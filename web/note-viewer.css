@@ -670,7 +670,25 @@
 }
 .nvm .nv-head {
   grid-area: head;
+  /* The legacy global header is a dark sticky flex toolbar. B's heading is
+     a normal surface block, with attribution beneath the title. */
+  display: block;
+  height: auto;
+  min-height: 0;
+  position: static;
+  top: auto;
+  z-index: auto;
+  border: 0;
+  background: var(--surface);
+  backdrop-filter: none;
   padding: 4px 32px 14px;
+}
+.nvm .nv-head > .nv-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin-top: 6px;
 }
 .nvm .nv-tabs {
   grid-area: tabs;

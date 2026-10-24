@@ -43,3 +43,8 @@ No worker builds shared dist while another runs browser tests. Runtime worker ru
 
 - Chromium acceptance found the mounted phone Ask Sources sheet (`z-index: 96`) painted over B's original mock-up layer value (`70`). Raised only the production note layer to `100`, above Sources, sidebar (`95`), and shell menus (`90`). Nested Move remains inside the note stacking context; Settings, capture, command, and background panel rules stay unchanged.
 - Typecheck and whitespace checks passed. Lead must rebuild before browser revalidation; runtime worker did not build or start a server.
+
+### Header style boundary correction
+
+- Final visual comparison exposed legacy global `header` styling in the new semantic note heading: dark blurred toolbar, fixed height and horizontal flex. Scoped `.nvm .nv-head` now explicitly uses a normal, unblurred surface block with automatic height, no sticky positioning/border/z-index, and wrapped metadata below the title. This applies to loaded, loading/error and phone states without changing global headers.
+- Acceptance worker adds a four-viewport regression checking effective heading/modal surface background equality and title-above-metadata geometry, with screenshots. Typecheck and whitespace checks passed; lead owns the coordinated rebuild and browser verification.
