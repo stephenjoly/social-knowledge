@@ -30,15 +30,19 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await page.getByRole("button", { name: "Clear filters" }).click();
   await page.locator(".inbox-row-button").first().click();
   const note = page.locator(".capture-note");
-  await expect(note.locator(".note-media")).toBeVisible();
+  // The synthetic archive has a thumbnail but no stored video bytes. The
+  // viewer must expose honest recovery instead of a fabricated playable asset.
+  await expect(note.getByText(/Saved video unavailable/)).toBeVisible();
+  await expect(note.getByRole("img", { name: "Saved video thumbnail", exact: true })).toBeVisible();
+  await expect(note.getByRole("button", { name: "Play video", exact: true })).toHaveCount(0);
   await expect(
     note.getByRole("link", { name: /^Open original post on / }),
   ).toHaveAttribute("href", /^https:\/\//);
   await expect(
     note.getByRole("heading", { name: "Key takeaways" }),
   ).toBeVisible();
-  await expect(note.locator(".note-takeaways li").first()).toBeVisible();
-  await note.getByRole("button", { name: "Back to Inbox", exact: true }).click();
+  await expect(note.locator(".nv-takeaways li").first()).toBeVisible();
+  await note.getByRole("button", { name: "Close note", exact: true }).click();
   await expect(note).toHaveCount(0);
 
   await page
@@ -75,7 +79,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
     note.getByRole("link", { name: /^Open original post on / }),
   ).toBeVisible();
   await note
-    .getByRole("button", { name: "Back to Knowledge base", exact: true })
+    .getByRole("button", { name: "Close note", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { level: 1, name: topicTitle!, exact: true }),
@@ -113,7 +117,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(page.locator(".ask-sources .ask-source.hl")).toBeVisible();
   await page.locator(".ask-sources .ask-source-open").first().click();
   await expect(note).toBeVisible();
-  await note.getByRole("button", { name: "Back to Ask", exact: true }).click();
+  await note.getByRole("button", { name: "Close note", exact: true }).click();
   await page.reload();
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await page.locator(".app-chat-open").filter({ hasText: "What Lisbon restaurants" }).first().click();
@@ -122,7 +126,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   ).toBeVisible();
   await page.locator(".ask-sources .ask-source-open").first().click();
   await expect(note).toBeVisible();
-  await note.getByRole("button", { name: "Back to Ask", exact: true }).click();
+  await note.getByRole("button", { name: "Close note", exact: true }).click();
 
   await page.getByRole("button", { name: "New chat" }).click();
   await expect(

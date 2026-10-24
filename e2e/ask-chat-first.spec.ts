@@ -683,8 +683,8 @@ test("long answers and eight sources scroll independently without moving the des
     .last()
     .getByRole("button", { name: /Open note/ })
     .click();
-  await expect(page.locator(".note-back")).toBeVisible();
-  await page.locator(".note-back").click();
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Close note", exact: true })).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Close note", exact: true }).click();
   await expect(thread).toBeVisible();
   await assertShell("source-return");
   await page.locator(".app-profile-settings").click();
