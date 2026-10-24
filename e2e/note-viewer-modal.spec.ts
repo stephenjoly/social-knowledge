@@ -348,6 +348,29 @@ async function reachable(locator: Locator) {
   ).toBe(true);
 }
 
+async function approvedHeader(note: Locator) {
+  const heading = note.locator(".nv-head h1");
+  const metadata = note.locator(".nv-head .nv-meta");
+  await expect(metadata).toBeVisible();
+  const colors = await note.evaluate((element) => {
+    const header = element.querySelector<HTMLElement>(".nv-head")!;
+    const surface = getComputedStyle(element).backgroundColor;
+    const background = getComputedStyle(header).backgroundColor;
+    // Transparent headers expose the modal surface; a legacy translucent dark
+    // page-header rule must never leak into the approved white note header.
+    return {
+      surface,
+      visible: background === "rgba(0, 0, 0, 0)" ? surface : background,
+    };
+  });
+  expect(colors.visible).toBe(colors.surface);
+  const titleBox = await heading.boundingBox();
+  const metadataBox = await metadata.boundingBox();
+  expect(titleBox).not.toBeNull();
+  expect(metadataBox).not.toBeNull();
+  expect(titleBox!.y + titleBox!.height).toBeLessThanOrEqual(metadataBox!.y);
+}
+
 test("Ask modal preserves mounted chat, exact scroll/focus, source order and all dismissal paths", async ({
   page,
 }) => {
@@ -376,6 +399,10 @@ test("Ask modal preserves mounted chat, exact scroll/focus, source order and all
     await expect(
       note.getByRole("button", { name: "Previous note", exact: true }),
     ).toBeDisabled();
+    await page.keyboard.press("ArrowRight");
+    await expect(note).toHaveAccessibleName(captures[2]!.title);
+    await page.keyboard.press("ArrowLeft");
+    await expect(note).toHaveAccessibleName(captures[0]!.title);
     await note.getByRole("button", { name: "Next note", exact: true }).click();
     await expect(note).toHaveAccessibleName(captures[2]!.title);
     await note.getByRole("button", { name: "Next note", exact: true }).click();
@@ -417,10 +444,29 @@ test("keyboard trap, nested filing Escape, retained detail content and genuine s
     ).toBe(true);
   }
   await note.getByRole("tab", { name: /^Details\s*\d+$/ }).click();
+  await page.keyboard.press("ArrowLeft");
+  await expect(
+    note.getByRole("tab", { name: "Transcript", exact: true }),
+  ).toBeFocused();
+  await expect(
+    note.getByRole("tab", { name: "Transcript", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Home");
+  await expect(
+    note.getByRole("tab", { name: "Note", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(
+    note.getByRole("tab", { name: /^Details\s*\d+$/ }),
+  ).toBeFocused();
   await expect(note).toContainText("Synthetic place");
   await expect(note).toContainText("Synthetic retained comment");
   await expect(note).toContainText("French");
-  await note.getByRole("button", { name: "Move", exact: true }).click();
+  // Safari does not focus buttons on pointer activation. Establish the actual
+  // keyboard opener before asserting exact focus return from the nested layer.
+  const moveTrigger = note.getByRole("button", { name: "Move", exact: true });
+  await moveTrigger.focus();
+  await moveTrigger.press("Enter");
   const nested = page.getByRole("dialog", {
     name: "Move to a category",
     exact: true,
@@ -471,6 +517,7 @@ for (const viewport of [
     await openChat(page);
     await openSource(page);
     const note = dialog(page);
+    await approvedHeader(note);
     await reachable(
       note.getByRole("button", { name: "Close note", exact: true }),
     );
@@ -799,8 +846,10 @@ test("Settings retains its own Escape and focus return after note inspection", a
 }) => {
   await login(page);
   await openChat(page);
-  await openSource(page);
+  const sourceTrigger = await openSource(page);
   await page.keyboard.press("Escape");
+  await expect(dialog(page)).toHaveCount(0);
+  await expect(sourceTrigger).toBeFocused();
   const settingsTrigger = page.locator(".app-profile-settings");
   await settingsTrigger.focus();
   await settingsTrigger.press("Enter");
