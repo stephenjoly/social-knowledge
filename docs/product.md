@@ -98,8 +98,16 @@ takeaways, and captures across their subtree. Empty categories stay out of the
 browsing UI without removing stored taxonomy. Local Back/Forward controls retain
 reading history. Capture notes show the original source, takeaways,
 recommendations, transcripts, and classification details; recommendation markers
-are decorative. The note's Back action returns to the page and state it was opened
-from. Capture remains available from the application shell.
+are decorative. Ask sources, Inbox rows and Library captures open notes in a
+centered modal over their originating workspace. On desktop the original media
+sits beside independently scrolling Note, Transcript and Details content; media
+retains its natural aspect ratio without a wide black player frame. On phones the
+viewer fills the screen. Close, Escape or the scrim returns to the same chat or
+list position and restores focus to the opener. Previous/next stays within the
+answer's sources or visible list context. Playback starts only on user action and
+pauses on close or when changing notes. Stored timestamps support seeking; the
+viewer never invents transcript timing. Original attribution and source links
+remain available. Capture remains available from the application shell.
 
 ## AI setup
 
