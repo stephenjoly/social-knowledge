@@ -38,3 +38,8 @@ No worker builds shared dist while another runs browser tests. Runtime worker ru
 - Shared `useDialogFocus` now limits keyboard ownership to the last modal layer; initial/return focus use `preventScroll`. It also includes summary/video controls. Move uses that primitive, replacing its local trap; Settings itself retains its existing handler.
 - Verification: `npm run typecheck` passed; focused Vitest Ask formatting/UI, primitives and Settings diagnostics: 4 files, 88 tests passed. No shared build or server started. Lead coordinates production build, browser acceptance, visual comparison, full check and rollout.
 - Deliberate runtime differences: transcript timing unavailable; Ask remains a title-based prefill; recommendations retain their existing read-only action markers (no invented persisted checklist capability).
+
+### Mobile stacking correction
+
+- Chromium acceptance found the mounted phone Ask Sources sheet (`z-index: 96`) painted over B's original mock-up layer value (`70`). Raised only the production note layer to `100`, above Sources, sidebar (`95`), and shell menus (`90`). Nested Move remains inside the note stacking context; Settings, capture, command, and background panel rules stay unchanged.
+- Typecheck and whitespace checks passed. Lead must rebuild before browser revalidation; runtime worker did not build or start a server.

@@ -609,7 +609,9 @@
 .nvm-layer {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  /* Above mobile Sources (96), sidebar (95), and shell menus (90).
+     Nested filing remains in this modal's own stacking context. */
+  z-index: 100;
   display: grid;
   place-items: center;
   padding: 24px;
