@@ -1,3 +1,4 @@
+import type { OpenCapture } from "../shared/types";
 import { useDeferredValue, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowDownWideNarrow,
@@ -317,7 +318,7 @@ export function InboxPage({
   onViewActivity,
 }: {
   refreshToken: number;
-  onOpen: (id: string) => void;
+  onOpen: OpenCapture;
   userId: string | null;
   /** Whether new captures can be processed; null while unknown. */
   captureReady: boolean | null;
@@ -564,13 +565,13 @@ export function InboxPage({
           view === "tiles" ? (
             <ul className="inbox-tiles" aria-labelledby="captures-heading">
               {captures.map((capture) => (
-                <CaptureTile capture={capture} onOpen={onOpen} key={capture.id} />
+                <CaptureTile capture={capture} onOpen={(id) => onOpen(id, { captureIds: captures.map((item) => item.id), label: "Inbox" })} key={capture.id} />
               ))}
             </ul>
           ) : (
             <ul className="inbox-list" aria-labelledby="captures-heading">
               {captures.map((capture) => (
-                <CaptureRow capture={capture} onOpen={onOpen} key={capture.id} />
+                <CaptureRow capture={capture} onOpen={(id) => onOpen(id, { captureIds: captures.map((item) => item.id), label: "Inbox" })} key={capture.id} />
               ))}
             </ul>
           )

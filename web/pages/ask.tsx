@@ -1,3 +1,4 @@
+import type { OpenCapture } from "../shared/types";
 import {
   createContext,
   type CSSProperties,
@@ -119,8 +120,6 @@ type ReadingPosition = {
   windowY: number;
   threadTop: number;
   trigger: HTMLElement | null;
-  triggerSelector: string;
-  triggerIndex: number;
 };
 
 /** A failed request, carrying a stored-error-style code for controlled copy. */
@@ -906,7 +905,9 @@ export function EmptyAnswerSources({
 }
 
 export type AskAIProps = {
-  onOpen: (id: string) => void;
+  onOpen: OpenCapture;
+  /** Inspecting a source suspends following, never its owning chat stream. */
+  noteOpen?: boolean;
   /** Opens a Settings topic in the Settings modal, e.g. AI & models. */
   onOpenSettings?: (topic: SettingsTopic) => void;
   /** Opens the Capture dialog from the empty-archive state. */
@@ -923,6 +924,7 @@ export type AskAIProps = {
 
 export function AskAI({
   onOpen,
+  noteOpen = false,
   onOpenSettings,
   onCapture,
   chats,
@@ -932,7 +934,14 @@ export function AskAI({
   onAiStateChange,
 }: AskAIProps) {
   const [current, setCurrent] = useState<Conversation | null>(null);
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
+  // A note's title-based question is a draft only, never an automatic request.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("q")) return;
+    url.searchParams.delete("q");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState("");
   const [reconciliationNotice, setReconciliationNotice] = useState("");
@@ -1198,7 +1207,7 @@ export function AskAI({
   }
   function isHidden() {
     const root = rootRef.current;
-    return !root || root.getClientRects().length === 0;
+    return noteOpen || !root || root.getClientRects().length === 0;
   }
   function isAtEnd() {
     const marker = threadEndRef.current;
@@ -1259,54 +1268,29 @@ export function AskAI({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasThread]);
 
-  // A saved note replaces Ask without unmounting it; on return, put the
-  // reader back where they were and refocus what they opened it from.
+  // The note overlays this mounted chat. Restore the exact reading anchor on return.
   useEffect(() => {
-    const root = rootRef.current;
-    if (!root || typeof ResizeObserver === "undefined") return;
-    let wasHidden = isHidden();
-    const observer = new ResizeObserver(() => {
-      if (isHidden()) {
-        wasHidden = true;
-        return;
-      }
-      if (!wasHidden) return;
-      wasHidden = false;
-      const saved = readingPositionRef.current;
-      readingPositionRef.current = null;
-      if (!saved) return;
-      const restore = () => {
-        if (threadRef.current) threadRef.current.scrollTop = saved.threadTop;
-        window.scrollTo(0, saved.windowY);
-        lastScrollRef.current = scrollPosition();
-        const trigger = saved.trigger?.isConnected
-          ? saved.trigger
-          : root.querySelectorAll<HTMLElement>(saved.triggerSelector)[
-              saved.triggerIndex
-            ];
-        trigger?.focus({ preventScroll: true });
-      };
-      restore();
-      window.requestAnimationFrame(restore);
-    });
-    observer.observe(root);
-    return () => observer.disconnect();
+    if (noteOpen) return;
+    const saved = readingPositionRef.current;
+    readingPositionRef.current = null;
+    if (!saved) return;
+    if (threadRef.current) threadRef.current.scrollTop = saved.threadTop;
+    window.scrollTo(0, saved.windowY);
+    lastScrollRef.current = scrollPosition();
+    if (saved.trigger?.isConnected) saved.trigger.focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasThread]);
+  }, [noteOpen]);
 
   function openSource(id: string, trigger: HTMLElement | null) {
-    const triggerSelector = `.ask-source-open[data-source-id="${CSS.escape(id)}"]`;
-    const triggers = Array.from(
-      rootRef.current?.querySelectorAll<HTMLElement>(triggerSelector) ?? [],
-    );
     readingPositionRef.current = {
       windowY: window.scrollY,
       threadTop: threadRef.current?.scrollTop ?? 0,
       trigger,
-      triggerSelector,
-      triggerIndex: trigger ? Math.max(0, triggers.indexOf(trigger)) : 0,
     };
-    onOpen(id);
+    onOpen(id, {
+      captureIds: panelSources.map((source) => source.id),
+      label: `Source from ${current?.title || "this answer"}`,
+    });
   }
 
   function setPanelOpen(open: boolean) {

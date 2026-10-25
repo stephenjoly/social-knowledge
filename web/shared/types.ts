@@ -4,6 +4,10 @@ export type Asset = {
   mimeType: string;
   sizeBytes: number;
 };
+/** Snapshot of the visible collection that opened a note. No extra archive reads. */
+export type NoteOpeningContext = { captureIds: string[]; label: string };
+export type OpenCapture = (id: string, context?: NoteOpeningContext) => void;
+
 export type Capture = {
   id: string;
   jobId: string;
@@ -37,7 +41,7 @@ export type Capture = {
       location: string | null;
       description: string | null;
     }>;
-    evidence: Array<{ claim: string; source: string; quote: string | null }>;
+    evidence: Array<{ claim: string; source: string; quote: string | null; timestampSeconds?: number | null }>;
     claimsNeedingVerification: string[];
   };
   assets: Asset[];

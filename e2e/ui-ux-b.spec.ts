@@ -304,7 +304,7 @@ test("16,28 mobile citation opens its own note and returns to the same answer po
       page.getByRole("heading", { level: 1, name: sources[0]!.title }),
     ).toBeVisible();
     await page
-      .getByRole("button", { name: "Back to Ask", exact: true })
+      .getByRole("button", { name: "Close note", exact: true })
       .click();
     await expect(sourceCard.getByRole("button", { name: /Open note/ })).toBeFocused();
     await expect
