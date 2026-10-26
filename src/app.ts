@@ -5,6 +5,7 @@ import { stat, readFile } from "node:fs/promises";
 import path from "node:path";
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
+import httpProxy from "@fastify/http-proxy";
 import fastifyStatic from "@fastify/static";
 import { hash, verify } from "@node-rs/argon2";
 import Fastify, { type FastifyRequest } from "fastify";
@@ -236,7 +237,20 @@ export function buildApp(
   afterConversationRecovery?: () => void,
 ) {
   const app = Fastify({
-    logger: { level: config.logLevel },
+    logger: {
+      level: config.logLevel,
+      serializers: {
+        req: (request) => ({
+          method: request.method,
+          url: request.url?.replace(/(\/ingest\/array\/)[^/]+/g, "$1[redacted]"),
+          host: request.headers.host ?? "",
+          remoteAddress: request.socket.remoteAddress ?? "",
+          remotePort: request.socket.remotePort ?? 0,
+        }),
+        source: (value) => typeof value === "string"
+          ? value.replace(/(\/array\/)[^/]+/g, "$1[redacted]") : value,
+      },
+    },
     bodyLimit: 64 * 1024,
     trustProxy: config.trustedProxies.length ? config.trustedProxies : false,
   });
@@ -530,6 +544,27 @@ export function buildApp(
   };
   app.register(cookie);
   app.register(rateLimit, { global: false });
+  const analyticsHeaders = (_request: unknown, headers: Record<string, string | string[] | undefined>) => ({
+    accept: typeof headers.accept === "string" ? headers.accept : undefined,
+    "content-type": typeof headers["content-type"] === "string" ? headers["content-type"] : undefined,
+    "user-agent": typeof headers["user-agent"] === "string" ? headers["user-agent"] : undefined,
+  });
+  app.register(async (analyticsProxy) => {
+    // The SDK sends compressed binary payloads as text/plain. Fastify's default
+    // text parser decodes them as UTF-8 and rejects the resulting byte count.
+    analyticsProxy.addContentTypeParser("text/plain", (_request, payload, done) => done(null, payload));
+    analyticsProxy.register(httpProxy, {
+      upstream: "https://us-assets.i.posthog.com",
+      prefix: "/ingest/static",
+      rewritePrefix: "/static",
+      replyOptions: { rewriteRequestHeaders: analyticsHeaders },
+    });
+    analyticsProxy.register(httpProxy, {
+      upstream: "https://us.i.posthog.com",
+      prefix: "/ingest",
+      replyOptions: { rewriteRequestHeaders: analyticsHeaders },
+    });
+  });
   // Generic public metadata never depends on a signed-in user's archive.
   const publicOrigin = new URL(config.appUrl).origin
     .replaceAll("&", "&amp;")
@@ -539,7 +574,11 @@ export function buildApp(
   const publicShell = async (file: string) =>
     (await readFile(path.join(config.uiDir, file), "utf8")).replaceAll(
       "__PUBLIC_ORIGIN__", publicOrigin,
-    );
+    ).replace("</head>", '<script type="module" src="/analytics.js"></script></head>');
+  app.get("/analytics/config.json", async (_request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return { key: config.posthogKey ?? null };
+  });
   app.register(fastifyStatic, {
     root: config.uiDir,
     prefix: "/",

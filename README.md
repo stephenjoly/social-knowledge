@@ -40,3 +40,7 @@ Connect provider keys in Settings → AI & models, assign and save Transcription
 ## Documentation
 
 Start with [Getting started](docs/guide/getting-started.md), [Shortcuts](docs/guide/capture.md), or the [guide overview](docs/guide/index.md). The intended public [documentation site](https://social-knowledge.stephenjoly.net/docs/) will serve `/docs/` after accepted deployment; use these repository guides until then. Detailed configuration, API, security, backups, and development instructions live there.
+
+## Traffic analytics
+
+Production traffic analytics use PostHog pageviews through the application's `/ingest` proxy. Set `POSTHOG_KEY` in the Dokploy application's runtime environment using the shared US PostHog project key; the browser receives only this public project token. The app sends analytics only from `social-knowledge.stephenjoly.net`. Local, staging, and preview hosts do not initialize analytics. Session recording and autocapture are disabled.

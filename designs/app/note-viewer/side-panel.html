@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Note viewer · A · Side panel</title>
+<link rel="stylesheet" href="assets/app.css" />
+<style>
+/*
+ * A · Contextual side panel. Docks where the Ask sources panel sits (or to
+ * the right of the Inbox list), so the chat or list stays usable beside it.
+ * Non-modal on desktop; a bottom sheet on phones.
+ */
+.nvp { --pw: 680px; width: min(var(--pw), calc(100vw - var(--side-w) - 380px)); flex: none; position: relative; min-height: 0; background: var(--surface); border-left: 1px solid var(--border); display: grid;
+  grid-template-columns: 232px minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-areas: "bar bar" "head head" "media tabs" "media body"; }
+.nvp[hidden] { display: none; }
+.nvp.k-landscape { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0, 1fr); grid-template-areas: "bar" "head" "media" "tabs" "body"; }
+.nvp.k-none { grid-template-columns: minmax(0, 1fr); grid-template-areas: "bar" "head" "tabs" "body"; }
+.nvp .nv-bar { grid-area: bar; height: 52px; padding: 0 10px 0 12px; border-bottom: 1px solid var(--border); }
+.nvp .nv-back { margin-right: 4px; color: var(--muted-strong); }
+.nvp .nv-head { grid-area: head; padding: 16px 20px 14px; }
+.nvp .nv-head h2 { font-size: 18px; }
+.nvp .nv-media { grid-area: media; padding: 16px; border-top: 1px solid var(--border); border-right: 1px solid var(--border); overflow: auto; --cap-lines: 5; }
+.nvp.k-landscape .nv-media { border-right: 0; padding: 14px 20px; flex-direction: row; align-items: flex-start; }
+.nvp.k-landscape .nv-stage { flex: 1; }
+.nvp.k-landscape .nv-src { width: 168px; flex: none; --cap-lines: 4; }
+.nvp .nv-tabs { grid-area: tabs; padding: 0 14px 0 20px; border-top: 1px solid var(--border); }
+.nvp .nv-body { grid-area: body; overflow: auto; overscroll-behavior: contain; padding: 18px 20px 32px; }
+.nvp .nv-body:focus-visible { outline-offset: -2px; }
+.nvp .nv-foot { margin-top: auto; }
+.nvp-resize { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 2; border: 0; background: none; padding: 0; }
+.nvp-resize::after { content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 2px; background: transparent; transition: background 120ms; }
+.nvp-resize:hover::after, .nvp-resize:focus-visible::after, .nvp-resize.drag::after { background: var(--green); }
+.nvp-resize:focus-visible { outline: none; }
+.nvp-scrim { display: none; }
+.app.panel-open .main .col { max-width: 640px; }
+
+@media (max-width: 760px) {
+  .nvp, .nvp.k-landscape, .nvp.k-none { position: fixed; z-index: 70; left: 0; right: 0; bottom: 0; width: auto; height: 90svh; display: block; overflow-y: auto; overscroll-behavior: contain; border: 0; border-radius: var(--radius-dialog) var(--radius-dialog) 0 0; box-shadow: var(--shadow-dialog); transform: translateY(0); transition: transform 200ms cubic-bezier(.2, .7, .2, 1); }
+  .nvp.enter { transform: translateY(100%); }
+  .nvp-scrim { display: block; position: fixed; inset: 0; z-index: 69; background: var(--scrim); }
+  .nvp-scrim[hidden] { display: none; }
+  .nvp-resize { display: none; }
+  .nvp .nv-bar { position: sticky; top: 0; z-index: 3; background: var(--surface); padding: 10px 6px 0 14px; height: 56px; border-bottom: 1px solid var(--hairline); }
+  .nvp .nv-bar::before { content: ""; position: absolute; top: 6px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--faint); }
+  .nvp .nv-back { display: none; }
+  .nvp .nv-media, .nvp.k-landscape .nv-media { border-right: 0; border-top: 0; border-bottom: 1px solid var(--border); padding: 14px 16px; display: flex; flex-direction: row; align-items: flex-start; gap: 14px; overflow: visible; }
+  .nvp .nv-stage { width: 46%; flex: none; }
+  .nvp.k-landscape .nv-media { flex-direction: column; }
+  .nvp.k-landscape .nv-stage { width: 100%; }
+  .nvp.k-landscape .nv-src { width: 100%; }
+  .nvp .nv-src { flex: 1; min-width: 0; --cap-lines: 6; }
+  .nvp .nv-foot { display: none; }
+  .nvp .nv-head { padding: 14px 16px 12px; }
+  .nvp .nv-tabs { position: sticky; top: 56px; z-index: 2; padding: 0 12px 0 16px; gap: 16px; border-top: 0; }
+  .nvp .nv-tabs .ask span { display: none; }
+  .nvp .nv-tabs .ask { width: 32px; padding: 0; }
+  .nvp .nv-body { overflow: visible; padding: 16px 16px 48px; }
+}
+</style>
+</head>
+<body>
+<div class="rv" id="rv"></div>
+<div class="app" id="app"><aside class="side"></aside><main class="main"></main><aside class="sources" aria-label="Sources"></aside>
+  <aside class="nv nvp" id="panel" aria-labelledby="nv-title" hidden></aside></div>
+<div class="nvp-scrim" id="scrim" hidden></div>
+<script src="assets/app.js"></script>
+<script>
+(() => {
+const { NOTES, ASK_ORDER, INBOX_ORDER, noteParts, wireNote, pauseAll, trapTab, toast, visibleOpener } = SK;
+const app = document.getElementById('app');
+const panel = document.getElementById('panel');
+const scrim = document.getElementById('scrim');
+const rv = document.getElementById('rv');
+const phone = () => matchMedia('(max-width: 760px)').matches;
+// The sheet lives inside #app, so on phones make its siblings inert, not #app.
+const setBackgroundInert = on => { [...app.children].filter(el => el !== panel).forEach(el => { el.inert = on; }); rv.inert = on; };
+let state = null; // { id, from, order, opener, sourcesWereOpen }
+
+// Keep the element you opened from at the same height while the chat reflows.
+function keepAnchor(el, change) {
+  const scroller = document.getElementById('thread');
+  const before = el && scroller ? el.getBoundingClientRect().top : null;
+  change();
+  if (before != null && el.isConnected) scroller.scrollTop += el.getBoundingClientRect().top - before;
+}
+
+function render(id, focusSel, tab) {
+  const index = state.order.indexOf(id);
+  const ask = state.from === 'ask';
+  const p = noteParts(id, {
+    ctxLabel: ask ? '' : 'Inbox',
+    backLabel: ask ? 'Sources' : '',
+    index, total: state.order.length, fit: false,
+    pagerNoun: ask ? 'sources in this answer' : 'Inbox', pagerItem: ask ? 'source' : 'capture',
+    foot: `<kbd>Esc</kbd> to close`,
+  });
+  state.id = id;
+  const m = p.note.media;
+  panel.className = `nv nvp k-${p.kind}`;
+  if (m) { panel.style.setProperty('--ar', `${m.w} / ${m.h}`); panel.style.setProperty('--arn', m.w / m.h); }
+  panel.innerHTML = `<button class="nvp-resize" role="separator" aria-orientation="vertical" aria-label="Resize note panel" aria-valuemin="520" aria-valuemax="900" aria-valuenow="680"></button>
+    <div class="nv-bar">${p.bar}</div>
+    <header class="nv-head">${p.head}</header>
+    ${p.media ? `<section class="nv-media" aria-label="Original post">${p.media}</section>` : ''}
+    <div class="nv-tabs" role="tablist" aria-label="Note sections">${p.tabs.replace('Ask about this', '<span>Ask about this</span>').replace('data-nv-ask', 'data-nv-ask aria-label="Ask about this"')}</div>
+    <div class="nv-body">${p.body}</div>`;
+  const wired = wireNote(panel, id, { onClose: close, onStep: step, onAsk: askAbout });
+  if (tab) { const t = panel.querySelector(`#tab-${tab}`); if (t) wired.select(t); }
+  wireResize();
+  app.querySelectorAll('.scard, .irow').forEach(el => el.classList.toggle('viewing', (el.dataset.id || el.dataset.row) === id));
+  (panel.querySelector(focusSel || '.nv-bar [data-nv-close]:last-child') || panel).focus();
+}
+function open(id, opener, from = 'ask', opts = {}) {
+  const fromCtx = from === 'inbox' || !ASK_ORDER.includes(id) ? 'inbox' : 'ask';
+  const first = !state;
+  if (!first) pauseAll(panel);
+  state = { from: fromCtx, order: fromCtx === 'ask' ? ASK_ORDER : INBOX_ORDER, opener: first ? opener : state.opener, sourcesWereOpen: first ? !app.querySelector('.sources').hidden : state.sourcesWereOpen };
+  keepAnchor(opener, () => {
+    if (first) {
+      app.querySelector('.sources').hidden = true;
+      app.classList.add('panel-open');
+      panel.hidden = false;
+      document.addEventListener('keydown', onKey, true);
+      if (phone()) {
+        scrim.hidden = false; setBackgroundInert(true);
+        panel.classList.add('enter'); requestAnimationFrame(() => requestAnimationFrame(() => panel.classList.remove('enter')));
+      }
+    }
+    render(id, null, opts.tab);
+  });
+}
+function step(dir) {
+  const i = state.order.indexOf(state.id) + dir;
+  if (i < 0 || i >= state.order.length) return;
+  pauseAll(panel);
+  render(state.order[i], `[data-nv-step="${dir}"]:not([disabled])`);
+}
+function close({ restoreFocus = true } = {}) {
+  if (!state) return;
+  pauseAll(panel);
+  const s = state;
+  state = null;
+  document.removeEventListener('keydown', onKey, true);
+  scrim.hidden = true; setBackgroundInert(false);
+  const back = visibleOpener(s.id);
+  keepAnchor(back, () => {
+    panel.hidden = true; panel.innerHTML = '';
+    app.classList.remove('panel-open');
+    const src = app.querySelector('.sources');
+    if (s.from === 'ask' && src.innerHTML) src.hidden = false; // "← Sources" returns to the list
+  });
+  app.querySelectorAll('.viewing').forEach(el => el.classList.remove('viewing'));
+  const target = visibleOpener(s.id) || s.opener;
+  if (restoreFocus && target?.isConnected) target.focus({ preventScroll: true });
+}
+function askAbout(id) {
+  const from = state.from;
+  if (from !== 'ask') return toast('Prototype: starts a new chat with this note attached');
+  // The panel stays open: the chat is right there.
+  const about = document.getElementById('about');
+  about.innerHTML = `<span class="about"><span>About: ${NOTES[id].title}</span><button aria-label="Remove">${SK.I.x}</button></span>`;
+  about.querySelector('button').onclick = () => { about.innerHTML = ''; document.getElementById('ask-input').focus(); };
+  if (phone()) close({ restoreFocus: false });
+  document.getElementById('ask-input').focus();
+}
+function onKey(e) {
+  const inPanel = panel.contains(e.target);
+  if (e.key === 'Escape' && (inPanel || e.target === document.body || phone())) { e.preventDefault(); e.stopPropagation(); return close(); }
+  if (phone() && e.key === 'Tab') return trapTab(e, panel);
+  const inField = (e.target instanceof Element ? e.target : document.body).closest('input, textarea, video, [role="tab"], [role="separator"], details');
+  if (inPanel && !inField && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); step(e.key === 'ArrowLeft' ? -1 : 1); }
+}
+scrim.addEventListener('click', () => close());
+
+// Drag or arrow-key resize; the chat keeps at least 380px.
+let width = 680;
+function wireResize() {
+  const h = panel.querySelector('.nvp-resize');
+  const set = w => { width = Math.max(520, Math.min(900, w)); panel.style.setProperty('--pw', width + 'px'); h.setAttribute('aria-valuenow', Math.round(panel.getBoundingClientRect().width)); };
+  set(width);
+  h.onpointerdown = e => {
+    h.setPointerCapture(e.pointerId); h.classList.add('drag');
+    const x0 = e.clientX, w0 = panel.getBoundingClientRect().width;
+    h.onpointermove = ev => set(w0 + (x0 - ev.clientX));
+    h.onpointerup = () => { h.classList.remove('drag'); h.onpointermove = null; };
+  };
+  h.onkeydown = e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); set(width + (e.key === 'ArrowLeft' ? 40 : -40)); } };
+}
+
+SK.boot('side', { open, close, isOpen: () => !!state, ownsSources: true });
+})();
+</script>
+</body>
+</html>
