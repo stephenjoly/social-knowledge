@@ -222,3 +222,13 @@ A product change should identify the affected journey, state observable acceptan
 Settings → API keys provides a signed v6 completion Shortcut download and an optional receipt-only variant, alongside account-key creation and import/share instructions. Downloads are public and contain no credentials; users enter their own key in Shortcuts. The published templates connect to social-knowledge.stephenjoly.net, which is shown in the setup card. Files are pinned to the tested repository commit so later branch changes cannot replace the download silently.
 
 Guided setup creates a named capture-only key, offers a copy action with manual-copy fallback, and tests the bearer credential without creating a capture. Users still paste the key once during import. The test checks browser connectivity and saved AI configuration, not iPhone installation or live provider availability. Capture-only keys cannot access Agent API or MCP knowledge; existing general keys retain their permissions. Revocation remains in the account key list.
+
+## Public branding
+
+The landing and application shells share the existing book-mark favicon and an
+Apple touch icon. Public Open Graph/Twitter previews use a generic 1200×630 brand
+image and product copy, including when a private app link is shared. Runtime
+preview URLs use the configured `APP_URL` origin; the standalone Pages bundle
+uses its public site base. Brand assets are generated from the existing mark and
+self-hosted typeface by `scripts/generate-brand-assets.mjs`, then synchronized
+with `scripts/sync-landing-site.mjs`.
