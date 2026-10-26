@@ -1,7 +1,7 @@
 import type { AskSelection } from "./db.js";
 import { createReadStream } from "node:fs";
 import { randomBytes, randomUUID } from "node:crypto";
-import { stat } from "node:fs/promises";
+import { stat, readFile } from "node:fs/promises";
 import path from "node:path";
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
@@ -530,6 +530,16 @@ export function buildApp(
   };
   app.register(cookie);
   app.register(rateLimit, { global: false });
+  // Generic public metadata never depends on a signed-in user's archive.
+  const publicOrigin = new URL(config.appUrl).origin
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+  const publicShell = async (file: string) =>
+    (await readFile(path.join(config.uiDir, file), "utf8")).replaceAll(
+      "__PUBLIC_ORIGIN__", publicOrigin,
+    );
   app.register(fastifyStatic, {
     root: config.uiDir,
     prefix: "/",
@@ -543,7 +553,7 @@ export function buildApp(
       return reply.redirect(`/login?${params.toString()}`);
     if (params.has("tab") || params.has("job") || params.has("capture"))
       return reply.redirect(`/app?${params.toString()}`);
-    return reply.sendFile("landing/index.html", { cacheControl: false });
+    return reply.type("text/html; charset=utf-8").send(await publicShell("landing/index.html"));
   });
   app.get("/login", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -551,7 +561,7 @@ export function buildApp(
       new URL(request.raw.url!, "http://local.invalid").searchParams.get("returnTo"),
     );
     if (auth.user(request)) return reply.redirect(destination);
-    return reply.sendFile("index.html", { cacheControl: false });
+    return reply.type("text/html; charset=utf-8").send(await publicShell("index.html"));
   });
   app.get("/login/", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -562,7 +572,7 @@ export function buildApp(
       reply.header("Cache-Control", "no-store");
       if (!auth.user(request))
         return reply.redirect(`/login?${new URLSearchParams({ returnTo: request.raw.url! })}`);
-      return reply.sendFile("index.html", { cacheControl: false });
+      return reply.type("text/html; charset=utf-8").send(await publicShell("index.html"));
     });
   }
   app.get("/index.html", async (_request, reply) => {
