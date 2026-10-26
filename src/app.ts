@@ -237,7 +237,20 @@ export function buildApp(
   afterConversationRecovery?: () => void,
 ) {
   const app = Fastify({
-    logger: { level: config.logLevel },
+    logger: {
+      level: config.logLevel,
+      serializers: {
+        req: (request) => ({
+          method: request.method,
+          url: request.url?.replace(/(\/ingest\/array\/)[^/]+/g, "$1[redacted]"),
+          host: request.headers.host ?? "",
+          remoteAddress: request.socket.remoteAddress ?? "",
+          remotePort: request.socket.remotePort ?? 0,
+        }),
+        source: (value) => typeof value === "string"
+          ? value.replace(/(\/array\/)[^/]+/g, "$1[redacted]") : value,
+      },
+    },
     bodyLimit: 64 * 1024,
     trustProxy: config.trustedProxies.length ? config.trustedProxies : false,
   });
@@ -536,16 +549,21 @@ export function buildApp(
     "content-type": typeof headers["content-type"] === "string" ? headers["content-type"] : undefined,
     "user-agent": typeof headers["user-agent"] === "string" ? headers["user-agent"] : undefined,
   });
-  app.register(httpProxy, {
-    upstream: "https://us-assets.i.posthog.com",
-    prefix: "/ingest/static",
-    rewritePrefix: "/static",
-    replyOptions: { rewriteRequestHeaders: analyticsHeaders },
-  });
-  app.register(httpProxy, {
-    upstream: "https://us.i.posthog.com",
-    prefix: "/ingest",
-    replyOptions: { rewriteRequestHeaders: analyticsHeaders },
+  app.register(async (analyticsProxy) => {
+    // The SDK sends compressed binary payloads as text/plain. Fastify's default
+    // text parser decodes them as UTF-8 and rejects the resulting byte count.
+    analyticsProxy.addContentTypeParser("text/plain", (_request, payload, done) => done(null, payload));
+    analyticsProxy.register(httpProxy, {
+      upstream: "https://us-assets.i.posthog.com",
+      prefix: "/ingest/static",
+      rewritePrefix: "/static",
+      replyOptions: { rewriteRequestHeaders: analyticsHeaders },
+    });
+    analyticsProxy.register(httpProxy, {
+      upstream: "https://us.i.posthog.com",
+      prefix: "/ingest",
+      replyOptions: { rewriteRequestHeaders: analyticsHeaders },
+    });
   });
   // Generic public metadata never depends on a signed-in user's archive.
   const publicOrigin = new URL(config.appUrl).origin
