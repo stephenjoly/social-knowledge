@@ -4,7 +4,9 @@ import { cp, readFile, writeFile } from "node:fs/promises";
 // independently of Vite's application assets; no design notes enter the image.
 await cp("site", "dist-ui/landing", { recursive: true });
 let html = await readFile("dist-ui/landing/index.html", "utf8");
-html = html.replaceAll('href="landing.css"', 'href="/landing/landing.css"')
+html = html.replaceAll("https://stephenjoly.github.io/social-knowledge", "__PUBLIC_ORIGIN__")
+  .replaceAll('href="brand/', 'href="/brand/')
+  .replaceAll('href="landing.css"', 'href="/landing/landing.css"')
   .replaceAll('src="data.js"', 'src="/landing/data.js"')
   .replaceAll('src="landing.js"', 'src="/landing/landing.js"')
   .replace('</head>', '<script defer src="/landing/session.js"></script>\n</head>');
