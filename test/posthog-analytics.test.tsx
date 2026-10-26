@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import posthog from "posthog-js";
 
 vi.mock("posthog-js", () => ({
-  default: { init: vi.fn(), register: vi.fn() },
+  default: { init: vi.fn(), register: vi.fn(), reloadFeatureFlags: vi.fn() },
 }));
 
 afterEach(() => {
@@ -27,6 +27,7 @@ it("tracks only the production host and attaches the site to sanitized pageviews
   await import("../web/analytics.js");
   await vi.waitFor(() => expect(posthog.init).toHaveBeenCalledOnce());
   expect(posthog.register).toHaveBeenCalledWith({ site: "social-knowledge.stephenjoly.net" });
+  expect(posthog.reloadFeatureFlags).toHaveBeenCalledOnce();
   const config = vi.mocked(posthog.init).mock.calls[0]?.[1];
   expect(config).toMatchObject({
     api_host: "/ingest",
@@ -40,9 +41,20 @@ it("tracks only the production host and attaches the site to sanitized pageviews
   const pageview = hook({
     uuid: "synthetic-event",
     event: "$pageview",
-    properties: { $current_url: "https://social-knowledge.stephenjoly.net/app?email=private", email: "private" },
+    properties: {
+      token: "phc_test",
+      distinct_id: "anonymous-test-id",
+      $current_url: "https://social-knowledge.stephenjoly.net/app?email=private",
+      email: "private",
+    },
   });
   expect(pageview?.properties).toEqual({
+    token: "phc_test",
+    distinct_id: "anonymous-test-id",
+    $device_id: undefined,
+    $session_id: undefined,
+    $window_id: undefined,
+    $pageview_id: undefined,
     site: "social-knowledge.stephenjoly.net",
     $current_url: "https://social-knowledge.stephenjoly.net/app",
     $pathname: "/app",

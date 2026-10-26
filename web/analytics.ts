@@ -30,7 +30,14 @@ if (!disabled && hostname === site) {
         cross_subdomain_cookie: true,
         before_send: (event) => {
           if (!event || (event.event !== "$pageview" && event.event !== "$pageleave")) return null;
+          const properties = event.properties;
           event.properties = {
+            token: properties.token,
+            distinct_id: properties.distinct_id,
+            $device_id: properties.$device_id,
+            $session_id: properties.$session_id,
+            $window_id: properties.$window_id,
+            $pageview_id: properties.$pageview_id,
             site,
             $current_url: safePageUrl(),
             $pathname: new URL(safePageUrl()).pathname,
@@ -39,6 +46,7 @@ if (!disabled && hostname === site) {
         },
       });
       posthog.register({ site });
+      posthog.reloadFeatureFlags();
     })
     .catch(() => undefined);
 }
