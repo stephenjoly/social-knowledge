@@ -5,6 +5,7 @@ Social Knowledge turns deliberately submitted Facebook and Instagram media into 
 ## Architecture
 
 - One Node.js/TypeScript process owns Fastify HTTP APIs, the React dashboard, SQLite, the job worker, MCP/OAuth, exports, and filesystem archiving.
+- Browser entry points are `/` (public landing), `/login` (existing authentication/setup), and `/app` (private dashboard); API/OAuth/MCP paths remain at the origin root.
 - `src/index.ts` is the composition root; `src/app.ts` is the transport boundary; `src/worker.ts` coordinates the capture pipeline; `src/db.ts` owns persistence.
 - The pipeline is URL validation → download → media processing → transcription → optional translation → structured analysis → SQLite/media/Obsidian publication.
 - Dokploy owns preview, staging, and production builds and deployments. GitHub owns CI, promotion policy, and release metadata.

@@ -9,7 +9,15 @@ const allowedHosts = new Set([
   "www.instagram.com",
 ]);
 
-const trackingParameters = ["fbclid", "igshid", "utm_campaign", "utm_content", "utm_medium", "utm_source", "utm_term"];
+const trackingParameters = [
+  "fbclid",
+  "igshid",
+  "utm_campaign",
+  "utm_content",
+  "utm_medium",
+  "utm_source",
+  "utm_term",
+];
 
 export interface NormalizedSocialUrl {
   original: string;
@@ -19,6 +27,15 @@ export interface NormalizedSocialUrl {
 }
 
 export function normalizeSocialUrl(input: string): NormalizedSocialUrl {
+  return normalizeUrl(input, false) as NormalizedSocialUrl;
+}
+
+/** Unsupported links may be retained, but must never enter the capture pipeline. */
+export function normalizeSubmissionUrl(input: string) {
+  return normalizeUrl(input, true);
+}
+
+function normalizeUrl(input: string, allowBookmarks: boolean) {
   let url: URL;
   try {
     url = new URL(input.trim());
@@ -34,13 +51,16 @@ export function normalizeSocialUrl(input: string): NormalizedSocialUrl {
   }
 
   const hostname = url.hostname.toLowerCase();
-  if (!allowedHosts.has(hostname)) {
+  if (!allowedHosts.has(hostname) && !allowBookmarks) {
     throw new Error("Only Facebook and Instagram URLs are accepted");
   }
+  if (url.port && url.port !== "443")
+    throw new Error("Only standard HTTPS ports are accepted");
 
   url.hostname = hostname;
   url.hash = "";
-  for (const parameter of trackingParameters) url.searchParams.delete(parameter);
+  for (const parameter of trackingParameters)
+    url.searchParams.delete(parameter);
   url.searchParams.sort();
 
   if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/+$/, "");
@@ -50,6 +70,10 @@ export function normalizeSocialUrl(input: string): NormalizedSocialUrl {
     original: input,
     normalized,
     hash: createHash("sha256").update(normalized).digest("hex"),
-    platform: hostname.includes("instagram") ? "instagram" : "facebook",
+    platform: allowedHosts.has(hostname)
+      ? hostname.includes("instagram")
+        ? "instagram"
+        : "facebook"
+      : "unsupported",
   };
 }

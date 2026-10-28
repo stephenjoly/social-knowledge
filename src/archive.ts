@@ -5,7 +5,7 @@ import type { ProcessedMedia } from "./types.js";
 
 export interface ArchiveResult {
   videoPath: string;
-  audioPath: string;
+  audioPath: string | null;
   thumbnailPath: string | null;
 }
 
@@ -23,9 +23,11 @@ export class MediaArchive {
     await mkdir(destination, { recursive: true });
 
     const videoPath = path.join(destination, `video${path.extname(media.videoPath).toLowerCase()}`);
-    const audioPath = path.join(destination, "audio.mp3");
+    const audioPath = media.audioPath
+      ? path.join(destination, "audio.mp3")
+      : null;
     await copyFile(media.videoPath, videoPath);
-    await copyFile(media.audioPath, audioPath);
+    if (audioPath && media.audioPath) await copyFile(media.audioPath, audioPath);
 
     let thumbnailPath: string | null = null;
     if (media.thumbnailPath) {

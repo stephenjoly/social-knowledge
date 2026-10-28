@@ -32,9 +32,31 @@ Changes to browser journeys should also be exercised against a disposable runnin
 
 - Prefer small, reviewable changes with explicit acceptance criteria.
 - Preserve backward compatibility for persisted data and public API contracts unless the plan explicitly calls for a migration.
-- Keep generated artifacts and dependency caches out of commits.
+- Keep generated artifacts and dependency caches out of commits, except the intentionally versioned token-free Shortcut distribution templates under `shortcuts/`. These include reviewable sources, signed downloads, hashes, and explicit native validation status. Never commit personalized credential-bearing copies.
 - Record durable architectural decisions in the relevant source-of-truth document or the execution plan's decision log.
 - Record known, concrete deferred work in `docs/tech-debt.md`, with evidence and an exit condition.
+
+## Dashboard typography
+
+`web/typography.css` loads the self-hosted Inter face and retains the legacy
+rem-based scale for secondary surfaces. The v2 type roles in
+`web/design-tokens.css` follow the approved design contract: 28px page titles
+(30px in Inbox), 26px settings titles, 14px body copy, and compact metadata and
+controls. Preserve the specified hierarchy and verify mobile reflow when changing
+these roles. Processing logs use the system monospace stack.
+
+## Dashboard UI v2 tokens and primitives
+
+`web/design-tokens.css` declares the colour, type, radius, and shadow tokens
+from [`docs/design/ui-v2-spec.md`](design/ui-v2-spec.md). The shared primitives
+live in `web/components/ui/` and are exported from `primitives.ts`; their styles
+in `primitives.css` import the tokens and use the `ui-` class prefix. The v2
+button is `ActionButton` with `ui-btn` classes. `web/settings-ui.tsx` provides the
+shared settings rows, panels, and controls used by account and workspace pages.
+
+Component tests are `test/**/*.test.tsx`. They are type-checked by
+`tsconfig.web.json`, not the server config, and render with `react-dom/server`
+rather than a DOM testing library.
 
 ## Documentation discipline
 

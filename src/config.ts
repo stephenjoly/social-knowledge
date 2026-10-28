@@ -41,7 +41,7 @@ const schema = z.object({
   API_TOKEN: z.string().min(24),
   OPENAI_API_KEY: z.string().min(1).optional(),
   OPENAI_TRANSCRIPTION_MODEL: z.string().default("gpt-4o-mini-transcribe"),
-  OPENAI_ANALYSIS_MODEL: z.string().default("gpt-5-mini"),
+  OPENAI_ANALYSIS_MODEL: z.string().default("gpt-6-luna"),
   CEREBRAS_ANALYSIS_MODEL: z.string().default("qwen-3.8-27b"),
   COOKIES_FILE: z.string().optional(),
   FACEBOOK_COOKIES_FILE: z.string().optional(),
@@ -61,6 +61,10 @@ const schema = z.object({
   DEMO_ADMIN_PASSWORD: z.string().min(12).default("DemoAdmin123!"),
   SESSION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   APP_URL: z.string().url().default("http://localhost:8787"),
+  POSTHOG_KEY: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.string().startsWith("phc_").optional(),
+  ),
   TRUSTED_PROXIES: z.string().default(""),
   NTFY_URL: optionalUrl,
   NTFY_TOPIC: z.string().optional(),
@@ -134,6 +138,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       : [],
     sessionDays: parsed.SESSION_DAYS,
     appUrl: parsed.APP_URL.replace(/\/$/, ""),
+    posthogKey: parsed.POSTHOG_KEY,
     trustedProxies: parsed.TRUSTED_PROXIES.split(",")
       .map((value) => value.trim())
       .filter(Boolean),

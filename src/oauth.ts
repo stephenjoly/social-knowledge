@@ -53,7 +53,7 @@ export function registerOAuth(app: FastifyInstance, config: AppConfig, store: Jo
       const user = auth.user(request);
       if (!user) {
         const returnTo = `/oauth/authorize?${new URLSearchParams(request.query as Record<string, string>).toString()}`;
-        return reply.redirect(`/?returnTo=${encodeURIComponent(returnTo)}`);
+        return reply.redirect(`/login?returnTo=${encodeURIComponent(returnTo)}`);
       }
       const fields = Object.entries(parsed.data).map(([name, value]) => value === undefined ? "" : `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(String(value))}">`).join("");
       return reply.type("text/html; charset=utf-8").send(`<!doctype html><html><head><meta name="viewport" content="width=device-width"><title>Connect ${escapeHtml(client.name)}</title><style>body{font:16px system-ui;background:#0b1113;color:#eaf2ef;display:grid;place-items:center;min-height:100vh}.card{max-width:520px;padding:32px;border:1px solid #29403b;border-radius:18px;background:#10191b}button{background:#64d4ad;border:0;border-radius:10px;padding:12px 18px;font-weight:700}</style></head><body><main class="card"><p>Social Knowledge</p><h1>Connect ${escapeHtml(client.name)}?</h1><p>This application will be able to search and read your saved knowledge. It cannot add, edit, or delete anything.</p><form method="post" action="/oauth/authorize">${fields}<button type="submit">Allow read-only access</button></form></main></body></html>`);

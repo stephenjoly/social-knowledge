@@ -17,6 +17,21 @@ import type { TitleGenerator } from "./title-generator.js";
 import type { LibraryPublisher } from "./library-publisher.js";
 import type { AiProviderService } from "./ai-providers.js";
 
+export function videoMimeType(videoPath: string) {
+  switch (path.extname(videoPath).toLowerCase()) {
+    case ".mp4":
+      return "video/mp4";
+    case ".mkv":
+      return "video/x-matroska";
+    case ".webm":
+      return "video/webm";
+    case ".mov":
+      return "video/quicktime";
+    default:
+      return "application/octet-stream";
+  }
+}
+
 interface WorkerServices {
   store: JobStore;
   downloader: MediaDownloader;
@@ -117,29 +132,41 @@ export class JobWorker {
           status: "processing",
         });
         const media = await this.services.processor.process(download);
+        let transcript = "";
+        let sourceLanguage: string | null = null;
+        let translatedTranscript: string | null = null;
+        let translationLanguage: string | null = null;
+        if (media.audioPath) {
+          this.services.store.setStatus(job.id, "transcribing");
+          this.services.events.publish("job", {
+            id: job.id,
+            status: "transcribing",
+          });
+          transcript = await this.services.transcriber.transcribe(
+            media.audioPath,
+            job.ownerUserId,
+            job.transcriptionModel ?? this.config.transcriptionModel,
+          );
 
-        this.services.store.setStatus(job.id, "transcribing");
-        this.services.events.publish("job", {
-          id: job.id,
-          status: "transcribing",
-        });
-        const transcript = await this.services.transcriber.transcribe(
-          media.audioPath,
-          job.ownerUserId,
-          job.transcriptionModel ?? this.config.transcriptionModel,
-        );
-
-        this.services.store.setStatus(job.id, "translating");
-        this.services.events.publish("job", {
-          id: job.id,
-          status: "translating",
-        });
-        const preferences = this.services.store.preferences(job.ownerUserId);
-        const translation = await this.services.translator.translate(
-          transcript,
-          preferences.defaultLanguage,
-          preferences.translateForeign,
-        );
+          this.services.store.setStatus(job.id, "translating");
+          this.services.events.publish("job", {
+            id: job.id,
+            status: "translating",
+          });
+          const preferences = this.services.store.preferences(job.ownerUserId);
+          const translation = await this.services.translator.translate(
+            transcript,
+            preferences.defaultLanguage,
+            preferences.translateForeign,
+          );
+          sourceLanguage = translation.sourceLanguage;
+          translatedTranscript = translation.translatedTranscript;
+          translationLanguage = translatedTranscript
+            ? preferences.defaultLanguage
+            : null;
+        } else {
+          log.info("downloaded media has no extractable audio stream; skipping transcription");
+        }
 
         this.services.store.setStatus(job.id, "analyzing");
         this.services.events.publish("job", {
@@ -149,7 +176,7 @@ export class JobWorker {
         try {
           const earlyTitle = await this.services.titleGenerator.generate(
             media,
-            translation.translatedTranscript || transcript,
+            translatedTranscript || transcript,
           );
           this.services.store.setDisplayTitle(
             job.id,
@@ -166,7 +193,7 @@ export class JobWorker {
         }
         const analysis = await this.services.analyzer.analyze(
           media,
-          translation.translatedTranscript || transcript,
+          translatedTranscript || transcript,
           job.userNote,
         );
         this.services.store.setDisplayTitle(job.id, analysis.title);
@@ -178,11 +205,9 @@ export class JobWorker {
           job,
           media,
           transcript,
-          sourceLanguage: translation.sourceLanguage,
-          translatedTranscript: translation.translatedTranscript,
-          translationLanguage: translation.translatedTranscript
-            ? preferences.defaultLanguage
-            : null,
+          sourceLanguage,
+          translatedTranscript,
+          translationLanguage,
           analysis,
           archivedVideoPath: archived.videoPath,
           archivedAudioPath: archived.audioPath,
@@ -194,22 +219,26 @@ export class JobWorker {
             {
               kind: "video" as const,
               path: archived.videoPath,
-              mimeType: "video/mp4",
+              mimeType: videoMimeType(archived.videoPath),
               position: 0,
             },
-            {
-              kind: "audio" as const,
-              path: archived.audioPath,
-              mimeType: "audio/mpeg",
-              position: 1,
-            },
+            ...(archived.audioPath
+              ? [
+                  {
+                    kind: "audio" as const,
+                    path: archived.audioPath,
+                    mimeType: "audio/mpeg",
+                    position: 1,
+                  },
+                ]
+              : []),
             ...(archived.thumbnailPath
               ? [
                   {
                     kind: "thumbnail" as const,
                     path: archived.thumbnailPath,
                     mimeType: `image/${path.extname(archived.thumbnailPath).slice(1).replace("jpg", "jpeg")}`,
-                    position: 2,
+                    position: archived.audioPath ? 2 : 1,
                   },
                 ]
               : []),
@@ -228,11 +257,9 @@ export class JobWorker {
           creatorUrl: media.metadata.uploaderUrl,
           description: media.metadata.description,
           transcript,
-          sourceLanguage: translation.sourceLanguage,
-          translatedTranscript: translation.translatedTranscript,
-          translationLanguage: translation.translatedTranscript
-            ? preferences.defaultLanguage
-            : null,
+          sourceLanguage,
+          translatedTranscript,
+          translationLanguage,
           comments: media.metadata.comments,
           analysis,
           publishedAt: media.metadata.uploadDate,

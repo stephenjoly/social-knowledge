@@ -8,9 +8,10 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.build.json && vite build && node scripts/copy-roadmap.mjs",
-    "check": "npm run check:docs && npm run typecheck && npm run build && npm test",
+    "build": "tsc -p tsconfig.build.json && vite build && node scripts/copy-roadmap.mjs && node scripts/package-landing.mjs",
+    "check": "npm run check:docs && npm run check:site && npm run typecheck && npm run build && npm test",
     "check:docs": "node scripts/check-docs.mjs",
+    "check:site": "node scripts/sync-landing-site.mjs --check",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
@@ -19,11 +20,13 @@
     "smoke:live": "node scripts/smoke-live.mjs",
     "library:migrate:dry-run": "node dist/migrate-library.js --dry-run",
     "library:migrate:apply": "node dist/migrate-library.js --apply",
-    "thumbnails:backfill": "node dist/thumbnail-backfill-cli.js"
+    "thumbnails:backfill": "node dist/thumbnail-backfill-cli.js",
+    "qa:install": "playwright install"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
     "@fastify/formbody": "^9.0.0",
+    "@fastify/http-proxy": "^11.6.5",
     "@fastify/rate-limit": "^11.2.0",
     "@fastify/static": "^10.1.3",
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -35,6 +38,7 @@
     "fastify": "^5.5.0",
     "lucide-react": "^1.41.0",
     "openai": "^5.19.1",
+    "posthog-js": "^1.438.23",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
@@ -44,7 +48,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "1.63.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.18.0",
     "@types/react": "^19.2.18",

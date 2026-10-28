@@ -31,7 +31,7 @@ describe("ntfy notifications", () => {
     expect(requestedUrl).toBe("https://notify.example/social-knowledge");
     const headers = requestedInit?.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer test-token");
-    expect(headers.Click).toContain("?tab=activity&job=job-1");
+    expect(headers.Click).toBe(`${config.appUrl}/app?tab=activity&job=job-1`);
     expect(requestedInit?.body).toBe("instagram · Lisbon places secret");
   });
 });

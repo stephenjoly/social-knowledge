@@ -1,0 +1,18 @@
+const [w,scr]=Wrap(PX,"03 · Capture a post","Capture opens as a focused dialog over whatever you're doing, from the + button or ⌘V. It recognises the platform from the link and shows what will happen next.",PY,880);
+wM2=w;
+SB(scr,"app","Inbox");
+Main(scr);
+Insert(scr,{type:"rectangle",name:"Scrim",layoutPosition:"absolute",x:0,y:0,width:1280,height:880,fill:"#18181b52"});
+const d=Fr(scr,{name:"Capture dialog",layoutPosition:"absolute",x:380,y:170,width:520,layout:"vertical",cornerRadius:14,fill:"#ffffff",clip:true,effect:{type:"shadow",offset:{x:0,y:24},blur:60,color:"#18181b40"}});
+const h=Fr(d,{name:"Header",width:"fill_container",padding:[18,20,6,20],gap:12,alignItems:"center"});const ht=Fr(h,{name:"Text",layout:"vertical",gap:3,width:"fill_container"});T(ht,"Capture a post",{fontSize:17,fontWeight:"700",letterSpacing:-0.3});T(ht,"Paste an Instagram or Facebook link to save it to your archive.",{fontSize:13,fill:C.mut});const x=Fr(h,{name:"Close",width:28,height:28,cornerRadius:7,justifyContent:"center",alignItems:"center"});I(x,"x",16,C.mut);
+const b=Fr(d,{name:"Body",layout:"vertical",width:"fill_container",padding:[14,20,18,20],gap:14});
+const f1=Fr(b,{name:"Link field",layout:"vertical",gap:6,width:"fill_container"});T(f1,"Post link",{fontSize:12.5,fontWeight:"600",fill:"#3f3f46"});
+const i1=Fr(f1,{name:"Input",width:"fill_container",height:42,padding:[0,12],gap:10,alignItems:"center",cornerRadius:8,stroke:C.g,strokeWidth:1.5});I(i1,"link",15,C.g);T(i1,"https://www.instagram.com/reel/C9xL2pQs1Kd/",{fontSize:13.5,textGrowth:"fixed-width",width:"fill_container"});
+const det=Fr(f1,{name:"Detected",gap:6,alignItems:"center"});I(det,"circle-check",13,C.g);T(det,"Instagram reel detected",{fontSize:12,fill:C.g,fontWeight:"500"});
+const f2=Fr(b,{name:"Note field",layout:"vertical",gap:6,width:"fill_container"});const lr=Fr(f2,{name:"Label row",gap:6});T(lr,"Note for your future self",{fontSize:12.5,fontWeight:"600",fill:"#3f3f46"});T(lr,"Optional",{fontSize:12,fill:"#a1a1aa"});
+const ta=Fr(f2,{name:"Textarea",width:"fill_container",height:76,padding:12,cornerRadius:8,stroke:C.bd,strokeWidth:1});T(ta,"Why are you saving this? e.g. “Try this before the Lisbon trip”",{fontSize:13.5,fill:"#a1a1aa",textGrowth:"fixed-width",width:"fill_container"});
+const steps=Fr(b,{name:"Next steps",width:"fill_container",padding:[10,12],gap:8,alignItems:"center",cornerRadius:8,fill:"#fafafa"});
+["Fetch post","Transcribe","Analyse","File in knowledge base"].forEach((s,i)=>{if(i)I(steps,"chevron-right",12,"#d4d4d8");T(steps,s,{fontSize:12,fill:C.mut2,fontWeight:"500"});});
+const ft=Fr(d,{name:"Footer",width:"fill_container",padding:[14,20],gap:10,alignItems:"center",fill:"#fafafa",stroke:"#f0f0f1",strokeWidth:{top:1}});
+const tip=Fr(ft,{name:"Tip",gap:6,alignItems:"center",width:"fill_container"});I(tip,"smartphone",13,"#a1a1aa");T(tip,"Tip: share straight from iPhone",{fontSize:12,fill:C.mut});
+Btn(ft,"Cancel",{ghost:1});Btn(ft,"Save to archive",{primary:1});

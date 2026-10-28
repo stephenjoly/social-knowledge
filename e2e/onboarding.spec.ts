@@ -54,7 +54,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
       },
     });
   });
-  await page.goto(baseUrl);
+  await page.goto(`${baseUrl}/login`);
   await page.getByLabel("Username").fill("first-admin");
   await page
     .getByLabel("Password", { exact: true })
@@ -75,23 +75,17 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   await page.getByRole("button", { name: "Use for analysis" }).click();
   await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
 
-  await page.goto(`${baseUrl}/?tab=settings`);
-  await page
-    .getByRole("navigation", { name: "Settings topics" })
-    .getByRole("button", { name: "People & access" })
-    .click();
+  await page.goto(`${baseUrl}/app?settings=people`);
   await expect(
     page.getByRole("heading", { name: "People & access" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Create invitation" }).click();
+  await page.getByRole("button", { name: "Invite someone" }).click();
+  const inviteDialog = page.getByRole("dialog", { name: "Invite someone" });
+  await inviteDialog.getByRole("button", { name: "Create invitation" }).click();
+  await expect(page.getByText("Invitation created.")).toBeVisible();
+  await inviteDialog.getByRole("button", { name: "Copy link" }).click();
   await expect(
-    page.getByRole("status"),
-  ).toContainText("Invitation created.");
-  await page.locator(".invitation-row")
-    .getByRole("button", { name: "Copy link" })
-    .click();
-  await expect(
-    page.getByRole("status"),
+    inviteDialog.getByRole("status"),
   ).toContainText("Invitation link copied.");
   const invitationUrl = await page.evaluate(
     () => (window as Window & { __invitationUrl?: string }).__invitationUrl,
@@ -126,7 +120,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
     "Activity",
     "Knowledge base",
     "Ask",
-    "Settings",
+    "Open menu",
   ])
     await expect(
       invitedPage.getByRole("button", { name: label, exact: true }),
@@ -153,18 +147,16 @@ test("claims a fresh archive without a setup token and onboards an invited membe
     .getByRole("button", { name: "Knowledge base", exact: true })
     .click();
   await expect(
-    invitedPage.getByRole("heading", { name: "Home" }),
+    invitedPage.getByRole("heading", { level: 1, name: "Knowledge base" }),
   ).toBeVisible();
   await invitedPage.getByRole("button", { name: "Ask", exact: true }).click();
   await expect(
-    invitedPage.getByRole("heading", { name: "Ask AI" }),
+    invitedPage.getByRole("heading", { name: "What do you want to find?" }),
   ).toBeVisible();
-  await invitedPage
-    .getByRole("button", { name: "Settings", exact: true })
-    .click();
-  await expect(
-    invitedPage.getByRole("heading", { name: "Settings" }),
-  ).toBeVisible();
+  await invitedPage.getByRole("button", { name: "Open menu" }).click();
+  await invitedPage.getByRole("button", { name: "Open Settings" }).click();
+  await expect(invitedPage.getByRole("heading", { level: 1, name: "My account" })).toBeVisible();
+  await invitedPage.getByRole("button", { name: "Close Settings" }).click();
   await invitedPage.getByRole("button", { name: "Inbox", exact: true }).click();
   await invitedPage
     .getByRole("button", { name: "Capture a post", exact: true })
@@ -177,6 +169,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   await expect(
     invitedPage.getByRole("heading", { name: "Inbox", exact: true }),
   ).toBeVisible();
+  await invitedPage.getByRole("button", { name: "Open menu" }).click();
   await invitedPage.getByRole("button", { name: "Open account menu" }).click();
   const accountMenu = invitedPage.getByRole("dialog");
   await expect(
@@ -184,7 +177,7 @@ test("claims a fresh archive without a setup token and onboards an invited membe
   ).toBeVisible();
   await accountMenu.getByRole("button", { name: "Log out" }).click();
   await expect(
-    invitedPage.getByRole("heading", { name: "Invitation unavailable" }),
+    invitedPage.getByRole("heading", { name: "Welcome back" }),
   ).toBeVisible();
   await invitedContext.close();
 });

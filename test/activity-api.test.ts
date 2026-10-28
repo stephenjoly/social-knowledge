@@ -165,6 +165,7 @@ describe("Activity API", () => {
     expect(detail.json().job.normalizedUrl).toContain("id=42");
     expect(detail.body).not.toContain("result_note_path");
     expect(Object.keys(detail.json().job).sort()).toEqual([
+      "archivedAt",
       "attempts",
       "createdAt",
       "displayTitle",

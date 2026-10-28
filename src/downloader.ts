@@ -40,6 +40,11 @@ interface YtDlpInfo {
 export const durationMatchFilter = (maxDurationSeconds: number) =>
   `duration <=? ${maxDurationSeconds}`;
 
+// Prefer a separately available audio stream, then fall back to muxed or
+// video-only media. The final fallback preserves valid, explicitly silent posts.
+export const audioPreservingFormatSelector =
+  "bestvideo*+bestaudio/best/bestvideo";
+
 export function selectComments(value: unknown, limit = 10): SocialComment[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -91,6 +96,8 @@ export class MediaDownloader {
       "--no-progress",
       "--newline",
       "--restrict-filenames",
+      "--format",
+      audioPreservingFormatSelector,
       "--merge-output-format",
       "mp4",
       "--write-info-json",

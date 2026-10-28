@@ -29,6 +29,7 @@ export interface JobRecord {
   createdAt: string;
   updatedAt: string;
   nextAttemptAt: string;
+  archivedAt?: string | null;
   aiProvider?: "openai" | "cerebras" | null;
   transcriptionProvider?: "openai" | "cerebras" | null;
   transcriptionModel?: string | null;
@@ -108,7 +109,7 @@ export interface DownloadResult {
 }
 
 export interface ProcessedMedia extends DownloadResult {
-  audioPath: string;
+  audioPath: string | null;
   framePaths: string[];
 }
 
@@ -150,7 +151,7 @@ export interface VaultWriteInput {
   translationLanguage: string | null;
   analysis: AnalysisResult;
   archivedVideoPath: string;
-  archivedAudioPath: string;
+  archivedAudioPath: string | null;
   archivedThumbnailPath: string | null;
 }
 import type { LibraryClassification } from "./library.js";

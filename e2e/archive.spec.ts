@@ -12,7 +12,7 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   page,
 }) => {
   test.setTimeout(120000);
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByLabel("Username").fill(username!);
   await page.getByLabel("Password").fill(password!);
   await page.getByRole("button", { name: "Continue" }).click();
@@ -20,222 +20,212 @@ test("archive navigation, detail, capture feedback, and responsive layout", asyn
   await expect(
     page.getByRole("button", { name: "Inbox", exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".capture-card").first()).toBeVisible();
-  await page.getByRole("button", { name: "+ Add filter" }).click();
+  await expect(page.locator(".inbox-row").first()).toBeVisible();
+  await page.getByRole("button", { name: "Add filter" }).click();
   const platformFilter = page.getByLabel("Platform");
   await expect(platformFilter).toBeVisible();
   await platformFilter.selectOption("instagram");
   await expect(platformFilter).toHaveValue("instagram");
   await page.getByRole("button", { name: "Close filters" }).click();
   await page.getByRole("button", { name: "Clear filters" }).click();
-  await page.locator(".capture-card").first().click();
-  await expect(page.locator(".drawer video")).toBeVisible();
+  await page.locator(".inbox-row-button").first().click();
+  const note = page.locator(".capture-note");
+  // The synthetic archive has a thumbnail but no stored video bytes. The
+  // viewer must expose honest recovery instead of a fabricated playable asset.
+  await expect(note.getByText(/Saved video unavailable/)).toBeVisible();
+  await expect(note.getByRole("img", { name: "Saved video thumbnail", exact: true })).toBeVisible();
+  await expect(note.getByRole("button", { name: "Play video", exact: true })).toHaveCount(0);
   await expect(
-    page.locator(".drawer").getByRole("heading", { name: "Key takeaways" }),
+    note.getByRole("link", { name: /^Open original post on / }),
+  ).toHaveAttribute("href", /^https:\/\//);
+  await expect(
+    note.getByRole("heading", { name: "Key takeaways" }),
   ).toBeVisible();
-  await expect(page.locator(".drawer .takeaways li").first()).toBeVisible();
-  await page.locator(".close").click();
+  await expect(note.locator(".nv-takeaways li").first()).toBeVisible();
+  await note.getByRole("button", { name: "Close note", exact: true }).click();
+  await expect(note).toHaveCount(0);
 
   await page
     .getByRole("button", { name: "Knowledge base", exact: true })
     .click();
-  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  const knowledge = page.locator(".kb-page");
   await expect(
-    page.locator(".markdown").getByRole("heading", { name: "Map of content" }),
+    page.getByRole("heading", { level: 1, name: "Knowledge base" }),
   ).toBeVisible();
+  await knowledge.getByRole("button", { name: "Travel", exact: true }).click();
   await expect(
-    page.locator(".markdown").getByRole("button", { name: "Travel" }),
+    page.getByRole("heading", { level: 1, name: "Travel" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Export archive" }).click();
+  await expect(knowledge).not.toContainText("node_id:");
+  await expect(knowledge).not.toContainText("node_type:");
+  await expect(knowledge).not.toContainText("generated:");
+  const topics = page.getByRole("group", { name: "Topics" });
+  if (await topics.getByRole("button", { name: /^Portugal \d+$/ }).count()) {
+    await topics.getByRole("button", { name: /^Portugal \d+$/ }).click();
+    await expect(knowledge.getByRole("heading", { level: 1, name: "Portugal", exact: true })).toBeVisible();
+  }
+  await topics.getByRole("button", { name: /^Lisbon \d+$/ }).click();
+  await expect(knowledge.getByRole("heading", { level: 1, name: "Lisbon", exact: true })).toBeVisible();
+  const restaurants = topics.getByRole("button", { name: /^Restaurants \d+$/ });
+  if (await restaurants.count()) {
+    await restaurants.click();
+    await expect(knowledge.getByRole("heading", { level: 1, name: "Restaurants", exact: true })).toBeVisible();
+  }
+  const topicTitle = await knowledge.getByRole("heading", { level: 1 }).textContent();
+  await knowledge.locator(".kb-capture-row").first().click();
+  await expect(note).not.toContainText("source_url:");
+  await expect(note).not.toContainText("source_id:");
   await expect(
-    page.getByRole("dialog", { name: "Download your archive" }),
+    note.getByRole("link", { name: /^Open original post on / }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("dialog").getByText("Markdown notes and capture metadata"),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await expect(
-    page.getByRole("button", { name: "Expand Travel" }),
-  ).toBeVisible();
-  await expect(
-    page.locator(".library-tree button", { hasText: "Lisbon" }),
-  ).toHaveCount(0);
-  await page.getByRole("button", { name: "Expand Travel" }).click();
-  await page.getByRole("button", { name: "Expand Portugal" }).click();
-  await page.getByRole("button", { name: "Expand Lisbon" }).click();
-  await page
-    .locator(".library-tree button", { hasText: "Travel" })
-    .first()
+  await note
+    .getByRole("button", { name: "Close note", exact: true })
     .click();
   await expect(
-    page.locator(".markdown").getByRole("heading", { name: "Travel" }),
-  ).toBeVisible();
-  await expect(page.locator(".markdown")).not.toContainText("node_id:");
-  await expect(page.locator(".markdown")).not.toContainText("node_type:");
-  await expect(page.locator(".markdown")).not.toContainText("generated:");
-  await page
-    .locator(".library-tree button", { hasText: "Lisbon" })
-    .first()
-    .click();
-  await page
-    .locator(".library-tree button", { hasText: "Restaurants" })
-    .filter({ hasText: "2" })
-    .first()
-    .click();
-  const captureLink = page.locator(".markdown .markdown-link").first();
-  await expect(captureLink).toBeVisible();
-  await captureLink.click();
-  await expect(page.locator(".markdown")).not.toContainText("source_url:");
-  await expect(page.locator(".markdown")).not.toContainText("source_id:");
-  await expect(
-    page
-      .locator(".library-toolbar")
-      .getByRole("button", { name: "Open capture" }),
+    page.getByRole("heading", { level: 1, name: topicTitle!, exact: true }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Ask", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Ask AI" })).toBeVisible();
-  await page.getByRole("button", { name: "＋ New conversation" }).click();
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
   await expect(
-    page.locator(".conversation-sidebar button.selected"),
+    page.getByRole("heading", { name: "What do you want to find?" }),
   ).toBeVisible();
-  await expect(page.locator(".ask-empty")).toBeVisible();
-  await page
-    .getByRole("button", {
-      name: "What Lisbon restaurants have I saved?",
-      exact: true,
-    })
-    .click();
-  await expect(page.locator(".chat-composer .stop-answer")).toBeVisible();
   await expect(
-    page.locator(".chat-message.assistant .message-content").last(),
+    page.getByRole("group", { name: "Suggested questions" }).getByRole("button"),
+  ).toHaveCount(3);
+  await page
+    .getByLabel("Ask your archive")
+    .fill("What Lisbon restaurants have I saved?");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
+  await expect(
+    page.locator(".ask-message.assistant .ask-answer").last(),
   ).not.toContainText("Searching your archive", { timeout: 60000 });
-  await expect(
-    page.locator(".chat-message.assistant .answer-sources button").first(),
-  ).toBeVisible({ timeout: 60000 });
-  const inlineCaptureLink = page
-    .locator(".chat-message.assistant .inline-capture-link")
+  await expect(page.locator(".ask-sources .ask-source-open").first()).toBeVisible(
+    { timeout: 60000 },
+  );
+  const inlineCitation = page
+    .locator(".ask-message.assistant .ask-cite")
     .first();
-  await expect(inlineCaptureLink).toBeVisible();
-  await expect(inlineCaptureLink.locator("svg")).toBeVisible();
+  await expect(inlineCitation).toBeVisible();
   await expect(
-    page.locator(".chat-message.assistant .message-content"),
+    page.locator(".ask-message.assistant .ask-answer-body"),
   ).toContainText(/Lisbon|restaurant/i);
-  await inlineCaptureLink.click();
-  await expect(page.locator(".drawer")).toBeVisible();
-  await page.locator(".close").click();
+  await expect(
+    page.locator(".ask-sources .ask-source-link").first(),
+  ).toHaveAttribute("href", /^https?:\/\//);
+  await inlineCitation.click();
+  await expect(page.locator(".ask-sources .ask-source.hl")).toBeVisible();
+  await page.locator(".ask-sources .ask-source-open").first().click();
+  await expect(note).toBeVisible();
+  await note.getByRole("button", { name: "Close note", exact: true }).click();
   await page.reload();
-  await page.getByRole("button", { name: "Ask", exact: true }).click();
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.locator(".app-chat-open").filter({ hasText: "What Lisbon restaurants" }).first().click();
   await expect(
-    page.locator(".chat-message.assistant .answer-sources button").first(),
+    page.locator(".ask-sources .ask-source-open").first(),
   ).toBeVisible();
-  await page
-    .locator(".chat-message.assistant .answer-sources button")
-    .first()
-    .click();
-  await expect(page.locator(".drawer")).toBeVisible();
-  await page.locator(".close").click();
+  await page.locator(".ask-sources .ask-source-open").first().click();
+  await expect(note).toBeVisible();
+  await note.getByRole("button", { name: "Close note", exact: true }).click();
 
-  await page.getByRole("button", { name: "＋ New conversation" }).click();
+  await page.getByRole("button", { name: "New chat" }).click();
   await expect(
-    page.locator(".conversation-sidebar button.selected"),
+    page.getByRole("heading", { name: "What do you want to find?" }),
   ).toBeVisible();
-  await expect(page.locator(".ask-empty")).toBeVisible();
   await page.getByLabel("Ask your archive").fill("__smoke_stream__");
   await page.getByRole("button", { name: "Send" }).click();
   const streamedAnswer = page
-    .locator(".chat-message.assistant .message-content")
+    .locator(".ask-message.assistant .ask-answer")
     .last();
-  await expect(page.locator(".chat-composer .stop-answer")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
   await expect(streamedAnswer).toContainText("The first part of the answer", {
     timeout: 10000,
   });
-  await expect(page.locator(".chat-composer .stop-answer")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
   await expect(streamedAnswer).toContainText(
     "arrives before the answer is complete.",
     { timeout: 10000 },
   );
-  await expect(page.locator(".chat-composer .stop-answer")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "＋ New conversation" }).click();
+  await page.getByRole("button", { name: "New chat" }).click();
   await expect(
-    page.locator(".conversation-sidebar button.selected"),
+    page.getByRole("heading", { name: "What do you want to find?" }),
   ).toBeVisible();
-  await expect(page.locator(".ask-empty")).toBeVisible();
   await page.getByLabel("Ask your archive").fill("__smoke_slow__");
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByRole("button", { name: "Stop" }).click();
-  await expect(page.locator(".chat-message.assistant.cancelled")).toBeVisible({
+  await expect(page.locator(".ask-message.assistant.cancelled")).toBeVisible({
     timeout: 10000,
   });
   const cancelledRetry = page
-    .locator(".chat-message.assistant.cancelled")
-    .getByRole("button", { name: "Retry" });
+    .locator(".ask-message.assistant.cancelled")
+    .getByRole("button", { name: "Retry", exact: true });
   await expect(cancelledRetry).toBeEnabled({ timeout: 10000 });
   await cancelledRetry.click();
   await expect(
-    page.locator(".chat-message.assistant.complete").last(),
+    page.locator(".ask-message.assistant.complete").last(),
   ).toBeVisible({ timeout: 10000 });
 
-  await page.getByRole("button", { name: "＋ New conversation" }).click();
+  await page.getByRole("button", { name: "New chat" }).click();
   await expect(
-    page.locator(".conversation-sidebar button.selected"),
+    page.getByRole("heading", { name: "What do you want to find?" }),
   ).toBeVisible();
-  await expect(page.locator(".ask-empty")).toBeVisible();
   await page.getByLabel("Ask your archive").fill("__smoke_failure__");
   await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.locator(".chat-message.assistant.failed")).toBeVisible({
+  await expect(page.locator(".ask-message.assistant.failed")).toBeVisible({
     timeout: 10000,
   });
   const failedRetry = page
-    .locator(".chat-message.assistant.failed")
-    .getByRole("button", { name: "Retry" });
+    .locator(".ask-message.assistant.failed")
+    .getByRole("button", { name: "Retry", exact: true });
   await expect(failedRetry).toBeEnabled({ timeout: 10000 });
   await failedRetry.click();
   await expect(
-    page.locator(".chat-message.assistant.complete").last(),
+    page.locator(".ask-message.assistant.complete").last(),
   ).toBeVisible({ timeout: 10000 });
 
-  await page.getByRole("button", { name: /activity/i }).click();
-  await expect(page.locator(".activity-card").first()).toBeVisible();
-  await expect(page.locator(".activity-stage").first()).toBeVisible();
-  await page.locator(".activity-card").first().click();
-  await expect(page.locator(".activity-inline-log")).toBeVisible();
-  await expect(page.locator(".activity-card").first()).not.toContainText(
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await expect(page.locator(".activity-row").first()).toBeVisible();
+  await expect(page.locator(".activity-tracker").first()).toBeVisible();
+  await page.locator(".activity-row[aria-pressed='false']").first().click();
+  await expect(page.locator(".activity-log")).toBeHidden();
+  await page.getByRole("button", { name: "Show timing and logs", exact: true }).click();
+  await expect(page.locator(".activity-log")).toBeVisible();
+  await expect(page.locator(".activity-row").first()).not.toContainText(
     "Command failed with exit code",
   );
 
   await page.locator(".app-profile-settings").click();
   await page
+    .getByRole("navigation", { name: "Settings sections" })
     .getByRole("button", { name: "Data & export", exact: true })
     .click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Data & export" }),
+  ).toBeVisible();
   const languageSelect = page.getByRole("combobox", {
-    name: "Default language",
+    name: "Note language",
   });
   await expect(languageSelect).toBeVisible();
   const originalLanguage = await languageSelect.inputValue();
   await languageSelect.selectOption("French");
-  await page.getByRole("button", { name: "Save language settings" }).click();
   await expect(page.getByText("Language preferences saved.")).toBeVisible();
   await languageSelect.selectOption(originalLanguage);
-  await page.getByRole("button", { name: "Save language settings" }).click();
+  await expect(languageSelect).toHaveValue(originalLanguage);
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Close Settings" }).click();
   await page
     .getByRole("button", { name: "Knowledge base", exact: true })
     .click();
-  await expect(page.locator(".library-layout")).toBeVisible();
   await expect(
-    page.getByRole("tab", { name: "Browse tree", selected: true }),
+    page.getByRole("heading", { level: 1, name: "Knowledge base" }),
   ).toBeVisible();
-  await page
-    .locator(".library-tree")
-    .getByRole("button", { name: "Home" })
-    .click();
+  await knowledge.getByRole("button", { name: "Travel", exact: true }).click();
   await expect(
-    page.getByRole("tab", { name: "Reading pane", selected: true }),
+    page.getByRole("heading", { level: 1, name: "Travel" }),
   ).toBeVisible();
-  await expect(page.getByLabel("Reading pane")).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(
