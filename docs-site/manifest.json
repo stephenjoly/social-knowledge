@@ -1,0 +1,105 @@
+{
+  "pages": [
+    {
+      "slug": "",
+      "source": "docs/guide/index.md",
+      "title": "Overview",
+      "group": "Start here",
+      "description": "A private, searchable home for the knowledge in your saved social videos."
+    },
+    {
+      "slug": "getting-started",
+      "source": "docs/guide/getting-started.md",
+      "title": "Getting started",
+      "group": "Start here",
+      "description": "Run a private instance and save your first video."
+    },
+    {
+      "slug": "capture",
+      "source": "docs/guide/capture.md",
+      "title": "Capture and Shortcuts",
+      "group": "Using the app",
+      "description": "Save links from your browser or iPhone and understand capture progress."
+    },
+    {
+      "slug": "library-and-ask",
+      "source": "docs/guide/library-and-ask.md",
+      "title": "Library and Ask",
+      "group": "Using the app",
+      "description": "Browse captures, inspect source context, and ask questions with citations."
+    },
+    {
+      "slug": "settings",
+      "source": "docs/guide/settings.md",
+      "title": "Settings and AI",
+      "group": "Using the app",
+      "description": "Connect AI providers, choose language preferences, and manage account access."
+    },
+    {
+      "slug": "api-and-mcp",
+      "source": "docs/guide/api-and-mcp.md",
+      "title": "API and MCP",
+      "group": "Integrations",
+      "description": "Connect Apple Shortcuts, agents, ChatGPT, and Codex to your own archive."
+    },
+    {
+      "slug": "self-hosting",
+      "source": "docs/guide/self-hosting.md",
+      "title": "Self-hosting and backups",
+      "group": "Administration",
+      "description": "Configure storage, deployment, notifications, and recoverable backups."
+    },
+    {
+      "slug": "security",
+      "source": "docs/guide/security.md",
+      "title": "Security",
+      "group": "Administration",
+      "description": "Understand account isolation, credentials, and supported source boundaries."
+    },
+    {
+      "slug": "development",
+      "source": "docs/guide/development.md",
+      "title": "Development",
+      "group": "Contributing",
+      "description": "Build, test, and contribute using synthetic local data."
+    }
+  ],
+  "assets": [
+    {
+      "source": "docs-site/assets/docs.css",
+      "target": "assets/docs.css"
+    },
+    {
+      "source": "docs-site/assets/docs.js",
+      "target": "assets/docs.js"
+    },
+    {
+      "source": "docs/readme/social-knowledge-mark.svg",
+      "target": "assets/social-knowledge-mark.svg"
+    },
+    {
+      "source": "docs/readme/LUCIDE-LICENSE.txt",
+      "target": "assets/LUCIDE-LICENSE.txt"
+    },
+    {
+      "source": "web/fonts/inter-latin-wght-normal.woff2",
+      "target": "assets/inter-latin-wght-normal.woff2"
+    },
+    {
+      "source": "web/fonts/Inter-LICENSE.txt",
+      "target": "assets/Inter-LICENSE.txt"
+    },
+    {
+      "source": "docs/screenshots/inbox-framed.png",
+      "target": "assets/inbox-framed.png"
+    },
+    {
+      "source": "docs/screenshots/capture-detail-framed.png",
+      "target": "assets/capture-detail-framed.png"
+    },
+    {
+      "source": "docs/screenshots/ask-framed.png",
+      "target": "assets/ask-framed.png"
+    }
+  ]
+}

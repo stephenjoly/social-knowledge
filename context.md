@@ -5,7 +5,7 @@ Social Knowledge turns deliberately submitted Facebook and Instagram media into 
 ## Architecture
 
 - One Node.js/TypeScript process owns Fastify HTTP APIs, the React dashboard, SQLite, the job worker, MCP/OAuth, exports, and filesystem archiving.
-- Browser entry points are `/` (public landing), `/login` (existing authentication/setup), and `/app` (private dashboard); API/OAuth/MCP paths remain at the origin root.
+- Browser entry points are `/` (public landing), `/docs/` (public documentation), `/login` (existing authentication/setup), and `/app` (private dashboard); API/OAuth/MCP paths remain at the origin root.
 - `src/index.ts` is the composition root; `src/app.ts` is the transport boundary; `src/worker.ts` coordinates the capture pipeline; `src/db.ts` owns persistence.
 - The pipeline is URL validation → download → media processing → transcription → optional translation → structured analysis → SQLite/media/Obsidian publication.
 - Dokploy owns preview, staging, and production builds and deployments. GitHub owns CI, promotion policy, and release metadata.
@@ -22,7 +22,8 @@ Social Knowledge turns deliberately submitted Facebook and Instagram media into 
 | Task | Source |
 |---|---|
 | Working rules | [AGENTS.md](AGENTS.md) |
-| Setup and commands | [README.md](README.md) |
+| Product overview and quick start | [README.md](README.md) |
+| Detailed user and operator guides | [Documentation source](docs/guide/index.md), served at `/docs/` |
 | Product behavior | [Product](docs/product.md) |
 | System boundaries | [Architecture](ARCHITECTURE.md) |
 | Branches and worktrees | [Development workflow](docs/development-workflow.md) |
