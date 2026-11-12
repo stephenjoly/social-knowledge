@@ -2,7 +2,7 @@
 
 ## Dokploy
 
-Dokploy builds the root `Dockerfile` directly from the GitHub repository. GitHub Actions validates the source but does not publish deployment images. Production and staging are separate Dokploy Applications; pull-request previews are created only for collaborator-authorized PRs and use disposable container-local data plus preview-only credentials.
+Dokploy builds the root `Dockerfile` directly from the GitHub repository. GitHub Actions validates the source but does not publish deployment images. Production and staging are separate Dokploy Applications. Collaborator-authorized pull-request previews intentionally share staging's synthetic database, vault, and media volumes; runtime credentials come from the preview settings. These non-production environments never mount production storage or credentials.
 
 Follow the maintained [deployment and rollback model](https://github.com/stephenjoly/social-knowledge/blob/staging/docs/deployment-model.md): validate a disposable preview and isolated staging, promote accepted `staging` to `main`, verify an online SQLite backup, retain the prior deployment, and verify live release identity and user journeys. Passing CI or publishing a release is not evidence of deployment health. No production deployment is performed by these setup instructions.
 
@@ -29,6 +29,8 @@ Signed-in users can upload platform-specific Netscape `cookies.txt` exports unde
 Facebook increasingly requires requests that look like a real browser session. The production image includes yt-dlp's `curl-cffi` support and applies `FACEBOOK_IMPERSONATE` only to Facebook URLs. Facebook and Instagram use independent optional cookie-file settings, and cookies are never passed across platforms. Treat cookie files as account credentials: never paste them into chat or commit them.
 
 `FACEBOOK_COOKIES_FILE` and `INSTAGRAM_COOKIES_FILE` are independent optional runtime settings. Legacy `COOKIES_FILE` falls back for Facebook only. Deployment cookie files must be mounted read-only. The checked-in dashboard-managed Compose requires its Facebook host cookie path and external volumes; it is not the minimal first-run Compose file.
+
+Instagram capture first uses the saved account cookies or configured Instagram cookie file. If that authenticated request fails with `Failed to parse JSON`, the downloader clears incomplete files and tries the same URL once without cookies. Public Reels can recover through this route without replacing the saved cookie. Private or login-gated posts still need a working Instagram session; refresh their cookies in Social sessions when required. Anonymous success does not validate the stored session or update its last successful use. Existing failed saves need a manual retry from Activity after the fix is deployed.
 
 ## Notifications
 
