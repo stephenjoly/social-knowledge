@@ -80,62 +80,150 @@ describe("AskService", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([
+    { action: "clarify", reason: undefined },
+    { action: "respond", reason: null },
+    { action: "redirect", reason: "greeting" },
+    { action: "clarify", reason: "permission_to_search" },
+  ])("searches instead of honoring an unjustified bypass: %j", async ({ action, reason }) => {
+    const store = new JobStore(":memory:");
+    stores.push(store);
+    const owner = store.createUser("perfume-owner", "hash");
+    const other = store.createUser("perfume-other", "hash");
+    const capture = addCapture(store, owner.id, {
+      sourceHash: "perfume-owned", title: "Blind buy safe perfumes",
+      synopsis: "The saved creator suggests trying a perfume sample first.",
+      transcript: "For blind buy safe perfumes, the creator recommends Sample A, but preferences vary.",
+    });
+    const foreign = addCapture(store, other.id, {
+      sourceHash: "perfume-foreign", title: "Blind buy safe perfumes",
+      synopsis: "Another owner's private recommendation.", transcript: "Foreign perfume choice.",
+    });
+    const chat = store.createConversation(owner.id)!;
+    const question = "what perfumes are blind buy safe";
+    const turn = store.beginConversationTurn(owner.id, chat.id, question, crypto.randomUUID());
+    const search = vi.spyOn(store, "searchKnowledge");
+    const create = vi.fn().mockResolvedValueOnce({ output_text: JSON.stringify({
+      action, standaloneQuestion: question, responseInstructions: "Ask whether to search.",
+      referencedCaptureIds: [], ...(reason === undefined ? {} : { retrievalBypassReason: reason }),
+    }) }).mockResolvedValueOnce(streamedJson({
+      answer: "Your saved creator suggests Sample A, with a preference caveat [1].",
+      sufficient: true, citedCaptureIds: [capture.id],
+    }));
+    const result = await new AskService({ responses: { create } } as unknown as OpenAI,
+      testConfig("/tmp/ask-archive-first"), store).answer({ userId: owner.id,
+      conversationId: chat.id, assistantId: turn.assistantId, question,
+      signal: new AbortController().signal, onDelta: () => undefined });
+    expect(search).toHaveBeenCalledWith(owner.id, question, 16);
+    expect(result.diagnostics.action).toBe("search_archive");
+    expect(result.sources.map(source => source.id)).toEqual([capture.id]);
+    expect(result.sufficient).toBe(true);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(create.mock.calls[1]![0].input)).not.toContain(foreign.id);
+    expect(JSON.stringify(create.mock.calls[1]![0].input)).not.toContain("Ask whether to search");
+    expect(store.getConversation(owner.id, chat.id)!.messages.at(-1)).toMatchObject({ status: "complete", sufficient: true });
+  });
+
+  it.each([
+    ["what perfumes are blind buy safe", "Blind buy safe perfumes"],
+    ["I'm traveling to Portugal. Any recommendations?", "Portugal travel recommendations"],
+    ["What should I cook tonight?", "Weeknight cooking ideas"],
+    ["How can I improve my squat?", "Squat technique"],
+    ["yes of course", "Blind buy safe perfumes"],
+  ])("retrieves implicit archive intent for %s", async (question, subject) => {
+    const store = new JobStore(":memory:"); stores.push(store);
+    const owner = store.createUser("implicit-owner", "hash");
+    const capture = addCapture(store, owner.id, { sourceHash: "implicit", title: subject,
+      synopsis: subject, transcript: "A synthetic saved recommendation about " + subject });
+    const chat = store.createConversation(owner.id)!;
+    if (question === "yes of course") {
+      store.addConversationMessage(owner.id, chat.id, "user", "what perfumes are blind buy safe");
+      store.addConversationMessage(owner.id, chat.id, "assistant", "I can search your saved perfumes—want me to search?", [], null);
+    }
+    const turn = store.beginConversationTurn(owner.id, chat.id, question, crypto.randomUUID());
+    const create = vi.fn().mockResolvedValueOnce({ output_text: JSON.stringify({
+      action: "search_archive", standaloneQuestion: subject, responseInstructions: "Answer from saves.",
+      referencedCaptureIds: [], retrievalBypassReason: null,
+    }) }).mockResolvedValueOnce(streamedJson({ answer: "The saved recommendation [1].", citedCaptureIds: [capture.id], sufficient: true }));
+    const search = vi.spyOn(store, "searchKnowledge");
+    const result = await new AskService({ responses: { create } } as unknown as OpenAI,
+      testConfig("/tmp/ask-implicit"), store).answer({ userId: owner.id, conversationId: chat.id,
+      assistantId: turn.assistantId, question, signal: new AbortController().signal, onDelta: () => undefined });
+    expect(search).toHaveBeenCalledWith(owner.id, subject, 16);
+    expect(result.sources.map(source => source.id)).toEqual([capture.id]);
+    const request = create.mock.calls[0]![0];
+    expect(request.text.format.schema.required).toContain("retrievalBypassReason");
+    expect(request.instructions).toContain("Default to archive retrieval for substantive questions");
+    expect(request.instructions).toContain("Do not ask permission to search");
+    if (question === "yes of course") expect(JSON.stringify(request.input)).toContain("what perfumes are blind buy safe");
+  });
+
   // These mocked plans verify routing contracts and delivered policies, not model intent quality.
   it.each([
     [
       "Test",
       "respond",
       "I'm here. What would you like to explore in Social Knowledge?",
+      "greeting",
     ],
     [
       "Hi there",
       "respond",
       "Hello! I can help with your saved ideas or the app.",
+      "greeting",
     ],
     [
       "What can you help me do in Social Knowledge?",
       "respond",
       "I can search and discuss your saved posts, help you develop saved ideas, and explain the app.",
+      "app_help",
     ],
     [
       "Where do I configure my AI models?",
       "respond",
       "Open Settings → AI & models. Connect credentials, assign tasks, then Save changes.",
+      "app_help",
     ],
     [
       "Explain how that helps organize ideas",
       "respond",
       "General explanation: topics group related ideas for easier browsing.",
+      "provided_material",
     ],
     [
       "Draft an intro for my saved project using the outline I pasted",
       "respond",
       "Draft based on your outline: Here are the ideas I want to explore.",
+      "provided_material",
     ],
-    ["Do that one", "clarify", "Which saved idea or app feature do you mean?"],
+    ["Do that one", "clarify", "Which saved idea or app feature do you mean?", "unresolved_subject"],
     [
       "Write a random celebrity biography",
       "redirect",
       "I can help with Social Knowledge or your saved ideas. What would you like to explore there?",
+      "unrelated_task",
     ],
     [
       "Rewrite this unrelated job application I pasted",
       "redirect",
       "I can help develop saved ideas or guide you through Social Knowledge.",
+      "unrelated_task",
     ],
     [
       "Research current Portugal travel rules on the web",
       "redirect",
       "For current travel rules, use an external search and check official sources.",
+      "external_research",
     ],
     [
-      "mysterious-reference-123456",
+      "What do you mean by that one?",
       "clarify",
       "Is that a saved topic or something you want help with in the app?",
+      "unresolved_subject",
     ],
   ])(
     "routes %s through %s without retrieval and persists neutral sufficiency",
-    async (question, action, answer) => {
+    async (question, action, answer, retrievalBypassReason) => {
       const store = new JobStore(":memory:");
       stores.push(store);
       const owner = store.createUser("natural-owner", "hash");
@@ -173,6 +261,7 @@ describe("AskService", () => {
         .mockResolvedValueOnce({
           output_text: JSON.stringify({
             action,
+            retrievalBypassReason,
             standaloneQuestion: question,
             responseInstructions: "Answer naturally",
             referencedCaptureIds: [],
@@ -336,6 +425,7 @@ describe("AskService", () => {
         .mockResolvedValueOnce({
           output_text: JSON.stringify({
             action: "respond",
+            retrievalBypassReason: "greeting",
             standaloneQuestion: "Test",
             responseInstructions: "",
             referencedCaptureIds: [],
@@ -614,6 +704,7 @@ describe("AskService", () => {
                         annotations: [],
                         text: JSON.stringify({
                           action: natural ? "respond" : "search_archive",
+                          retrievalBypassReason: natural ? "greeting" : null,
                           standaloneQuestion: question,
                           responseInstructions: "Answer directly",
                           referencedCaptureIds: [],
