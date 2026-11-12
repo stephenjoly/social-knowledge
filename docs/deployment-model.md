@@ -6,8 +6,8 @@ Social Knowledge uses one public source repository and isolated runtime environm
 
 | Environment | Source | Data | Purpose |
 |---|---|---|---|
-| Pull request | A `codex/*` branch targeting `staging` | Container-local disposable data and preview-only credentials | CI, review, and isolated Dokploy preview acceptance |
-| Staging | The `staging` branch built by Dokploy | Dedicated disposable volumes and staging-only credentials | Combined browser, API, OAuth, MCP, migration, and ingestion acceptance |
+| Pull request | A `codex/*` branch targeting `staging` | Shared synthetic staging database, vault, and media volumes; preview credentials | CI, review, and native Dokploy preview acceptance |
+| Staging | The `staging` branch built by Dokploy | Synthetic volumes shared with previews; staging credentials | Combined browser, API, OAuth, MCP, migration, and ingestion acceptance |
 | Production | The `main` state promoted by an approved `staging` to `main` PR | Existing persistent production volumes | Personal archive and Apple Shortcut endpoint |
 | GitHub Pages | Static files under `site/` | No application data or credentials | Public project homepage |
 
@@ -53,11 +53,13 @@ Staging never mounts production volumes or production social-cookie files. It us
 
 ## Preview links
 
-GitHub Actions validates every pull request and pushes to `staging` and `main`. Dokploy clones the repository and builds the root Dockerfile locally; GitHub does not publish runtime container images. Permanent staging follows `staging`. Only feature PRs targeting `staging` receive collaborator-authorized disposable previews with preview-only credentials and container-local data. Release PRs reuse permanent staging and must not create another preview. Preview deployments never mount production or staging volumes.
+GitHub Actions validates every pull request and pushes to `staging` and `main`. Dokploy clones the repository and builds the root Dockerfile locally; GitHub does not publish runtime container images. Permanent staging follows `staging`. Only feature PRs targeting `staging` receive collaborator-authorized disposable previews. All previews intentionally share staging's synthetic SQLite database, vault, and media volumes. Their runtime credentials come from the preview environment settings. Release PRs reuse permanent staging and must not create another preview. Staging and previews never mount production storage or credentials.
+
+Preview writes are visible to staging and other previews. Use task-specific synthetic accounts and fixtures, preserve other tasks' data, and coordinate resets or incompatible schema changes. A preview container is disposable; removing it does not imply its shared data can be deleted.
 
 Dokploy must keep **Require collaborator permissions** enabled, use a small preview limit, and remove preview Applications when PRs close. A preview URL proves only that an environment was created; it is not a health or acceptance attestation.
 
-For convenient manual testing, the staging Application may set `DEMO_ACCOUNTS_ENABLED=true`; preview Applications that inherit its environment recreate the same synthetic member and administrator credentials in their own container-local databases. This is credential consistency, not shared persistence. Never enable the flag on production or place real data in a demo account.
+For convenient manual testing, the staging Application may set `DEMO_ACCOUNTS_ENABLED=true`; preview Applications use the shared synthetic member and administrator accounts in the non-production database. Never enable the flag on production or place real data in a demo account.
 
 ## First production cutover checklist
 
