@@ -2,7 +2,7 @@
 
 ## Dokploy
 
-Dokploy builds the root `Dockerfile` directly from the GitHub repository. GitHub Actions validates the source but does not publish deployment images. Production and staging are separate Dokploy Applications; pull-request previews are created only for collaborator-authorized PRs and use disposable container-local data plus preview-only credentials.
+Dokploy builds the root `Dockerfile` directly from the GitHub repository. GitHub Actions validates the source but does not publish deployment images. Production and staging are separate Dokploy Applications. Collaborator-authorized pull-request previews intentionally share staging's synthetic database, vault, and media volumes; runtime credentials come from the preview settings. These non-production environments never mount production storage or credentials.
 
 Follow the maintained [deployment and rollback model](https://github.com/stephenjoly/social-knowledge/blob/staging/docs/deployment-model.md): validate a disposable preview and isolated staging, promote accepted `staging` to `main`, verify an online SQLite backup, retain the prior deployment, and verify live release identity and user journeys. Passing CI or publishing a release is not evidence of deployment health. No production deployment is performed by these setup instructions.
 
