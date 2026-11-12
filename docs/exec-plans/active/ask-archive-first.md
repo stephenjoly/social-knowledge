@@ -33,7 +33,7 @@ real AskService with deterministic provider responses. Update the product contra
 - [x] Inspect current staging and preserve existing branch/artifacts.
 - [x] Record regression failures before implementation (six failures in nine focused cases).
 - [x] Implement and pass focused Ask/conversation tests (64 tests).
-- [x] Full check (416 tests) and browser acceptance (2/2 Chromium, 2/2 WebKit).
+- [x] Full check (433 tests after merging staging `16cc0f6`) and browser acceptance (2/2 Chromium, 2/2 WebKit).
 - [ ] Commit/push staging PR and verify native preview.
 
 ## Decisions
