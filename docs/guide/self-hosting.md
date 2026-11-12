@@ -30,6 +30,8 @@ Facebook increasingly requires requests that look like a real browser session. T
 
 `FACEBOOK_COOKIES_FILE` and `INSTAGRAM_COOKIES_FILE` are independent optional runtime settings. Legacy `COOKIES_FILE` falls back for Facebook only. Deployment cookie files must be mounted read-only. The checked-in dashboard-managed Compose requires its Facebook host cookie path and external volumes; it is not the minimal first-run Compose file.
 
+Instagram capture first uses the saved account cookies or configured Instagram cookie file. If that authenticated request fails with `Failed to parse JSON`, the downloader clears incomplete files and tries the same URL once without cookies. Public Reels can recover through this route without replacing the saved cookie. Private or login-gated posts still need a working Instagram session; refresh their cookies in Social sessions when required. Anonymous success does not validate the stored session or update its last successful use. Existing failed saves need a manual retry from Activity after the fix is deployed.
+
 ## Notifications
 
 Set `NTFY_URL`, `NTFY_TOPIC`, and, when required by the ntfy server, `NTFY_TOKEN` to receive completion and final-failure pushes. Notifications contain only the platform, a bounded safe title, and a link to the authenticated Activity page.
