@@ -55,5 +55,5 @@ If a recurring review correction is objective and mechanically checkable, encode
 - Feature PRs target `staging`; release PRs promote the complete accepted `staging` state to `main`.
 - Dokploy is the only deployment owner. GitHub validates changes, enforces promotion provenance, and publishes release metadata; it does not deploy.
 - Only the staging Dokploy Application creates collaborator-authorized, disposable PR previews.
-- Staging and preview use synthetic, isolated data and credentials. They never mount production storage or credentials.
+- Staging and previews intentionally share synthetic non-production storage. They never mount production storage or credentials; preserve other tasks' shared fixtures.
 - Passing CI or publishing a GitHub Release is not evidence that a deployment is healthy. Verify the live release identity and user journeys.
