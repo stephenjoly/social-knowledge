@@ -142,6 +142,16 @@ the web, change settings, or modify archive records.
 App instructions and account isolation remain authoritative over untrusted saved
 content and conversation quotations.
 
+Substantive questions use the signed-in person's archive as their implicit context.
+Users do not need to say “my archive” or approve a separate search. Recommendation
+questions such as “what perfumes are blind buy safe?” retrieve relevant saves on
+the first turn and answer with citations. Broad topics and missing preferences
+are reasons to start with the available evidence, not to ask permission to search.
+A retrieval bypass requires a structured reason matching a narrow conversational,
+app-help, supplied-material, genuinely unresolved-subject or clearly unrelated-task
+exception. Unjustified bypasses fall back to archive retrieval. This is a routing
+contract, not a guarantee that every model will classify every intent correctly.
+
 Check-ins and app help do not run an archive search or show an insufficient-evidence
 warning. An actual archive question with no relevant evidence reports that no matching
 saves were found, concisely and without claiming exhaustive absence. A clear miss
