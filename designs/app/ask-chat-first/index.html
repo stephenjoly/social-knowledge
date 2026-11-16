@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Social Knowledge · Ask, chat-first mockups</title>
+<style>
+/* Tokens copied from web/design-tokens.css so the mockup matches the real app. */
+:root {
+  --ink: #18181b; --ink-soft: #3f3f46; --muted: #71717a; --muted-strong: #52525b; --placeholder: #a1a1aa; --faint: #d4d4d8;
+  --canvas: #fafafa; --surface: #ffffff; --subtle: #f4f4f5; --border: #e4e4e7; --hairline: #f0f0f1;
+  --accent: #26322b; --accent-hover: #18231d;
+  --green: #3f7a55; --green-ink: #2f5d40; --green-tint: #e8f0ea; --avatar: #3f6b52;
+  --amber: #d9a441; --amber-ink: #8a5a12; --amber-tint: #fbf1df; --amber-border: #f1e2c4;
+  --danger: #9f3f34; --danger-border: #efd3cf;
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius-keycap: 4px; --radius-badge: 6px; --radius-control: 7px; --radius-icon-box: 8px; --radius-card: 10px; --radius-bubble: 12px; --radius-dialog: 14px; --radius-pill: 999px;
+  --shadow-primary-button: 0 1px 2px #18231d33; --shadow-floating: 0 8px 24px #18181b0d; --shadow-dialog: 0 24px 60px #18181b40;
+  --pop: 0 12px 32px #18181b1f, 0 1px 3px #0000000f;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.5 var(--font-sans); color: var(--ink); background: #e9e9e6; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; cursor: pointer; }
+svg.i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+kbd { font: 10.5px var(--font-sans); color: var(--muted); border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-keycap); padding: 0 5px; line-height: 17px; min-width: 18px; text-align: center; display: inline-block; }
+
+/* Review bar (not part of the product) */
+.review { display: flex; align-items: center; gap: 8px; padding: 12px 24px; flex-wrap: wrap; }
+.review strong { margin-right: 8px; }
+.review button { border: 1px solid #c9c9c4; background: var(--surface); border-radius: 999px; padding: 4px 12px; font-size: 13px; }
+.review button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.note { margin: 0 24px 12px; max-width: 1240px; color: var(--muted-strong); font-size: 13px; min-height: 40px; }
+
+/* App window */
+.win { margin: 0 24px 32px; height: 860px; min-width: 1280px; background: var(--canvas); border: 1px solid #d4d4cf; border-radius: 12px; overflow: hidden; display: flex; box-shadow: var(--shadow-floating); position: relative; }
+
+/* ── Left sidebar: navigation + chat history ───────────────────────── */
+.side { width: 264px; flex: none; border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 14px 10px 10px; background: var(--canvas); min-height: 0; }
+.brand { display: flex; align-items: center; gap: 8px; padding: 0 4px 0 6px; height: 32px; font-weight: 600; letter-spacing: -.4px; }
+.brand .mark { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); color: #fff; display: grid; place-items: center; }
+.brand .mark svg { width: 13px; height: 13px; }
+.brand .grow { flex: 1; }
+.iconbtn { border: 0; background: transparent; border-radius: var(--radius-control); width: 30px; height: 30px; display: inline-grid; place-items: center; color: var(--muted); }
+.iconbtn:hover { background: var(--subtle); color: var(--ink); }
+.capture { width: 30px; height: 30px; border-radius: var(--radius-control); border: 0; background: var(--accent); color: #fff; display: grid; place-items: center; box-shadow: var(--shadow-primary-button); }
+.goto { margin: 12px 0 6px; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 8px 0 10px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--subtle); color: var(--muted); font-size: 13px; }
+.goto span { flex: 1; }
+.glabel { font-size: 10.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); padding: 14px 10px 6px; display: flex; align-items: center; }
+.glabel .grow { flex: 1; }
+.nav { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px 0 10px; border-radius: var(--radius-control); font-size: 13.5px; color: var(--ink-soft); border: 0; background: transparent; width: 100%; text-align: left; }
+.nav:hover { background: var(--subtle); }
+.nav.cur { background: #ececee; color: var(--ink); font-weight: 500; }
+.nav .t { flex: 1; }
+.nav .keys { display: flex; gap: 3px; opacity: 0; }
+.nav:hover .keys, .nav.cur .keys { opacity: 1; }
+
+.chatsearch { display: flex; align-items: center; gap: 8px; height: 30px; margin: 2px 0 4px; padding: 0 8px 0 10px; border-radius: var(--radius-control); color: var(--muted); font-size: 13px; border: 1px solid transparent; }
+.chatsearch input { border: 0; outline: 0; background: transparent; font: inherit; color: var(--ink); flex: 1; min-width: 0; }
+.chatsearch input::placeholder { color: var(--placeholder); }
+.chatsearch:hover { background: var(--subtle); }
+.chatsearch.active { background: var(--surface); border-color: var(--border); }
+.list { flex: 1; overflow: auto; min-height: 0; margin: 0 -4px; padding: 0 4px; }
+.when { font-size: 11px; color: var(--muted); padding: 10px 10px 3px; }
+.chat { position: relative; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px 0 10px; border-radius: var(--radius-control); border: 0; background: transparent; text-align: left; width: 100%; font-size: 13px; color: var(--ink-soft); }
+.chat:hover, .chat.hover { background: var(--subtle); }
+.chat.cur { background: #ececee; color: var(--ink); font-weight: 500; }
+.chat .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat .more { opacity: 0; width: 22px; height: 22px; border-radius: 5px; display: grid; place-items: center; color: var(--muted); }
+.chat:hover .more, .chat.hover .more, .chat.cur .more { opacity: 1; }
+.chat .more:hover { background: #e4e4e7; color: var(--ink); }
+.chat mark { background: var(--amber-tint); color: inherit; border-radius: 2px; }
+.spin { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--green-tint); border-top-color: var(--green); flex: none; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.warn-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); flex: none; }
+.showall { font-size: 12.5px; color: var(--muted); padding: 6px 10px 2px; border: 0; background: none; text-align: left; }
+.showall:hover { color: var(--ink); }
+
+.rowmenu { position: absolute; z-index: 6; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--pop); padding: 5px; width: 180px; }
+.rowmenu .it { display: flex; align-items: center; gap: 9px; padding: 6px 9px; border-radius: 6px; font-size: 13px; }
+.rowmenu .it:hover { background: var(--subtle); }
+.rowmenu .it small { margin-left: auto; color: var(--muted); }
+.rowmenu .it.danger { color: var(--danger); }
+.rowmenu hr { border: 0; border-top: 1px solid var(--hairline); margin: 4px 0; }
+
+.profile { display: flex; align-items: center; gap: 10px; padding: 8px 6px 2px 8px; border-top: 1px solid var(--hairline); margin-top: 6px; }
+.avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--avatar); color: #fff; display: grid; place-items: center; font-size: 11.5px; font-weight: 600; }
+.profile .who { flex: 1; font-size: 13.5px; font-weight: 500; }
+
+/* ── Main column ───────────────────────────────────────────────────── */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--canvas); }
+.top { height: 52px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px 0 28px; border-bottom: 1px solid transparent; }
+.top.line { border-bottom-color: var(--border); background: var(--surface); }
+.top .title { font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; padding: 4px 6px; margin-left: -6px; border-radius: 6px; min-width: 0; }
+.top .title:hover { background: var(--subtle); }
+.top .title span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
+.top .grow { flex: 1; }
+.toggle { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-control); font-size: 13px; color: var(--ink-soft); }
+.toggle:hover { border-color: var(--faint); }
+.toggle.on { background: var(--subtle); color: var(--ink); }
+.toggle .n { font-size: 11.5px; background: var(--green-tint); color: var(--green-ink); border-radius: 5px; padding: 0 5px; font-weight: 600; }
+
+.scroll { flex: 1; overflow: auto; }
+.col { max-width: 760px; margin: 0 auto; padding: 28px 28px 12px; display: flex; flex-direction: column; gap: 22px; }
+
+/* Messages */
+.u { align-self: flex-end; max-width: 78%; background: var(--subtle); border: 1px solid var(--hairline); border-radius: var(--radius-bubble) var(--radius-bubble) 4px var(--radius-bubble); padding: 10px 14px; font-size: 14px; }
+.a { display: flex; gap: 14px; }
+.ibox { width: 28px; height: 28px; border-radius: var(--radius-icon-box); background: var(--green-tint); color: var(--green); display: grid; place-items: center; flex: none; }
+.ibox svg { width: 15px; height: 15px; }
+.a .body { flex: 1; min-width: 0; font-size: 14px; line-height: 1.6; color: var(--ink-soft); }
+.a .meta { font-size: 12px; color: var(--muted); margin: 3px 0 8px; display: flex; gap: 6px; align-items: center; }
+.a .meta .model { color: var(--muted-strong); }
+.a h4 { margin: 16px 0 6px; font-size: 14.5px; color: var(--ink); font-weight: 600; }
+.a p { margin: 0 0 6px; }
+.a ul { margin: 0; padding-left: 18px; }
+.a li { margin: 0 0 8px; }
+.a li::marker { color: var(--green); }
+.a li b { color: var(--ink); font-weight: 600; }
+.cite { display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 4px; margin-left: 2px; border-radius: 5px; background: var(--green-tint); color: var(--green-ink); font-size: 10.5px; font-weight: 600; vertical-align: 1px; cursor: pointer; border: 0; }
+.cite:hover, .cite.hl { background: var(--green); color: #fff; }
+.acts { display: flex; align-items: center; gap: 4px; margin-top: 12px; }
+.srcbtn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--radius-control); border: 0; background: var(--green-tint); color: var(--green-ink); font-size: 12.5px; font-weight: 500; }
+.srcbtn .faces { display: inline-flex; }
+.srcbtn .faces i { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--green-tint); margin-left: -5px; display: block; }
+.srcbtn .faces i:first-child { margin-left: 0; }
+.ghost { height: 28px; min-width: 28px; display: inline-flex; align-items: center; gap: 5px; justify-content: center; border: 0; background: none; color: var(--muted); border-radius: var(--radius-control); font-size: 12.5px; padding: 0 6px; }
+.ghost:hover { background: var(--subtle); color: var(--ink); }
+
+/* Composer: one container, one focus ring (fixes today's nested ring) */
+.dock { flex: none; padding: 8px 28px 16px; }
+.composer { max-width: 760px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 12px 10px 10px 16px; box-shadow: var(--shadow-floating); position: relative; }
+.composer.focus { border-color: #b9cbbf; box-shadow: 0 0 0 3px var(--green-tint), var(--shadow-floating); }
+.composer textarea { display: block; width: 100%; border: 0; outline: 0; resize: none; font: inherit; font-size: 14.5px; min-height: 24px; height: 24px; background: transparent; color: var(--ink); padding: 0; }
+.composer textarea::placeholder { color: var(--placeholder); }
+.composer .row { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+.composer .grow { flex: 1; }
+.pickbtn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 7px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); font-size: 12.5px; color: var(--ink-soft); }
+.pickbtn:hover, .pickbtn.on { background: var(--subtle); border-color: var(--faint); color: var(--ink); }
+.pickbtn .pdot { width: 16px; height: 16px; border-radius: 4px; display: grid; place-items: center; }
+.pickbtn .pdot svg { width: 10px; height: 10px; }
+.pickbtn .lvl { color: var(--muted); }
+.attach { width: 28px; height: 28px; border-radius: 50%; }
+.send { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; display: grid; place-items: center; box-shadow: var(--shadow-primary-button); }
+.send[disabled] { background: var(--faint); box-shadow: none; cursor: default; }
+.fine { font-size: 11.5px; color: var(--muted); text-align: center; margin-top: 8px; }
+
+/* Model picker popover */
+.picker { position: absolute; left: 8px; bottom: calc(100% + 8px); width: 360px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--pop); padding: 6px; z-index: 8; display: none; }
+.picker.open { display: block; }
+.picker .hd { display: flex; align-items: baseline; padding: 6px 8px 4px; }
+.picker .hd b { font-size: 12.5px; font-weight: 600; flex: 1; }
+.picker .hd small { font-size: 11.5px; color: var(--muted); }
+.pgroup { font-size: 10.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); padding: 10px 8px 4px; display: flex; align-items: center; gap: 6px; }
+.pgroup .grow { flex: 1; }
+.pgroup .ok { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--green); display: inline-flex; gap: 4px; align-items: center; }
+.pgroup .ok::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.opt { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 8px; width: 100%; border: 0; background: none; text-align: left; }
+.opt:hover { background: var(--subtle); }
+.opt .pdot { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; flex: none; }
+.opt .pdot svg { width: 14px; height: 14px; }
+.opt .txt { flex: 1; min-width: 0; line-height: 1.3; }
+.opt .txt b { font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.opt .txt small { font-size: 11.5px; color: var(--muted); }
+.opt .txt code { font: 11px var(--font-mono); color: var(--muted); }
+.opt .chk { color: var(--green); visibility: hidden; margin-left: auto; }
+.opt.picked .chk { visibility: visible; }
+.opt.off { opacity: .5; cursor: default; }
+.opt.off:hover { background: none; }
+.deflt { font-size: 10.5px; font-weight: 500; color: var(--muted-strong); background: var(--subtle); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; line-height: 16px; }
+.think { margin: 2px 8px 6px 44px; padding: 8px 10px; background: var(--canvas); border: 1px solid var(--hairline); border-radius: 8px; }
+.think .lbl { font-size: 11.5px; color: var(--muted); margin-bottom: 6px; display: flex; }
+.think .lbl span { flex: 1; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-control); overflow: hidden; background: var(--surface); }
+.seg button { border: 0; border-left: 1px solid var(--border); background: var(--surface); padding: 3px 10px; font-size: 12px; color: var(--muted-strong); }
+.seg button:first-child { border-left: 0; }
+.seg button.on { background: var(--accent); color: #fff; }
+.think .seg { display: flex; }
+.think .seg button { flex: 1; }
+.pfoot { border-top: 1px solid var(--hairline); margin-top: 6px; padding: 6px 2px 0; display: flex; gap: 2px; }
+.pfoot button { flex: 1; display: inline-flex; align-items: center; gap: 6px; justify-content: center; border: 0; background: none; padding: 6px 8px; border-radius: 7px; font-size: 12.5px; color: var(--muted-strong); }
+.pfoot button:hover { background: var(--subtle); color: var(--ink); }
+
+/* Home (new chat) */
+.hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 28px 90px; gap: 18px; }
+.hero h1 { font-size: 28px; font-weight: 600; letter-spacing: -.8px; margin: 0; }
+.hero .sub { color: var(--muted); margin: -10px 0 4px; font-size: 14px; }
+.hero .composer { width: 100%; max-width: 720px; }
+.hero .composer textarea { min-height: 56px; height: 56px; font-size: 15px; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 720px; }
+.chip { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-pill); padding: 6px 12px; font-size: 13px; color: var(--muted-strong); display: inline-flex; gap: 7px; align-items: center; }
+.chip:hover { border-color: var(--faint); color: var(--ink); }
+.chip svg { color: var(--muted); }
+
+/* ── Right: sources panel (toggleable, flush to the window edge) ───── */
+.sources { width: 0; flex: none; overflow: hidden; border-left: 1px solid transparent; background: var(--surface); transition: width 200ms var(--ease); }
+.sources.open { width: 316px; border-left-color: var(--border); }
+.sources .inner { width: 316px; height: 100%; display: flex; flex-direction: column; }
+.sources .hd { height: 52px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 18px; border-bottom: 1px solid var(--border); }
+.sources .hd b { font-size: 14px; font-weight: 600; }
+.sources .hd small { color: var(--muted); font-size: 12.5px; }
+.sources .hd .grow { flex: 1; }
+.sources .seglbl { font-size: 10.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); padding: 14px 18px 6px; }
+.sources .cards { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; overflow: auto; }
+.scard { display: flex; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); transition: border-color 120ms, box-shadow 120ms; }
+.scard:hover { border-color: var(--faint); }
+.scard.hl { border-color: #b9cbbf; box-shadow: 0 0 0 3px var(--green-tint); }
+.thumb { width: 44px; height: 56px; border-radius: 6px; flex: none; position: relative; overflow: hidden; }
+.thumb .num { position: absolute; top: 3px; left: 3px; background: var(--ink); color: #fff; font-size: 10px; font-weight: 600; border-radius: 4px; min-width: 15px; height: 15px; display: grid; place-items: center; padding: 0 3px; }
+.scard .txt { flex: 1; min-width: 0; }
+.scard .txt b { display: block; font-size: 13px; font-weight: 600; line-height: 1.3; color: var(--ink); }
+.scard .txt small { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+.scard .txt .syn { font-size: 12px; color: var(--muted-strong); margin-top: 5px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.scard .open { font-size: 12px; color: var(--green-ink); margin-top: 6px; display: inline-flex; gap: 4px; align-items: center; }
+.earlier { margin: 4px 12px 12px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: 8px; font-size: 12px; color: var(--muted); }
+
+/* ── Settings modal ────────────────────────────────────────────────── */
+.scrim { position: absolute; inset: 0; background: #18181b47; display: none; align-items: center; justify-content: center; z-index: 20; }
+.scrim.open { display: flex; }
+.settings { width: 900px; height: 660px; background: var(--surface); border-radius: var(--radius-dialog); box-shadow: var(--shadow-dialog); display: flex; overflow: hidden; }
+.settings nav { width: 224px; flex: none; background: var(--canvas); border-right: 1px solid var(--border); padding: 18px 10px; display: flex; flex-direction: column; gap: 1px; }
+.settings nav h2 { font-size: 17px; font-weight: 600; letter-spacing: -.5px; margin: 0 10px 6px; }
+.settings nav .glabel { padding-top: 12px; }
+.settings nav button { display: flex; align-items: center; gap: 10px; border: 0; background: transparent; text-align: left; height: 32px; padding: 0 10px; border-radius: var(--radius-control); color: var(--ink-soft); font-size: 13.5px; }
+.settings nav button:hover { background: var(--subtle); }
+.settings nav button.on { background: #ececee; color: var(--ink); font-weight: 500; }
+.settings nav .navfoot { margin-top: auto; padding: 8px 10px 0; font-size: 11.5px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.settings .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.settings .pane-hd { height: 60px; flex: none; display: flex; align-items: center; padding: 0 14px 0 32px; border-bottom: 1px solid var(--hairline); }
+.settings .pane-hd h3 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.5px; flex: 1; }
+.settings .pane-body { flex: 1; overflow: auto; padding: 6px 32px 28px; }
+.settings .lede { color: var(--muted); font-size: 13.5px; margin: 14px 0 4px; }
+.sect { margin-top: 22px; }
+.sect h5 { margin: 0 0 2px; font-size: 15px; font-weight: 600; letter-spacing: -.2px; }
+.sect > p { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); }
+.cardlist { border: 1px solid var(--border); border-radius: var(--radius-card); }
+.srow { display: flex; align-items: center; gap: 14px; padding: 13px 16px; border-top: 1px solid var(--hairline); }
+.srow:first-child { border-top: 0; }
+.srow .lbl { flex: 1; min-width: 0; }
+.srow .lbl b { display: flex; align-items: center; gap: 6px; font-weight: 500; font-size: 13.5px; }
+.srow .lbl small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+.srow .val { color: var(--muted-strong); font-size: 13px; display: flex; gap: 8px; align-items: center; }
+.pico { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; flex: none; }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 1px 8px; border-radius: var(--radius-badge); }
+.status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.status.ok { background: var(--green-tint); color: var(--green-ink); }
+.status.warn { background: var(--amber-tint); color: var(--amber-ink); }
+.newtag { font-size: 10.5px; font-weight: 600; color: var(--green-ink); background: var(--green-tint); border-radius: 4px; padding: 0 5px; }
+.btn { height: 30px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-control); padding: 0 12px; font-size: 13px; display: inline-flex; gap: 6px; align-items: center; color: var(--ink-soft); }
+.btn:hover { border-color: var(--faint); color: var(--ink); }
+.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: var(--shadow-primary-button); }
+.btn.danger { color: var(--danger); border-color: var(--danger-border); }
+.sel { height: 30px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: var(--radius-control); padding: 0 8px 0 10px; font-size: 13px; background: var(--surface); color: var(--ink); min-width: 112px; cursor: pointer; }
+.sel span { flex: 1; }
+.sel svg { color: var(--muted); }
+.mono { font-family: var(--font-mono); font-size: 12px; }
+.savebar { flex: none; display: none; align-items: center; gap: 10px; padding: 10px 14px 10px 32px; border-top: 1px solid var(--border); background: var(--amber-tint); font-size: 13px; color: var(--amber-ink); }
+.savebar.show { display: flex; }
+.savebar span { flex: 1; }
+.switch { width: 34px; height: 20px; border-radius: 999px; background: var(--faint); position: relative; flex: none; border: 0; padding: 0; }
+.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left 120ms var(--ease); box-shadow: 0 1px 2px #0000002e; }
+.switch.on { background: var(--green); }
+.switch.on::after { left: 16px; }
+
+.callout { position: absolute; background: #fffbe6; border: 1px solid #e8d77a; color: #5c4b00; font-size: 12px; padding: 6px 10px; border-radius: 6px; max-width: 196px; box-shadow: var(--pop); z-index: 30; pointer-events: none; line-height: 1.4; }
+.callouts-off .callout { display: none; }
+</style>
+</head>
+<body>
+
+<div class="review">
+  <strong>Social Knowledge · Ask, chat-first</strong>
+  <button data-go="home">1 · New chat</button>
+  <button data-go="convo" class="on">2 · Conversation</button>
+  <button data-go="picker">3 · Model picker</button>
+  <button data-go="history">4 · Search &amp; manage chats</button>
+  <button data-go="focus">5 · Sources hidden</button>
+  <button data-go="settings">6 · Settings modal</button>
+  <span style="flex:1"></span>
+  <label style="font-size:13px"><input type="checkbox" id="cb" checked /> Show annotations</label>
+</div>
+<p class="note" id="note"></p>
+
+<div class="win" id="win">
+  <aside class="side" id="side"></aside>
+  <main class="main" id="main"></main>
+  <aside class="sources" id="sources"></aside>
+
+  <!-- Settings modal: opens over whatever you were doing; Esc or × returns you there -->
+  <div class="scrim" id="scrim">
+    <div class="settings" role="dialog" aria-modal="true" aria-label="Settings">
+      <nav id="snav"></nav>
+      <section class="pane">
+        <div class="pane-hd"><h3 id="stitle"></h3><button class="iconbtn" data-close title="Close (Esc)"></button></div>
+        <div class="pane-body" id="sbody"></div>
+        <div class="savebar" id="savebar"><span>1 task model change is not saved yet</span><button class="btn" data-discard>Discard</button><button class="btn primary" data-discard>Save changes</button></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+const S = (d, extra = '') => `<svg class="i" viewBox="0 0 24 24" ${extra}>${d}</svg>`;
+const I = {
+  mark: '<svg viewBox="0 0 16 16"><path d="M3 2.5h2.2v11H3zM6.8 2.5H9v11H6.8zM10.3 3.2l2.1-.6 2.6 10.5-2.1.6z" fill="#fff"/></svg>',
+  panelL: S('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>'),
+  panelR: S('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>'),
+  plus: S('<path d="M12 5v14M5 12h14"/>'),
+  compass: S('<circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/>'),
+  inbox: S('<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/>'),
+  pulse: S('<path d="M22 12h-4l-3 8-6-16-3 8H2"/>'),
+  lib: S('<path d="M4 4v16M8 4v16M12 4l4 16M18 4v16"/>'),
+  spark: S('<path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>'),
+  sparkles: S('<path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>'),
+  pen: S('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
+  search: S('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
+  dots: S('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'),
+  pin: S('<path d="M12 17v5M9 3h6l-1 6 4 3v2H6v-2l4-3z"/>'),
+  trash: S('<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>'),
+  share: S('<path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13"/>'),
+  gear: S('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>'),
+  chev: S('<path d="m6 9 6 6 6-6"/>', 'style="width:14px;height:14px"'),
+  up: S('<path d="M12 19V5M5 12l7-7 7 7"/>'),
+  x: S('<path d="M18 6 6 18M6 6l12 12"/>'),
+  check: S('<path d="M20 6 9 17l-5-5"/>'),
+  copy: S('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
+  retry: S('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'),
+  ext: S('<path d="M7 17 17 7M8 7h9v9"/>', 'style="width:12px;height:12px"'),
+  cpu: S('<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>'),
+  user: S('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+  bot: S('<rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 14h.01M15 14h.01"/>'),
+  link: S('<path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>'),
+  key: S('<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3"/>'),
+  db: S('<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>'),
+  people: S('<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/>'),
+  paper: S('<path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/>'),
+  book: S('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/>'),
+  leaf: S('<path d="M11 20A7 7 0 0 1 4 13c0-6 7-9 16-9 0 9-3 16-9 16z"/><path d="M4 21c4-6 8-9 12-11"/>'),
+  dumb: S('<path d="M6 6v12M18 6v12M3 9v6M21 9v6M6 12h12"/>'),
+  esc: '<kbd>Esc</kbd>',
+};
+
+/* ── Synthetic data (invented; no real creators or captures) ─────────── */
+const MODELS = [
+  { provider: 'OpenAI', id: 'gpt-5-mini', name: 'GPT-5 mini', note: 'Balanced', thinking: true, def: true, icon: 'openai' },
+  { provider: 'OpenAI', id: 'gpt-5', name: 'GPT-5', note: 'Most thorough, slower', thinking: true, icon: 'openai' },
+  { provider: 'Cerebras', id: 'qwen-3.8-27b', name: 'Qwen 3.8 27B', note: 'Fastest, no thinking', thinking: false, icon: 'cerebras' },
+];
+const LOOK = { openai: { bg: '#18181b', fg: '#fff', ic: I.sparkles }, cerebras: { bg: '#fdeee3', fg: '#c2410c', ic: I.cpu } };
+let model = 'gpt-5-mini', level = 'Medium';
+
+const CHATS = {
+  Pinned: [{ t: 'Weekly meal plan from my recipe saves' }],
+  Today: [{ t: 'Leadership advice for a new manager', id: 'cur' }, { t: 'Lower back stretches under 10 minutes', spin: true }],
+  Yesterday: [{ t: 'What have I saved about Lisbon?' }, { t: 'Sourdough starter troubleshooting', warn: true }],
+  'Previous 7 days': [{ t: 'Negotiating a raise — scripts I saved' }, { t: 'Rainy day activities for kids' }, { t: 'Compare the budgeting methods I saved' }, { t: 'Houseplants that survive low light' }],
+  October: [{ t: 'AI agent demos worth rewatching' }, { t: 'Beginner running plans' }, { t: 'Desk setup ideas' }],
+};
+const SOURCES = [
+  { n: 1, t: '10 skip-level questions to ask your boss’s boss', by: '@leadwell.daily', p: 'Instagram reel', g: 'linear-gradient(135deg,#3b4a42,#9fb3a5)', syn: 'Use skip-levels to show strategic curiosity: risks, untapped opportunities, success metrics.' },
+  { n: 4, t: 'One-to-one questions to ask your manager', by: '@managermoves', p: 'Facebook reel', g: 'linear-gradient(135deg,#5b4636,#d6b89a)', syn: 'Bring two or three focused questions, in your own words. “Is there anything I do that makes your job harder?”' },
+  { n: 6, t: 'Give leadership updates with the OWN structure', by: '@clearupdates', p: 'Facebook reel', g: 'linear-gradient(135deg,#2f3b57,#a3b1d1)', syn: 'Outcome, Why, what’s Next. Name blockers, offer options A and B, and share bad news early.' },
+];
+
+/* ── Sidebar ────────────────────────────────────────────────────────── */
+function sidebar(v) {
+  const q = v.query || '';
+  const groups = Object.entries(CHATS).map(([when, items]) => {
+    const rows = items.filter(c => !q || c.t.toLowerCase().includes(q.toLowerCase()));
+    if (!rows.length) return '';
+    return `<div class="when">${when}</div>` + rows.map(c => {
+      const t = q ? c.t.replace(new RegExp(`(${q})`, 'i'), '<mark>$1</mark>') : c.t;
+      const lead = c.spin ? '<span class="spin" title="Answering…"></span>' : c.warn ? '<span class="warn-dot" title="Last answer failed"></span>' : '';
+      const cls = (c.id === 'cur' && v.cur ? ' cur' : '') + (v.menuOn === c.t ? ' hover' : '');
+      return `<button class="chat${cls}" data-go="${c.id === 'cur' ? 'convo' : ''}" data-chat="${c.t}"><span class="t">${t}</span>${lead}<span class="more" data-rowmenu title="More">${I.dots}</span></button>`;
+    }).join('');
+  }).join('');
+  return `
+    <div class="brand"><span class="mark">${I.mark}</span>social knowledge<span class="grow"></span>
+      <button class="iconbtn" title="Collapse sidebar">${I.panelL}</button>
+      <button class="capture" title="Save a link (C)">${I.plus}</button></div>
+    <div class="goto">${I.compass}<span>Go to…</span><kbd>⌘K</kbd></div>
+    <div class="glabel">Library</div>
+    <button class="nav">${I.inbox}<span class="t">Inbox</span><span class="keys"><kbd>G</kbd><kbd>I</kbd></span></button>
+    <button class="nav">${I.pulse}<span class="t">Activity</span><span class="keys"><kbd>G</kbd><kbd>A</kbd></span></button>
+    <button class="nav">${I.lib}<span class="t">Knowledge base</span><span class="keys"><kbd>G</kbd><kbd>K</kbd></span></button>
+    <div class="glabel">Assistant</div>
+    <button class="nav${v.home ? ' cur' : ''}" data-go="home">${I.pen}<span class="t">New chat</span><span class="keys"><kbd>G</kbd><kbd>Q</kbd></span></button>
+    <div class="chatsearch${q ? ' active' : ''}">${I.search}<input id="chatq" placeholder="Search chats" value="${q}" /><kbd>/</kbd></div>
+    <div class="list" id="list">${groups || '<div class="when">No chats match “' + q + '”</div>'}
+      ${q ? '' : '<button class="showall">Show all 42 chats</button>'}
+    </div>
+    <div class="profile"><span class="avatar">S</span><span class="who">stephen</span>
+      <button class="iconbtn" data-settings="ai" title="Settings (⌘,)">${I.gear}</button></div>`;
+}
+
+/* ── Composer + model picker ─────────────────────────────────────────── */
+function modelChip() {
+  const m = MODELS.find(x => x.id === model); const L = LOOK[m.icon];
+  return `<button class="pickbtn" id="pickbtn" data-picker title="Choose model for this chat">
+    <span class="pdot" style="background:${L.bg};color:${L.fg}">${L.ic}</span>${m.name}${m.thinking ? `<span class="lvl">· ${level}</span>` : ''}${I.chev}</button>`;
+}
+function picker(open) {
+  const groups = ['OpenAI', 'Cerebras'].map(p => {
+    const rows = MODELS.filter(m => m.provider === p).map(m => {
+      const L = LOOK[m.icon]; const sel = m.id === model;
+      return `<button class="opt${sel ? ' picked' : ''}" data-model="${m.id}">
+        <span class="pdot" style="background:${L.bg};color:${L.fg}">${L.ic}</span>
+        <span class="txt"><b>${m.name}${m.def ? '<span class="deflt">Default</span>' : ''}</b><small>${m.note} · <code>${m.id}</code></small></span>
+        <span class="chk">${I.check}</span></button>` +
+        (sel && m.thinking ? `<div class="think"><div class="lbl"><span>Thinking</span>Higher = better synthesis, slower</div>
+          <div class="seg">${['Minimal', 'Low', 'Medium', 'High'].map(l => `<button data-level="${l}" class="${l === level ? 'on' : ''}">${l}</button>`).join('')}</div></div>` : '');
+    }).join('');
+    return `<div class="pgroup">${p}<span class="grow"></span><span class="ok">Connected</span></div>${rows}`;
+  }).join('');
+  return `<div class="picker${open ? ' open' : ''}" id="picker" role="dialog" aria-label="Model for this chat">
+    <div class="hd"><b>Model for this chat</b><small>From AI &amp; models</small></div>
+    ${groups}
+    <div class="pfoot"><button>${I.check} Set as default</button><button data-settings="ai">${I.gear} Manage models</button></div>
+  </div>`;
+}
+function composer(kind, v) {
+  const home = kind === 'home';
+  return `<div class="composer${v.focus ? ' focus' : ''}">
+    ${picker(v.picker)}
+    <textarea placeholder="${home ? 'Ask anything about what you’ve saved…' : 'Ask a follow-up…'}"></textarea>
+    <div class="row">
+      ${modelChip()}
+      <span class="grow"></span>
+      <button class="send" ${home ? 'data-go="convo"' : 'disabled'} title="Send (Enter)">${I.up}</button>
+    </div>
+  </div>`;
+}
+
+/* ── Conversation ────────────────────────────────────────────────────── */
+const c = n => `<button class="cite" data-cite="${n}">${n}</button>`;
+function thread() {
+  const m = MODELS.find(x => x.id === model);
+  return `
+  <div class="u">I’ve been saving stuff on how to be a good leader. I’m a new manager and want to get promoted — can you surface all of it?</div>
+  <div class="a"><span class="ibox">${I.sparkles}</span><div class="body">
+    <div class="meta"><span class="model">${m.name}${m.thinking ? ' · ' + level : ''}</span>·<span>3 saved posts</span>·<span>14:02</span></div>
+    <p>Three of your saves cover this. Here’s what they say, grouped by goal.</p>
+    <h4>Promotion strategy and visibility</h4>
+    <ul><li><b>10 skip-level questions to ask your boss’s boss</b> — use skip-levels to show strategic curiosity rather than to impress. Ask a few questions and follow up: current risks, untapped opportunities, what success looks like in three years, and which initiatives the leader is most excited about. ${c(1)}</li></ul>
+    <h4>New-manager one-to-ones</h4>
+    <ul><li><b>One-to-one questions to ask your manager</b> — bring two or three focused questions in your own words, not all ten. If you ask only one: “Is there anything I do that makes your job harder?” Others: where you can decide without asking, and what great looks like in six months. ${c(4)}</li></ul>
+    <h4>Leadership communication</h4>
+    <ul><li><b>Give leadership updates with the OWN structure</b> — Outcome, Why, what’s Next. When blocked, name the blocker, offer options A and B, and say which you lean toward. Share bad news early, and make any ask specific. ${c(6)}</li></ul>
+    <div class="acts">
+      <button class="srcbtn" data-sources><span class="faces">${SOURCES.map(s => `<i style="background:${s.g}"></i>`).join('')}</span>3 sources</button>
+      <button class="ghost" title="Copy answer">${I.copy}</button>
+      <button class="ghost" title="Retry">${I.retry}</button>
+      <button class="ghost" title="Retry with another model">${I.retry} Retry with… ${I.chev}</button>
+    </div>
+  </div></div>`;
+}
+function header(v) {
+  return `<div class="top line">
+    <button class="title" title="Rename or delete"><span>Leadership advice for a new manager</span>${I.chev}</button>
+    <span class="grow"></span>
+    <button class="ghost" title="Share or export">${I.share}</button>
+    <button class="toggle${v.sources ? ' on' : ''}" data-sources title="Show or hide sources (S)">${I.panelR} Sources <span class="n">3</span></button>
+  </div>`;
+}
+function sourcesPanel() {
+  return `<div class="inner">
+    <div class="hd"><b>Sources</b><small>3 saved posts</small><span class="grow"></span><button class="iconbtn" data-sources title="Hide sources (S)">${I.x}</button></div>
+    <div class="seglbl">Cited in latest answer</div>
+    <div class="cards">${SOURCES.map(s => `<div class="scard" data-card="${s.n}">
+      <div class="thumb" style="background:${s.g}"><span class="num">${s.n}</span></div>
+      <div class="txt"><b>${s.t}</b><small>${s.by} · ${s.p}</small><div class="syn">${s.syn}</div><span class="open">Open note ${I.ext}</span></div></div>`).join('')}</div>
+    <div class="earlier">Earlier answers in this chat keep their own sources. Click a <b>3 sources</b> button to switch.</div>
+  </div>`;
+}
+
+/* ── Views ───────────────────────────────────────────────────────────── */
+const VIEWS = {
+  home: {
+    note: 'New chat. “Ask” in the sidebar becomes “New chat”, and every past conversation is listed under it, grouped by date, so the History popover and the “Recent conversations” list on this page both go away. The composer’s dead “Whole archive” chip is replaced by a working model picker.',
+    main: v => `<div class="top"></div><div class="hero">
+      <h1>What do you want to find?</h1><p class="sub">Answers come only from your saved posts, with sources you can open.</p>
+      ${composer('home', v)}
+      <div class="chips">
+        <button class="chip" data-go="convo">${I.book} Summarise my leadership saves</button>
+        <button class="chip">${I.leaf} Recipes I saved this month</button>
+        <button class="chip">${I.dumb} Workouts under 20 minutes</button>
+      </div></div>`,
+    callouts: [{ x: 276, y: 640, t: 'Chat history lives here, always one click away. Current chat highlighted; spinner = still answering; amber dot = failed answer.' }, { x: 760, y: 560, t: 'Model picker replaces “Whole archive” (which did nothing).' }],
+    home: true, focus: true,
+  },
+  convo: {
+    note: 'Conversation. Header is a full-width bar (no floating white box), and History / New chat move to the sidebar. Citations show once per point instead of after every sentence. Sources are a toggleable right panel (button or S), flush to the window edge, and each card shows a short synopsis. The answer meta line says which model answered.',
+    main: v => `${header(v)}<div class="scroll"><div class="col">${thread()}</div></div><div class="dock">${composer('follow', v)}</div>`,
+    callouts: [{ x: 600, y: 160, t: 'Shows which model answered. “Retry with…” re-runs the answer on another model.' }, { x: 900, y: 600, t: 'One citation per point, not one per sentence. Hover a number to light up its source card.' }],
+    cur: true, sources: true,
+  },
+  picker: {
+    note: 'Model picker, opened from the composer. It lists the analysis models from every provider connected in Settings › AI & models, grouped by provider. Thinking level appears only for models that support it. The choice applies to this chat; new chats start on the default. “Manage models” opens the Settings modal on AI & models.',
+    main: v => VIEWS.convo.main(v),
+    callouts: [{ x: 760, y: 470, t: 'Only connected providers appear. If none is connected, the chip reads “Connect a model” and opens Settings.' }],
+    cur: true, sources: true, picker: true,
+  },
+  history: {
+    note: 'Search and manage chats. Press / to filter the sidebar list by title as you type. Each row has a ⋯ menu: Rename, Pin to top, Export as Markdown, Delete. Pinned chats stay above the dated groups.',
+    main: v => VIEWS.convo.main(v),
+    callouts: [{ x: 400, y: 380, t: 'Same actions as today’s title menu, plus Pin. Delete asks first.' }],
+    cur: true, sources: true, query: 'saved', menuOn: 'What have I saved about Lisbon?',
+  },
+  focus: {
+    note: 'Sources hidden, for a wider answer. The choice is remembered for you. Clicking any citation number or the “3 sources” button brings the panel back with that card highlighted.',
+    main: v => VIEWS.convo.main(v),
+    callouts: [{ x: 1040, y: 60, t: 'Toggle with this button or S. Remembered per user.' }],
+    cur: true, sources: false,
+  },
+  settings: {
+    note: 'Settings open as a modal over the current chat, from the gear or ⌘,. Close with × or Esc and you’re back where you were. Same sections as today’s Settings page. AI & models gains one proposed row, “Ask AI default”, which the composer picker reads from. Change a model to see the unsaved-changes bar, which replaces the browser leave-page prompt.',
+    main: v => VIEWS.convo.main(v),
+    callouts: [{ x: 1112, y: 150, t: 'Modal keeps the chat behind it, so you never lose your place.' }, { x: 1112, y: 660, t: 'New: the default model for Ask, separate from capture analysis.' }],
+    cur: true, sources: true, settings: 'ai',
+  },
+};
+
+/* ── Settings content (mirrors web/pages/settings.tsx sections) ─────── */
+const NAV = [
+  { label: 'Account', items: [['account', 'My account', I.user]] },
+  { label: 'Workspace', items: [['ai', 'AI & models', I.bot], ['connections', 'Connections', I.link], ['api', 'API keys', I.key], ['data', 'Data & export', I.db]] },
+  { label: 'Administration', items: [['people', 'People & access', I.people]] },
+];
+const sel = (t, mono) => `<span class="sel" data-dirty><span class="${mono ? 'mono' : ''}">${t}</span>${I.chev}</span>`;
+const row = (lbl, sub, val, lead = '') => `<div class="srow">${lead}<div class="lbl"><b>${lbl}</b>${sub ? `<small>${sub}</small>` : ''}</div><div class="val">${val}</div></div>`;
+const pico = k => `<span class="pico" style="background:${LOOK[k].bg};color:${LOOK[k].fg}">${LOOK[k].ic}</span>`;
+const TABS = {
+  ai: { title: 'AI & models', html: `
+    <p class="lede">Connect a provider, then choose which model handles each step.</p>
+    <div class="sect"><h5>Providers</h5><p>Keys are stored encrypted and never shown again after saving.</p><div class="cardlist">
+      ${row('OpenAI', 'API key sk-••••a1b2 · added 12 Sep 2026', '<span class="status ok">Connected</span><button class="btn">Change key</button>', pico('openai'))}
+      ${row('Cerebras', 'API key csk-••••9f30 · added 3 Oct 2026', '<span class="status ok">Connected</span><button class="btn">Change key</button>', pico('cerebras'))}
+    </div></div>
+    <div class="sect"><h5>Task models</h5><p>Each step can use a different connected provider. Choices apply after you save.</p><div class="cardlist">
+      ${row('Transcription', 'Turns a saved video’s audio into text.', sel('OpenAI') + sel('gpt-4o-mini-transcribe', 1))}
+      ${row('Analysis', 'Writes the title, summary and takeaways for each capture.', sel('OpenAI') + sel('gpt-5-mini', 1) + sel('Medium'))}
+      ${row('Ask AI default <span class="newtag">New</span>', 'New chats start on this model. Change it per chat from the composer.', sel('OpenAI') + sel('gpt-5-mini', 1) + sel('Medium'))}
+    </div></div>
+    <div class="sect"><h5>Test connection</h5><p>Runs a tiny request on each saved choice. Nothing is added to your archive.</p><div class="cardlist">
+      ${row('Last test', 'All three passed · today at 13:40', '<button class="btn">Run test</button>')}
+    </div></div>` },
+  account: { title: 'My account', html: `
+    <div class="sect"><div class="cardlist">
+      ${row('Name', '', 'stephen <button class="btn">Edit</button>')}
+      ${row('Email', '', '<span class="mono">stephen@example.invalid</span>')}
+      ${row('Password', 'Last changed 2 Aug 2026', '<button class="btn">Change password</button>')}
+      ${row('Session', 'Signed in on this browser', '<button class="btn">Sign out</button>')}
+    </div></div>
+    <div class="sect"><h5>Preferences</h5><p>Saved to your account.</p><div class="cardlist">
+      ${row('Show sources panel by default', 'You can always toggle it with S.', '<button class="switch on" data-switch></button>')}
+      ${row('Send messages with', '', '<span class="seg"><button class="on">Enter</button><button>⌘ Enter</button></span>')}
+    </div></div>` },
+  connections: { title: 'Connections', html: `
+    <div class="sect"><h5>Social sessions</h5><p>Used only to download posts you deliberately save.</p><div class="cardlist">
+      ${row('Instagram', 'Validated 2 days ago', '<span class="status ok">Connected</span><button class="btn">Replace cookies</button>')}
+      ${row('Facebook', 'Session expired yesterday', '<span class="status warn">Needs attention</span><button class="btn">Reconnect</button>')}
+    </div></div>
+    <div class="sect"><h5>Connected assistants</h5><p>Assistants that can search your archive over MCP.</p><div class="cardlist">
+      ${row('Claude', 'Connected 9 Oct 2026 · last used today', '<button class="btn danger">Disconnect</button>')}
+    </div></div>` },
+  api: { title: 'API keys', html: `
+    <div class="sect"><h5>Active keys</h5><p>For scripts and the iPhone Shortcut.</p><div class="cardlist">
+      ${row('iPhone Shortcut', 'sk_cap_••••7d2e · Capture only · created 1 Sep 2026', '<button class="btn danger">Revoke</button>')}
+      ${row('Laptop script', 'sk_••••41aa · created 20 Sep 2026', '<button class="btn danger">Revoke</button>')}
+    </div></div>
+    <div class="sect"><button class="btn primary">${I.plus} Create API key</button></div>` },
+  data: { title: 'Data & export', html: `
+    <div class="sect"><h5>Language</h5><p>Notes are written in this language. Transcripts keep the original.</p><div class="cardlist">
+      ${row('Note language', '', sel('English'))}
+    </div></div>
+    <div class="sect"><h5>Export your archive</h5><p>Markdown notes, transcripts and original media.</p><div class="cardlist">
+      ${row('Full archive', '312 captures · about 4.1 GB', '<button class="btn">Export</button>')}
+    </div></div>` },
+  people: { title: 'People & access', html: `
+    <div class="sect"><div class="cardlist">
+      ${row('stephen', 'Owner · you', '<span class="status ok">Admin</span>')}
+      ${row('demo-reviewer', 'Invited 14 Oct 2026', '<button class="btn">Manage</button>')}
+    </div></div>` },
+};
+function renderNav(tab) {
+  document.getElementById('snav').innerHTML = '<h2>Settings</h2>' + NAV.map(g => `<div class="glabel">${g.label}</div>` +
+    g.items.map(([id, l, ic]) => `<button data-tab="${id}" class="${id === tab ? 'on' : ''}">${ic}${l}</button>`).join('')).join('') +
+    `<div class="navfoot">${I.esc} to close · <kbd>⌘,</kbd> to open</div>`;
+}
+function showTab(tab) {
+  renderNav(tab);
+  document.getElementById('stitle').textContent = TABS[tab].title;
+  document.getElementById('sbody').innerHTML = TABS[tab].html;
+  document.getElementById('savebar').classList.remove('show');
+}
+function openSettings(tab) { closePicker(); document.getElementById('scrim').classList.add('open'); showTab(tab || 'ai'); }
+const closeSettings = () => document.getElementById('scrim').classList.remove('open');
+document.querySelector('[data-close]').innerHTML = I.x;
+
+/* ── Render loop ─────────────────────────────────────────────────────── */
+let state = 'convo', cur = {};
+function render(name, keep) {
+  if (!VIEWS[name]) return;
+  state = name;
+  const v = cur = keep ? { ...VIEWS[name], ...keep } : { ...VIEWS[name] };
+  document.getElementById('side').innerHTML = sidebar(v);
+  document.getElementById('main').innerHTML = v.main(v);
+  document.getElementById('sources').innerHTML = sourcesPanel();
+  document.getElementById('sources').classList.toggle('open', !!v.sources);
+  document.getElementById('note').textContent = v.note;
+  v.settings ? openSettings(v.settings) : closeSettings();
+  document.querySelectorAll('.rowmenu').forEach(m => m.remove());
+  if (v.menuOn) openRowMenu(document.querySelector(`.chat[data-chat="${v.menuOn}"] .more`));
+  document.querySelectorAll('.callout').forEach(c => c.remove());
+  const win = document.getElementById('win');
+  if (!keep) v.callouts.forEach(c => { const d = document.createElement('div'); d.className = 'callout'; d.style.left = c.x + 'px'; d.style.top = c.y + 'px'; d.textContent = c.t; win.appendChild(d); });
+  document.querySelectorAll('.review button').forEach(b => b.classList.toggle('on', b.dataset.go === name));
+}
+function rerender(patch) { const keep = { ...cur, ...patch }; render(state, keep); }
+function closePicker() { const p = document.getElementById('picker'); if (p) p.classList.remove('open'); }
+function openRowMenu(anchor) {
+  document.querySelectorAll('.rowmenu').forEach(m => m.remove());
+  if (!anchor) return;
+  const win = document.getElementById('win').getBoundingClientRect(), r = anchor.getBoundingClientRect();
+  const m = document.createElement('div'); m.className = 'rowmenu';
+  m.style.left = (r.left - win.left - 4) + 'px'; m.style.top = (r.bottom - win.top + 4) + 'px';
+  m.innerHTML = `<div class="it">${I.pen} Rename</div><div class="it">${I.pin} Pin to top</div><div class="it">${I.share} Export as Markdown</div><hr><div class="it danger">${I.trash} Delete…</div>`;
+  document.getElementById('win').appendChild(m);
+}
+function highlight(n) {
+  document.querySelectorAll('.cite').forEach(e => e.classList.toggle('hl', e.dataset.cite === n));
+  document.querySelectorAll('.scard').forEach(e => e.classList.toggle('hl', e.dataset.card === n));
+}
+
+document.addEventListener('click', e => {
+  const t = e.target;
+  if (t.closest('.review [data-go]')) return render(t.closest('[data-go]').dataset.go);
+  const st = t.closest('[data-settings]'); if (st) return openSettings(st.dataset.settings);
+  const tb = t.closest('[data-tab]'); if (tb) return showTab(tb.dataset.tab);
+  if (t.closest('[data-close]') || t.id === 'scrim') return closeSettings();
+  if (t.closest('[data-discard]')) return document.getElementById('savebar').classList.remove('show');
+  if (t.closest('[data-dirty]')) return document.getElementById('savebar').classList.add('show');
+  const sw = t.closest('[data-switch]'); if (sw) return sw.classList.toggle('on');
+  const sg = t.closest('.seg button:not([data-level])'); if (sg) { sg.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === sg)); return; }
+  if (t.closest('[data-rowmenu]')) { e.stopPropagation(); return openRowMenu(t.closest('[data-rowmenu]')); }
+  if (!t.closest('.rowmenu')) document.querySelectorAll('.rowmenu').forEach(m => m.remove());
+  if (t.closest('[data-picker]')) { const p = document.getElementById('picker'); p.classList.toggle('open'); return; }
+  const md = t.closest('[data-model]'); if (md) { model = md.dataset.model; return rerender({ picker: true }); }
+  const lv = t.closest('[data-level]'); if (lv) { level = lv.dataset.level; return rerender({ picker: true }); }
+  if (!t.closest('#picker')) closePicker();
+  const ci = t.closest('[data-cite]');
+  if (ci) { if (!document.getElementById('sources').classList.contains('open')) rerender({ sources: true, picker: false }); return highlight(ci.dataset.cite); }
+  if (t.closest('[data-sources]')) return rerender({ sources: !document.getElementById('sources').classList.contains('open'), picker: false });
+  const go = t.closest('[data-go]'); if (go && go.dataset.go) return render(go.dataset.go);
+});
+document.addEventListener('mouseover', e => { const ci = e.target.closest('[data-cite]'); if (ci) highlight(ci.dataset.cite); });
+document.addEventListener('input', e => { if (e.target.id === 'chatq') { const q = e.target.value; rerender({ query: q, menuOn: null }); const i = document.getElementById('chatq'); i.focus(); i.setSelectionRange(q.length, q.length); } });
+document.addEventListener('keydown', e => {
+  if (e.key === ',' && e.metaKey) { e.preventDefault(); return openSettings('ai'); }
+  if (e.key === 'Escape') { closePicker(); document.querySelectorAll('.rowmenu').forEach(m => m.remove()); return closeSettings(); }
+  if (document.getElementById('scrim').classList.contains('open')) return;
+  if (['TEXTAREA', 'INPUT'].includes(e.target.tagName)) return;
+  if (e.key === '/') { e.preventDefault(); document.getElementById('chatq').focus(); }
+  if ((e.key === 's' || e.key === 'S') && state !== 'home') rerender({ sources: !document.getElementById('sources').classList.contains('open'), picker: false });
+});
+document.getElementById('cb').addEventListener('change', e => document.getElementById('win').classList.toggle('callouts-off', !e.target.checked));
+render('convo');
+</script>
+</body>
+</html>

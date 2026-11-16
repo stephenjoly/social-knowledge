@@ -163,7 +163,7 @@ test("shows a useful library home and opens category, topic, and capture", async
   await expect(note.getByRole("heading", { name: "Key takeaways" })).toBeVisible();
   await expect(note).not.toContainText("library-home-fixture.md");
   await page.screenshot({ path: "test-results/library-note-navigation.png", fullPage: true });
-  await note.getByRole("button", { name: "Back to Knowledge base", exact: true }).click();
+  await note.getByRole("button", { name: "Close note", exact: true }).click();
   await expect(note).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1, name: "Strength Training" })).toBeVisible();
 

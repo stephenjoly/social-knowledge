@@ -1,0 +1,94 @@
+<!doctype html>
+<!--
+  Frame source for the synthetic demo clips. make-media.sh screenshots each
+  slide with headless Chrome and ffmpeg stitches them into silent MP4s.
+  Everything here is invented; no real creator, post or archive media.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+@font-face { font-family: Inter; src: url("../fonts/inter-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; }
+* { box-sizing: border-box; margin: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body { font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+.slide { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 9vw; color: #fff; }
+.handle { position: absolute; top: 6vh; left: 9vw; display: flex; align-items: center; gap: 2.4vw; font-size: max(13px, 3.2vmin); font-weight: 600; opacity: .92; }
+.handle i { width: 6vmin; height: 6vmin; border-radius: 50%; background: rgb(255 255 255 / 22%); display: grid; place-items: center; font-style: normal; font-size: 3vmin; }
+.num { font-size: 9vmin; font-weight: 700; letter-spacing: -.04em; opacity: .38; margin-bottom: 2vh; }
+h1 { font-size: 7.4vmin; line-height: 1.12; font-weight: 700; letter-spacing: -.03em; max-width: 92%; }
+p { margin-top: 2.6vh; font-size: 3.8vmin; line-height: 1.35; opacity: .82; max-width: 88%; }
+.bar { position: absolute; left: 9vw; right: 9vw; bottom: 9vh; display: flex; gap: 1.4vw; }
+.bar b { flex: 1; height: 4px; border-radius: 2px; background: rgb(255 255 255 / 26%); }
+.bar b.on { background: #fff; }
+.tag { position: absolute; bottom: 4vh; left: 9vw; font-size: max(10px, 2.2vmin); letter-spacing: .02em; opacity: .55; }
+.shape { position: absolute; right: -12vmin; top: 18vh; width: 62vmin; height: 62vmin; border-radius: 50%; background: rgb(255 255 255 / 6%); }
+.landscape .slide { padding: 0 12vw; }
+.landscape h1 { font-size: 8.6vmin; max-width: 70%; }
+.landscape .handle, .landscape .bar, .landscape .tag { left: 12vw; }
+.landscape .bar { right: 12vw; }
+.sky { position: absolute; inset: 0; }
+.sky .sun { position: absolute; width: 22vmin; height: 22vmin; border-radius: 50%; right: 16vw; top: 14vh; background: #f6d8a8; opacity: .9; }
+.sky .hill { position: absolute; left: -10%; right: -10%; border-radius: 50% 50% 0 0; }
+.sky .roofs { position: absolute; left: 0; right: 0; bottom: 30%; height: 18%; display: flex; align-items: flex-end; gap: 1.5%; padding: 0 4%; }
+.sky .roofs span { flex: 1; border-radius: 2px 2px 0 0; }
+</style>
+</head>
+<body>
+<script>
+const CLIPS = {
+  skip: { bg: '#2f4a3c', handle: 'leadwell.daily', ini: 'L', slides: [
+    ['', '10 skip-level questions to ask your boss’s boss', 'Part 1 of 2'],
+    ['01', 'What risk keeps you up at night right now?', 'Shows you think about the business, not just your team.'],
+    ['02', 'Where do you think we are under-investing?', 'Untapped opportunities are where promotions come from.'],
+    ['03', 'What does success look like in three years?', 'Anchor your plans to their horizon.'],
+    ['04', 'Which initiative are you most excited about?', 'Then follow up a month later.'],
+    ['', 'Ask two or three. Not all ten.', 'Follow for part 2'],
+  ]},
+  oneone: { bg: '#4a3a2e', handle: 'managermoves', ini: 'M', slides: [
+    ['', 'Ask your manager this in your next one-to-one', ''],
+    ['01', '“Is there anything I do that makes your job harder?”', 'If you only ask one question, ask this.'],
+    ['02', '“Where can I decide without checking with you?”', 'Agree your decision space early.'],
+    ['03', '“What does great look like in six months?”', 'Write the answer down.'],
+    ['', 'Bring two or three. In your own words.', ''],
+  ]},
+  own: { bg: '#2e3850', handle: 'clearupdates', ini: 'C', slides: [
+    ['', 'Updating leadership? Use OWN.', ''],
+    ['O', 'Outcome', 'Lead with the result or the decision you need.'],
+    ['W', 'Why it matters', 'One sentence of context. No history lesson.'],
+    ['N', 'What’s next', 'Owner, date, and the risk you are watching.'],
+    ['', 'Blocked? Bring option A and option B.', 'Say which one you lean toward.'],
+  ]},
+  sourdough: { bg: '#5a4630', handle: 'crumb.lab', ini: 'C', landscape: true, slides: [
+    ['', 'Reviving a sluggish sourdough starter', 'Three changes, one week'],
+    ['1', 'Feed at 1 : 5 : 5', 'Starter, flour, water by weight.'],
+    ['2', 'Keep it near 26 °C', 'The top of the fridge or an oven with the light on.'],
+    ['3', 'Use it at peak, 4–6 hours after feeding', 'Domed, bubbly, and smelling of yoghurt.'],
+  ]},
+  lisbon: { photo: true, handle: 'tram28.notes', ini: 'T', slides: [
+    ['', 'Miradouro da Senhora do Monte', 'Highest viewpoint. Go 40 minutes before sunset.', ['#e9b48f', '#c98a6b', '#6c5a6e', '#3b3f55']],
+    ['', 'Miradouro de Santa Luzia', 'Tiles, bougainvillea, river view. Busy at noon.', ['#a9c6d9', '#86a9bf', '#c5a483', '#7d6552']],
+    ['', 'Portas do Sol', 'Five minutes on foot from Santa Luzia.', ['#f0c98f', '#d89a6a', '#8f6f5c', '#4d4a52']],
+    ['', 'São Pedro de Alcântara', 'Kiosk, benches, castle view. Good after dark.', ['#7f8fb3', '#5d6d94', '#b0866b', '#3a3550']],
+  ]},
+};
+const q = new URLSearchParams(location.search);
+const clip = CLIPS[q.get('clip') || 'skip'];
+const i = Number(q.get('i') || 0);
+const [num, title, sub, pal] = clip.slides[i];
+if (clip.landscape) document.documentElement.classList.add('landscape');
+if (clip.photo) document.documentElement.classList.add('photo');
+const bar = clip.slides.map((_, k) => `<b class="${k <= i ? 'on' : ''}"></b>`).join('');
+const sky = pal ? `<div class="sky" style="background:linear-gradient(${pal[0]}, ${pal[1]} 60%)">
+  <span class="sun"></span>
+  <span class="hill" style="bottom:-6%;height:42%;background:${pal[2]}"></span>
+  <span class="roofs">${[38, 62, 48, 80, 55, 70, 44, 66, 52].map((h, k) => `<span style="height:${h}%;background:${k % 2 ? pal[3] : pal[2]}"></span>`).join('')}</span>
+  <span class="hill" style="bottom:-14%;height:30%;background:${pal[3]}"></span></div>` : '<span class="shape"></span>';
+document.body.innerHTML = `<div class="slide" style="background:${clip.bg || pal[3]}">${sky}
+  <div class="handle"><i>${clip.ini}</i>@${clip.handle}</div>
+  ${clip.photo ? '' : `${num ? `<div class="num">${num}</div>` : ''}<h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}`}
+  ${clip.photo ? '' : `<div class="bar">${bar}</div>`}
+  <div class="tag">Synthetic demo ${clip.photo ? 'image' : 'clip'} · Social Knowledge mock-up</div></div>`;
+</script>
+</body>
+</html>

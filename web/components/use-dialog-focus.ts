@@ -1,7 +1,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 
 const focusable =
-  'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, video[controls], [tabindex]:not([tabindex="-1"])';
 
 /**
  * Modal focus contract: focus moves into the dialog, Tab cycles inside it,
@@ -23,9 +23,12 @@ export function useDialogFocus(
       const initial =
         dialog.querySelector<HTMLElement>("[data-autofocus]") ??
         dialog.querySelector<HTMLElement>(focusable);
-      initial?.focus();
+      initial?.focus({ preventScroll: true });
     }
     const onKey = (event: KeyboardEvent) => {
+      // Nested or later modal layers own the keyboard, including Escape.
+      const layers = document.querySelectorAll<HTMLElement>('[aria-modal="true"]');
+      if (layers[layers.length - 1] !== ref.current) return;
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
@@ -53,7 +56,9 @@ export function useDialogFocus(
     window.addEventListener("keydown", onKey, true);
     return () => {
       window.removeEventListener("keydown", onKey, true);
-      if (opener?.isConnected) opener.focus();
+      requestAnimationFrame(() => {
+        if (opener?.isConnected) opener.focus({ preventScroll: true });
+      });
     };
   }, [ref]);
 }

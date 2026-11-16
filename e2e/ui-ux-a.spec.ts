@@ -143,7 +143,7 @@ test("03,18 missing AI retains the URL and opens setup with a return/retry route
   await page.getByRole("button", { name: "Close capture", exact: true }).click();
   await page.locator(".inbox-empty").getByRole("button", { name: "Finish AI setup", exact: true }).click();
   await expect(page.getByRole("heading", { name: "AI & models", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Back to archive", exact: true }).click();
+  await page.getByRole("button", { name: "Close Settings", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
   const url = "https://www.instagram.com/reel/qa-missing-ai/";
   const response = page.waitForResponse((res) => res.url().endsWith("/api/v1/jobs") && res.request().method() === "POST");
@@ -170,7 +170,7 @@ test("03,18 missing AI retains the URL and opens setup with a return/retry route
   expect(stillRetained.job.status).toBe("failed");
   expect(stillRetained.job.errorCode).toBe("ai_setup_required");
   expect(stillRetained.job.normalizedUrl).toBe(url.replace(/\/$/, ""));
-  await page.getByRole("button", { name: /back to capture|return to capture/i }).click();
+  await page.getByRole("dialog", { name: "Settings", exact: true }).getByRole("button", { name: /back to capture|return to capture/i }).click();
   await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
   await expect(page.locator(`[data-job-row="${body.job.id}"]`)).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("region", { name: "Capture details" })).toContainText(/AI|setup/i);
@@ -188,8 +188,8 @@ test("01,07,28 expired connection opens Connections and returns to the same mobi
   await expect(failure).toContainText(/reconnect.*retry/i);
   await failure.getByRole("button", { name: "Reconnect Facebook", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Connections", exact: true })).toBeVisible();
-  await expect(page).toHaveURL(/tab=settings/);
-  await page.getByRole("button", { name: /back to capture|return to capture/i }).click();
+  await expect(page).toHaveURL(/settings=/);
+  await page.getByRole("dialog", { name: "Settings", exact: true }).getByRole("button", { name: /back to capture|return to capture/i }).click();
   const inspector = page.getByRole("region", { name: "Capture details" });
   await expect(inspector).toContainText("fixture-failed");
   await expect(inspector).toBeInViewport();
@@ -273,7 +273,7 @@ test("17,20 navigation palette wording and iPhone guided setup work by keyboard/
   await page.getByRole("button", { name: "Capture a post", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: /iPhone/i }).click();
   await expect(page.getByRole("heading", { name: "API keys", exact: true })).toBeVisible();
-  await expect(page).toHaveURL(/tab=settings/);
+  await expect(page).toHaveURL(/settings=/);
   await expect(page.getByRole("region", { name: "Social Knowledge Shortcut" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Setup guide", exact: true })).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByRole("button", { name: "Create Shortcut key", exact: true })).toBeVisible();

@@ -48,7 +48,7 @@ describe("AI connection diagnostics", () => {
     await service.verifyAndSave(user.id, "openai", "sk-diagnostic-placeholder");
     service.saveSelections(user.id, {
       transcription: { provider: "openai", model: config.transcriptionModel },
-      analysis: { provider: "openai", model: "gpt-5", thinkingLevel: "high" },
+      analysis: { provider: "openai", model: "gpt-6-luna", thinkingLevel: "high" },
     });
     return { config, fetch, service, store, user };
   }
@@ -118,26 +118,26 @@ describe("AI connection diagnostics", () => {
     expect(analysis).toMatchObject({
       ok: true,
       code: "ok",
-      selection: { provider: "openai", model: "gpt-5", thinkingLevel: "high" },
+      selection: { provider: "openai", model: "gpt-6-luna", thinkingLevel: "high" },
     });
     expect(ask).toMatchObject({
       ok: true,
       code: "ok",
-      selection: { provider: "openai", model: "gpt-5", thinkingLevel: "high" },
+      selection: { provider: "openai", model: "gpt-6-luna", thinkingLevel: "high" },
     });
     expect(analysis.checkedAt).toEqual(expect.any(String));
     expect(analysis.durationMs).toBeGreaterThanOrEqual(0);
     expect(requestBodies).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          model: "gpt-5",
+          model: "gpt-6-luna",
           store: false,
           max_output_tokens: 2048,
           reasoning: { effort: "high" },
           text: expect.objectContaining({ format: expect.any(Object) }),
         }),
         expect.objectContaining({
-          model: "gpt-5",
+          model: "gpt-6-luna",
           store: false,
           max_output_tokens: 2048,
           reasoning: { effort: "high" },

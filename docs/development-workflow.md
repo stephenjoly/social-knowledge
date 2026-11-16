@@ -18,7 +18,8 @@ origin/staging -> codex feature branch -> PR preview/review -> staging
 
 - Make focused commits and stage only task-owned paths. Never commit secrets, cookies, databases, media, vault content, exports, or unrelated changes.
 - Push meaningful checkpoints before pausing or handing off. State honestly when work remains local or a push fails.
-- Open a draft PR targeting `staging` early so checks, discussion, and the Dokploy preview are visible.
+- Follow the shared [agent-os CI efficiency skill](https://github.com/stephenjoly/agent-os/blob/main/skills/ci-efficiency/SKILL.md) for local iteration, batching pushes, and diagnosing retries. Open a draft PR targeting `staging` after a coherent local checkpoint or when preview/review is needed. Draft PRs still run checks and preview builds.
+- CI cancels superseded validation runs for the same PR/branch; unrelated PRs remain independent. Keep both PR validation and post-merge branch validation, which test different repository states.
 - Before final review, fetch and compare against both the remote feature branch and `origin/staging`. Merge current staging into an already-published feature branch rather than rewriting shared history.
 - Run focused checks while iterating and `npm run check` before merge. Browser-facing changes also require preview acceptance.
 

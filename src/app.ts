@@ -1,9 +1,11 @@
+import type { AskSelection } from "./db.js";
 import { createReadStream } from "node:fs";
 import { randomBytes, randomUUID } from "node:crypto";
-import { stat } from "node:fs/promises";
+import { stat, readFile } from "node:fs/promises";
 import path from "node:path";
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
+import httpProxy from "@fastify/http-proxy";
 import fastifyStatic from "@fastify/static";
 import { hash, verify } from "@node-rs/argon2";
 import Fastify, { type FastifyRequest } from "fastify";
@@ -40,6 +42,7 @@ import {
   thinkingLevels,
 } from "./ai-providers.js";
 import { AskService } from "./ask.js";
+import { ASK_ATTEMPT_TIMEOUT_MS } from "./ask-limits.js";
 import { registerOAuth } from "./oauth.js";
 import { registerMcp } from "./mcp.js";
 import {
@@ -51,6 +54,13 @@ const submitSchema = z.object({
   url: z.string().min(1).max(4096),
   note: z.string().max(2000).optional(),
 });
+const askSelectionSchema = z
+  .object({
+    provider: z.enum(aiProviderIds),
+    model: z.string().trim().min(1).max(200),
+    thinkingLevel: z.enum(thinkingLevels).nullable(),
+  })
+  .strict();
 const requestIdSchema = z
   .string()
   .trim()
@@ -224,9 +234,23 @@ export function buildApp(
   platformConnectionService = new PlatformConnectionService(store, config),
   aiProviderService = new AiProviderService(store, config),
   askService?: Pick<AskService, "answer">,
+  afterConversationRecovery?: () => void,
 ) {
   const app = Fastify({
-    logger: { level: config.logLevel },
+    logger: {
+      level: config.logLevel,
+      serializers: {
+        req: (request) => ({
+          method: request.method,
+          url: request.url?.replace(/(\/ingest\/array\/)[^/]+/g, "$1[redacted]"),
+          host: request.headers.host ?? "",
+          remoteAddress: request.socket.remoteAddress ?? "",
+          remotePort: request.socket.remotePort ?? 0,
+        }),
+        source: (value) => typeof value === "string"
+          ? value.replace(/(\/array\/)[^/]+/g, "$1[redacted]") : value,
+      },
+    },
     bodyLimit: 64 * 1024,
     trustProxy: config.trustedProxies.length ? config.trustedProxies : false,
   });
@@ -299,7 +323,15 @@ export function buildApp(
     new AskService(aiProviderService.routedClient(), config, store);
   const knowledgeExporter = new KnowledgeExporter(store, config);
   let exportCleanup: NodeJS.Timeout | null = null;
+  let conversationRecovery: NodeJS.Timeout | null = null;
+  const recoverConversations = () => {
+    store.recoverInterruptedConversationAttempts();
+    afterConversationRecovery?.();
+  };
   app.addHook("onReady", async () => {
+    recoverConversations();
+    conversationRecovery = setInterval(recoverConversations, 30000);
+    conversationRecovery.unref();
     await knowledgeExporter.recoverInterrupted();
     await knowledgeExporter.cleanup();
     exportCleanup = setInterval(
@@ -315,6 +347,7 @@ export function buildApp(
   });
   app.addHook("onClose", async () => {
     if (exportCleanup) clearInterval(exportCleanup);
+    if (conversationRecovery) clearInterval(conversationRecovery);
   });
   const streamAnswer = async (
     request: any,
@@ -324,7 +357,15 @@ export function buildApp(
     assistantId: string,
     question: string,
     smokeMode?: "failure" | "slow" | "stream" | "complete",
+    selection?: AskSelection,
   ) => {
+    if (selection)
+      store.setConversationAttemptSelection(
+        userId,
+        conversationId,
+        assistantId,
+        selection,
+      );
     reply.hijack();
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -345,11 +386,12 @@ export function buildApp(
     const timer = setTimeout(() => {
       timedOut = true;
       controller.abort();
-    }, 60000);
+    }, ASK_ATTEMPT_TIMEOUT_MS);
     reply.raw.on("close", () => {
       if (!finished) controller.abort();
     });
     send("started", { assistantId });
+    if (selection) send("model", { assistantId, selection });
     try {
       if (smokeMode === "failure") throw new Error("smoke_failure");
       if (smokeMode === "slow")
@@ -422,19 +464,35 @@ export function buildApp(
         send("completed", { assistantId });
         return;
       }
-      const result = await aiProviderService.runForUser(userId, () =>
-        ask.answer({
-          userId,
-          conversationId,
-          assistantId,
-          question,
-          signal: controller.signal,
-          onDelta: (text) => send("delta", { text }),
-          onStatus: (status) => send("status", { assistantId, status }),
-        }),
+      const result = await aiProviderService.runForUser(
+        userId,
+        () =>
+          ask.answer({
+            userId,
+            conversationId,
+            assistantId,
+            question,
+            signal: controller.signal,
+            onDelta: (text) => send("delta", { text }),
+            onStatus: (status) => send("status", { assistantId, status }),
+          }),
+        selection?.provider,
+        selection?.model,
+        selection?.thinkingLevel,
       );
       request.log.info(
-        { conversationId, assistantId, retrieval: result.diagnostics },
+        {
+          conversationId,
+          assistantId,
+          retrieval: {
+            action: result.diagnostics.action,
+            selectedCount: result.diagnostics.selected.length,
+            reusedCount: result.diagnostics.reusedCaptureIds.length,
+            compacted: result.diagnostics.compacted,
+            compactionFallback: result.diagnostics.compactionFallback,
+            estimatedContextTokens: result.diagnostics.estimatedContextTokens,
+          },
+        },
         "Ask AI retrieval completed",
       );
       send("sources", {
@@ -486,6 +544,41 @@ export function buildApp(
   };
   app.register(cookie);
   app.register(rateLimit, { global: false });
+  const analyticsHeaders = (_request: unknown, headers: Record<string, string | string[] | undefined>) => ({
+    accept: typeof headers.accept === "string" ? headers.accept : undefined,
+    "content-type": typeof headers["content-type"] === "string" ? headers["content-type"] : undefined,
+    "user-agent": typeof headers["user-agent"] === "string" ? headers["user-agent"] : undefined,
+  });
+  app.register(async (analyticsProxy) => {
+    // The SDK sends compressed binary payloads as text/plain. Fastify's default
+    // text parser decodes them as UTF-8 and rejects the resulting byte count.
+    analyticsProxy.addContentTypeParser("text/plain", (_request, payload, done) => done(null, payload));
+    analyticsProxy.register(httpProxy, {
+      upstream: "https://us-assets.i.posthog.com",
+      prefix: "/ingest/static",
+      rewritePrefix: "/static",
+      replyOptions: { rewriteRequestHeaders: analyticsHeaders },
+    });
+    analyticsProxy.register(httpProxy, {
+      upstream: "https://us.i.posthog.com",
+      prefix: "/ingest",
+      replyOptions: { rewriteRequestHeaders: analyticsHeaders },
+    });
+  });
+  // Generic public metadata never depends on a signed-in user's archive.
+  const publicOrigin = new URL(config.appUrl).origin
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+  const publicShell = async (file: string) =>
+    (await readFile(path.join(config.uiDir, file), "utf8")).replaceAll(
+      "__PUBLIC_ORIGIN__", publicOrigin,
+    ).replace("</head>", '<script type="module" src="/analytics.js"></script></head>');
+  app.get("/analytics/config.json", async (_request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return { key: config.posthogKey ?? null };
+  });
   app.register(fastifyStatic, {
     root: config.uiDir,
     prefix: "/",
@@ -518,7 +611,7 @@ export function buildApp(
       return reply.redirect(`/login?${params.toString()}`);
     if (params.has("tab") || params.has("job") || params.has("capture"))
       return reply.redirect(`/app?${params.toString()}`);
-    return reply.sendFile("landing/index.html", { cacheControl: false });
+    return reply.type("text/html; charset=utf-8").send(await publicShell("landing/index.html"));
   });
   app.get("/login", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -526,7 +619,7 @@ export function buildApp(
       new URL(request.raw.url!, "http://local.invalid").searchParams.get("returnTo"),
     );
     if (auth.user(request)) return reply.redirect(destination);
-    return reply.sendFile("index.html", { cacheControl: false });
+    return reply.type("text/html; charset=utf-8").send(await publicShell("index.html"));
   });
   app.get("/login/", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -537,7 +630,7 @@ export function buildApp(
       reply.header("Cache-Control", "no-store");
       if (!auth.user(request))
         return reply.redirect(`/login?${new URLSearchParams({ returnTo: request.raw.url! })}`);
-      return reply.sendFile("index.html", { cacheControl: false });
+      return reply.type("text/html; charset=utf-8").send(await publicShell("index.html"));
     });
   }
   app.get("/index.html", async (_request, reply) => {
@@ -1505,6 +1598,7 @@ export function buildApp(
     protectedApi.put("/api/v1/ai-settings", async (request, reply) => {
       const body = z
         .object({
+          ask: askSelectionSchema.nullable().optional(),
           transcription: z
             .object({
               provider: z.literal("openai"),
@@ -1523,7 +1617,9 @@ export function buildApp(
         })
         .refine(
           (value) =>
-            value.transcription !== undefined || value.analysis !== undefined,
+            value.transcription !== undefined ||
+            value.analysis !== undefined ||
+            value.ask !== undefined,
         )
         .safeParse(request.body);
       if (!body.success)
@@ -1753,9 +1849,13 @@ export function buildApp(
       const user = auth.user(request)!;
       const input = z
         .object({
-          defaultLanguage: z.string().trim().min(2).max(60),
-          translateForeign: z.boolean(),
+          defaultLanguage: z.string().trim().min(2).max(60).optional(),
+          translateForeign: z.boolean().optional(),
+          askSourcesPanel: z.boolean().optional(),
+          sendWith: z.enum(["enter", "mod-enter"]).optional(),
         })
+        .strict()
+        .refine((value) => Object.keys(value).length > 0)
         .safeParse(request.body);
       if (!input.success)
         return reply.code(400).send({ error: "invalid_request" });
@@ -1874,13 +1974,57 @@ export function buildApp(
     protectedApi.post("/api/v1/conversations", async (request, reply) => {
       const user = auth.user(request)!;
       const input = z
-        .object({ title: z.string().trim().min(1).max(100).optional() })
+        .object({
+          title: z.string().trim().min(1).max(100).optional(),
+          selection: askSelectionSchema.optional(),
+        })
+        .strict()
         .safeParse(request.body ?? {});
       if (!input.success)
         return reply.code(400).send({ error: "invalid_request" });
+      if (
+        input.data.selection &&
+        !aiProviderService.validAskSelection(user.id, input.data.selection)
+      )
+        return reply.code(400).send({ error: "invalid_selection" });
       return reply.code(201).send({
-        conversation: store.createConversation(user.id, input.data.title),
+        conversation: store.createConversation(
+          user.id,
+          input.data.title,
+          input.data.selection,
+        ),
       });
+    });
+    protectedApi.patch("/api/v1/conversations/:id", async (request, reply) => {
+      const user = auth.user(request)!;
+      const params = z
+        .object({ id: z.string().uuid() })
+        .safeParse(request.params);
+      const input = z
+        .object({
+          title: z.string().trim().min(1).max(100).optional(),
+          pinned: z.boolean().optional(),
+          selection: askSelectionSchema.nullable().optional(),
+        })
+        .strict()
+        .refine((value) => Object.keys(value).length > 0)
+        .safeParse(request.body);
+      if (!params.success || !input.success)
+        return reply.code(400).send({ error: "invalid_request" });
+      if (!store.getConversation(user.id, params.data.id))
+        return reply.code(404).send({ error: "not_found" });
+      if (
+        input.data.selection &&
+        !aiProviderService.validAskSelection(user.id, input.data.selection)
+      )
+        return reply.code(400).send({ error: "invalid_selection" });
+      return {
+        conversation: store.updateConversation(
+          user.id,
+          params.data.id,
+          input.data,
+        ),
+      };
     });
     protectedApi.get("/api/v1/conversations/:id", async (request, reply) => {
       const user = auth.user(request)!;
@@ -1902,8 +2046,6 @@ export function buildApp(
       { config: { rateLimit: { max: 30, timeWindow: "1 hour" } } },
       async (request, reply) => {
         const user = auth.user(request)!;
-        if (!aiProviderService.settings(user.id).readiness.ask)
-          return reply.code(428).send({ error: "analysis_provider_required" });
         const { id } = z
           .object({ id: z.string().uuid() })
           .parse(request.params);
@@ -1931,6 +2073,15 @@ export function buildApp(
           });
         }
         const requestId = input.data.requestId ?? randomUUID();
+        const conversation = store.getConversation(user.id, id);
+        if (!conversation)
+          return reply.code(404).send({ error: "conversation_not_found" });
+        const selection = aiProviderService.resolveAskSelection(
+          user.id,
+          conversation.selection,
+        );
+        if (!selection)
+          return reply.code(428).send({ error: "analysis_provider_required" });
         try {
           const turn = store.beginConversationTurn(
             user.id,
@@ -1963,6 +2114,7 @@ export function buildApp(
             turn.assistantId,
             input.data.message,
             smokeMode,
+            selection,
           );
         } catch (error) {
           const code = error instanceof Error ? error.message : "unknown";
@@ -1983,21 +2135,53 @@ export function buildApp(
       { config: { rateLimit: { max: 30, timeWindow: "1 hour" } } },
       async (request, reply) => {
         const user = auth.user(request)!;
-        if (!aiProviderService.settings(user.id).readiness.ask)
-          return reply.code(428).send({ error: "analysis_provider_required" });
         const { id, messageId } = z
           .object({ id: z.string().uuid(), messageId: z.string().uuid() })
           .parse(request.params);
         const input = z
-          .object({ requestId: requestIdSchema.optional() })
-          .safeParse(request.body);
+          .object({
+            requestId: requestIdSchema.optional(),
+            selection: askSelectionSchema.optional(),
+          })
+          .strict()
+          .safeParse(request.body ?? {});
         if (!input.success) {
           request.log.warn(
             { invalidFields: ["requestId"] },
             "Ask AI retry validation failed",
           );
-          return reply.code(400).send({ error: "invalid_request_id" });
+          return reply
+            .code(400)
+            .send({
+              error: input.error.issues.some(
+                (issue) => issue.path[0] === "selection",
+              )
+                ? "invalid_request"
+                : "invalid_request_id",
+            });
         }
+        const conversation = store.getConversation(user.id, id);
+        if (
+          !conversation ||
+          !conversation.messages.some(
+            (message) =>
+              message.id === messageId && message.role === "assistant",
+          )
+        )
+          return reply.code(404).send({ error: "not_found" });
+        if (
+          input.data.selection &&
+          !aiProviderService.validAskSelection(user.id, input.data.selection)
+        )
+          return reply.code(400).send({ error: "invalid_selection" });
+        const selection =
+          input.data.selection ??
+          aiProviderService.resolveAskSelection(
+            user.id,
+            conversation.selection,
+          );
+        if (!selection)
+          return reply.code(428).send({ error: "analysis_provider_required" });
         try {
           const attempt = store.beginConversationRetry(
             user.id,
@@ -2030,6 +2214,7 @@ export function buildApp(
             attempt.assistantId,
             attempt.question,
             smokeMode,
+            selection,
           );
         } catch (error) {
           const code = error instanceof Error ? error.message : "unknown";

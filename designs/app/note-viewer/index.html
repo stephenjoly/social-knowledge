@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Note viewer · compare A and B</title>
+<link rel="stylesheet" href="assets/app.css" />
+<style>
+body { overflow: auto; background: var(--canvas); }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 40px 32px 64px; }
+h1 { font-size: 28px; font-weight: 700; letter-spacing: -.8px; line-height: 1.2; }
+.lede { color: var(--muted-strong); margin: 8px 0 0; max-width: 760px; }
+.opts { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 32px; }
+.opt h2 { font-size: 17px; font-weight: 600; letter-spacing: -.4px; display: flex; align-items: center; gap: 8px; }
+.rec { font-size: 11.5px; font-weight: 600; color: var(--green-ink); background: var(--green-tint); border-radius: var(--radius-badge); padding: 1px 7px; }
+.opt p { color: var(--muted-strong); margin: 6px 0 12px; font-size: 13.5px; }
+.opt a.shot { display: block; border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; background: var(--surface); }
+.opt a.shot img { display: block; width: 100%; height: auto; }
+.links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.phones { display: flex; gap: 12px; margin-top: 12px; }
+.phones a { flex: 1; border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+.phones img { display: block; width: 100%; height: auto; }
+h3 { font-size: 15px; font-weight: 600; letter-spacing: -.2px; margin: 40px 0 10px; }
+table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; font-size: 13.5px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-top: 1px solid var(--hairline); }
+thead th { border-top: 0; font-size: 12px; color: var(--muted); font-weight: 500; background: var(--canvas); }
+tbody th { font-weight: 500; color: var(--ink); width: 22%; }
+td { color: var(--ink-soft); }
+ol { padding-left: 20px; color: var(--ink-soft); display: flex; flex-direction: column; gap: 6px; max-width: 820px; }
+.fine { color: var(--muted); font-size: 12.5px; margin-top: 24px; max-width: 820px; }
+@media (max-width: 760px) { .wrap { padding: 24px 16px 48px; } .opts { grid-template-columns: 1fr; } table { display: block; overflow-x: auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Note viewer: two ways to read a note in place</h1>
+  <p class="lede">These mock-ups explored how to replace the old full-page note viewer and its wide black portrait-video box. B was approved and implemented in the app; A remains an alternative proposal. Both prototypes open a note over the chat or Inbox, keep your place, and show portrait media at its own shape. All content and media are synthetic.</p>
+
+  <div class="opts">
+    <section class="opt">
+      <h2>B · Centered modal <span class="rec">Approved</span></h2>
+      <p>Built like Settings: a scrim, a 14px dialog, the original post on the left and the note on the right. Focused reading; ← → steps through the answer’s sources or the Inbox.</p>
+      <a class="shot" href="modal.html?ctx=ask&open=skip"><img src="screenshots/desktop-b-modal-ask-portrait.png" alt="Modal open over the Ask chat with a portrait video on the left and the note on the right" loading="lazy" /></a>
+      <div class="phones">
+        <a href="modal.html?ctx=ask&open=skip"><img src="screenshots/mobile-b-modal-ask-portrait.png" alt="Modal on a phone, full screen" loading="lazy" /></a>
+        <a href="modal.html?ctx=inbox&open=sourdough"><img src="screenshots/mobile-b-modal-inbox-landscape.png" alt="Modal on a phone with landscape video" loading="lazy" /></a>
+      </div>
+      <div class="links"><a class="btn primary" href="modal.html?ctx=ask">Open B from Ask</a><a class="btn" href="modal.html?ctx=inbox">Open B from Inbox</a></div>
+    </section>
+    <section class="opt">
+      <h2>A · Side panel</h2>
+      <p>Docks where Sources sits, or beside the Inbox list. The chat stays live next to it and you can resize the panel. On phones it becomes a bottom sheet.</p>
+      <a class="shot" href="side-panel.html?ctx=ask&open=skip"><img src="screenshots/desktop-a-panel-ask-portrait.png" alt="Side panel open next to the Ask chat" loading="lazy" /></a>
+      <div class="phones">
+        <a href="side-panel.html?ctx=ask&open=skip"><img src="screenshots/mobile-a-panel-ask-portrait.png" alt="Side panel as a bottom sheet on a phone" loading="lazy" /></a>
+        <a href="side-panel.html?ctx=inbox&open=lisbon"><img src="screenshots/mobile-a-panel-inbox-photos.png" alt="Bottom sheet with a photo carousel" loading="lazy" /></a>
+      </div>
+      <div class="links"><a class="btn primary" href="side-panel.html?ctx=ask">Open A from Ask</a><a class="btn" href="side-panel.html?ctx=inbox">Open A from Inbox</a></div>
+    </section>
+  </div>
+
+  <h3>How they differ</h3>
+  <table>
+    <thead><tr><th></th><th>B · Centered modal</th><th>A · Side panel</th></tr></thead>
+    <tbody>
+      <tr><th>Reading width</th><td>About 640px of note next to a 360px portrait player. Comfortable for long notes.</td><td>About 420px of note next to a 200px player. The chat shrinks to about 416px. Both columns stay readable but tight.</td></tr>
+      <tr><th>Context</th><td>Chat or Inbox stays visible, dimmed. It is not interactive until you close (Esc, ×, or click the scrim).</td><td>Chat or Inbox stays live: you can type a follow-up or click another Inbox row, and the panel swaps in place.</td></tr>
+      <tr><th>Portrait video</th><td>Large and natural, fitted to the dialog height. No black side bars.</td><td>Small and natural, about 200 × 355px.</td></tr>
+      <tr><th>Landscape video</th><td>Wider left column. The dialog shrinks to fit short notes.</td><td>Stacks above the tabs, so it takes a lot of the panel’s height.</td></tr>
+      <tr><th>Phone</th><td>Full screen, like the Settings modal on mobile.</td><td>90% bottom sheet with the chat visible above it.</td></tr>
+      <tr><th>Build cost</th><td>Reuses the Settings layer and the dialog focus hook. Lowest risk.</td><td>Needs a new docked region, a resize handle, scroll anchoring and non-modal focus rules.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Try it (about 3 minutes)</h3>
+  <ol>
+    <li>Open B from Ask. In the Sources panel, choose <b>Open note</b> on source 1. Press Play: the clip is silent and nothing plays until you press it.</li>
+    <li>Switch to <b>Transcript</b> and select a line: the video jumps to that point and the current line is highlighted. Open <b>3 claims to verify</b>, then <b>Details › Show all 14</b>.</li>
+    <li>Press <b>→</b> to go to the next source, then <b>Esc</b>. Focus returns to that source’s card and the chat has not scrolled.</li>
+    <li>Choose <b>Ask about this</b>: the note closes and the composer shows “About: …”.</li>
+    <li>Use the <b>Media</b> buttons in the review bar to see landscape video, photos and text-only posts.</li>
+    <li>Repeat in A. Type in the composer while the panel is open, drag the panel’s left edge, and click other Inbox rows.</li>
+    <li>Narrow the window below 760px to see each phone layout.</li>
+  </ol>
+  <p class="fine">Screenshots: <a href="screenshots/">screenshots/</a> (desktop at 1360 × 1000, phone at 390 × 844). Review bar URL options: <code>?ctx=ask|inbox</code>, <code>&amp;open=skip|portrait|landscape|images|none</code>, <code>&amp;tab=note|text|details</code>, <code>&amp;bar=0</code>. Prototype only: Open original, Move and the menu show a short message instead of acting.</p>
+</div>
+</body>
+</html>

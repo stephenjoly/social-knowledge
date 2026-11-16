@@ -15,3 +15,6 @@ output/playwright/
 
 # Screenshot and review artifacts
 artifacts/
+
+# Vitest runtime reports
+.vitest/

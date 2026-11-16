@@ -1,3 +1,4 @@
+import type { OpenCapture } from "../shared/types";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
@@ -141,7 +142,7 @@ function topicFacets(captures: ListedCapture[], topicsByCapture: Map<string, str
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
-export function Library({ onOpen }: { onOpen: (id: string) => void }) {
+export function Library({ onOpen }: { onOpen: OpenCapture }) {
   const [nodes, setNodes] = useState<LibraryNode[]>([]);
   const [unclassifiedCount, setUnclassifiedCount] = useState(0);
   const [treeState, setTreeState] = useState<"loading" | "ready" | "error">("loading");
@@ -282,7 +283,7 @@ export function Library({ onOpen }: { onOpen: (id: string) => void }) {
         onQuery={setQuery}
         onOpenNode={openNode}
         onOpenUnclassified={() => void navigateLibrary("unclassified")}
-        onOpenCapture={onOpen}
+        onOpenCapture={(id) => onOpen(id, { captureIds: (recent ?? []).map((item) => item.id), label: "Recently filed" })}
         onRetry={() => {
           setTreeState("loading");
           void loadTree();
@@ -359,7 +360,7 @@ export function Library({ onOpen }: { onOpen: (id: string) => void }) {
           </div>
         </div>
         {captures.length > 0 && (
-          <CaptureList captures={captures} onOpen={onOpen} wide />
+          <CaptureList captures={captures} onOpen={(id) => onOpen(id, { captureIds: captures.map((item) => item.id), label: "Needs a home" })} wide />
         )}
       </div>
     );
@@ -549,7 +550,7 @@ export function Library({ onOpen }: { onOpen: (id: string) => void }) {
                     <button
                       type="button"
                       className="kb-insight-source"
-                      onClick={() => onOpen(insight.capture.id)}
+                      onClick={() => onOpen(insight.capture.id, { captureIds: captures.map((item) => item.id), label: node.label })}
                     >
                       <CornerDownRight aria-hidden="true" />
                       <span className="kb-insight-source-label">
@@ -567,7 +568,7 @@ export function Library({ onOpen }: { onOpen: (id: string) => void }) {
             <p className="kb-empty">No insights have been extracted from these captures yet.</p>
           )}
         </Card>
-        <CaptureList captures={captures} onOpen={onOpen} />
+        <CaptureList captures={captures} onOpen={(id) => onOpen(id, { captureIds: captures.map((item) => item.id), label: node.label })} />
       </div>
     </div>
   );

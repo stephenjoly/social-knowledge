@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Note viewer · B · Centered modal</title>
+<link rel="stylesheet" href="assets/app.css" />
+<style>
+/*
+ * B · Centered modal. Same layer, scrim, radius and shadow as the Settings
+ * modal (.sm-layer / .sm-dialog). Left column = what the creator posted;
+ * right column = what Social Knowledge wrote about it.
+ */
+.nvm-layer { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 24px; background: var(--scrim); opacity: 0; transition: opacity 140ms ease; }
+.nvm-layer.in { opacity: 1; }
+.nvm-layer[hidden] { display: none; }
+.nvm { --mw: 400px; width: min(1120px, 100%); height: min(820px, 100%); background: var(--surface); border-radius: var(--radius-dialog); box-shadow: var(--shadow-dialog); overflow: hidden; display: grid;
+  grid-template-columns: var(--mw) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-areas: "media bar" "media head" "media tabs" "media body"; outline: none; }
+.nvm.k-images { --mw: 440px; }
+.nvm.k-landscape { --mw: 500px; --cap-lines: 8; }
+.nvm.k-landscape, .nvm.k-none { height: auto; max-height: min(820px, 100%); }
+.nvm.k-none { width: min(800px, 100%); grid-template-columns: minmax(0, 1fr); grid-template-areas: "bar" "head" "tabs" "body"; }
+.nvm .nv-media { grid-area: media; border-right: 1px solid var(--border); padding: 20px 20px 16px; }
+.nvm .nv-foot { margin-top: auto; }
+.nvm .nv-bar { grid-area: bar; padding: 12px 12px 0 32px; }
+.nvm .nv-head { grid-area: head; padding: 4px 32px 14px; }
+.nvm .nv-tabs { grid-area: tabs; padding: 0 20px 0 32px; }
+.nvm .nv-body { grid-area: body; overflow: auto; overscroll-behavior: contain; padding: 22px 32px 40px; }
+.nvm .nv-body:focus-visible { outline-offset: -2px; }
+
+@media (max-width: 760px) {
+  .nvm-layer { padding: 0; place-items: stretch; }
+  .nvm, .nvm.k-none, .nvm.k-landscape { width: 100%; height: 100%; max-height: none; border-radius: 0; display: block; overflow-y: auto; overscroll-behavior: contain; }
+  .nvm .nv-bar { position: sticky; top: 0; z-index: 3; height: 52px; padding: 0 6px 0 16px; background: var(--surface); border-bottom: 1px solid var(--hairline); }
+  .nvm .nv-media { border-right: 0; border-bottom: 1px solid var(--border); padding: 16px; }
+  .nvm .nv-stage.nv-fit { flex: none; height: min(44svh, 420px); }
+  .nvm .nv-src { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .nvm .nv-src .nv-who { flex: 1; }
+  .nvm .nv-src .btn { width: auto; }
+  .nvm .nv-cap { display: none; }
+  .nvm .nv-foot { display: none; }
+  .nvm .nv-head { padding: 16px 16px 12px; }
+  .nvm .nv-head h2 { font-size: 19px; }
+  .nvm .nv-tabs { position: sticky; top: 52px; z-index: 2; padding: 0 12px 0 16px; gap: 16px; }
+  .nvm .nv-tabs .ask span { display: none; }
+  .nvm .nv-tabs .ask { width: 32px; padding: 0; }
+  .nvm .nv-body { overflow: visible; padding: 18px 16px 48px; }
+}
+</style>
+</head>
+<body>
+<div class="rv" id="rv"></div>
+<div class="app" id="app"><aside class="side"></aside><main class="main"></main><aside class="sources" aria-label="Sources"></aside></div>
+<div class="nvm-layer" id="layer" hidden>
+  <div class="nv nvm" id="dlg" role="dialog" aria-modal="true" aria-labelledby="nv-title" tabindex="-1"></div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+(() => {
+const { NOTES, ASK_ORDER, INBOX_ORDER, kindOf, noteParts, wireNote, pauseAll, trapTab, toast, visibleOpener } = SK;
+const layer = document.getElementById('layer');
+const dlg = document.getElementById('dlg');
+const app = document.getElementById('app');
+const rv = document.getElementById('rv');
+let state = null; // { id, from, order, opener }
+
+function render(id, focusSel, tab) {
+  const order = state.order;
+  const index = order.indexOf(id);
+  const ask = state.from === 'ask';
+  const p = noteParts(id, {
+    ctxLabel: ask ? 'Source from <b>Leadership advice for a new manager</b>' : 'From <b>Inbox</b>',
+    index, total: order.length, fit: true,
+    pagerNoun: ask ? 'sources in this answer' : 'Inbox', pagerItem: ask ? 'source' : 'capture',
+    foot: `<kbd>Esc</kbd> to close · <kbd>←</kbd><kbd>→</kbd> ${ask ? 'sources' : 'captures'}`,
+  });
+  state.id = id;
+  const m = p.note.media;
+  dlg.className = `nv nvm k-${p.kind}`;
+  if (m) { dlg.style.setProperty('--ar', `${m.w} / ${m.h}`); dlg.style.setProperty('--arn', m.w / m.h); }
+  dlg.innerHTML = `<div class="nv-bar">${p.bar}</div>${p.media ? `<section class="nv-media" aria-label="Original post">${p.media}</section>` : ''}
+    <header class="nv-head">${p.head}</header><div class="nv-tabs" role="tablist" aria-label="Note sections">${p.tabs.replace('Ask about this', '<span>Ask about this</span>').replace('data-nv-ask', 'data-nv-ask aria-label="Ask about this"')}</div>
+    <div class="nv-body">${p.body}</div>`;
+  const wired = wireNote(dlg, id, {
+    onClose: close,
+    onStep: dir => step(dir),
+    onAsk: askAbout,
+    onTab: () => { if (matchMedia('(max-width: 760px)').matches) { const tabs = dlg.querySelector('.nv-tabs'); if (dlg.scrollTop > tabs.offsetTop - 52) dlg.scrollTop = tabs.offsetTop - 52; } else dlg.querySelector('.nv-body').scrollTop = 0; },
+  });
+  if (tab) { const t = dlg.querySelector(`#tab-${tab}`); if (t) wired.select(t); }
+  // Keep the underlying context in sync so closing lands on the note you ended on.
+  app.querySelectorAll('.scard, .irow').forEach(el => el.classList.toggle('viewing', (el.dataset.id || el.dataset.row) === id));
+  (dlg.querySelector(focusSel || '[data-nv-close]:not(.nv-back)') || dlg).focus();
+}
+function open(id, opener, from = 'ask', opts = {}) {
+  const fromCtx = from === 'inbox' || !ASK_ORDER.includes(id) ? 'inbox' : 'ask';
+  const firstOpen = !state;
+  state = { from: fromCtx, order: fromCtx === 'ask' ? ASK_ORDER : INBOX_ORDER, opener: firstOpen ? opener : state.opener };
+  if (firstOpen) {
+    layer.hidden = false;
+    requestAnimationFrame(() => layer.classList.add('in'));
+    app.inert = true; rv.inert = true;
+    document.addEventListener('keydown', onKey, true);
+  }
+  render(id, null, opts.tab);
+}
+function step(dir) {
+  const i = state.order.indexOf(state.id) + dir;
+  if (i < 0 || i >= state.order.length) return;
+  pauseAll(dlg);
+  render(state.order[i], `[data-nv-step="${dir}"]:not([disabled])`);
+}
+function close({ restoreFocus = true } = {}) {
+  if (!state) return;
+  pauseAll(dlg);
+  const back = visibleOpener(state.id) || state.opener;
+  state = null;
+  document.removeEventListener('keydown', onKey, true);
+  app.inert = false; rv.inert = false;
+  layer.classList.remove('in');
+  setTimeout(() => { if (!state) { layer.hidden = true; dlg.innerHTML = ''; } }, 150);
+  app.querySelectorAll('.viewing').forEach(el => el.classList.remove('viewing'));
+  if (restoreFocus && back?.isConnected) back.focus({ preventScroll: true });
+}
+function askAbout(id) {
+  const from = state.from;
+  close({ restoreFocus: false });
+  if (from !== 'ask') return toast('Prototype: starts a new chat with this note attached');
+  const about = document.getElementById('about');
+  about.innerHTML = `<span class="about"><span>About: ${NOTES[id].title}</span><button aria-label="Remove">${SK.I.x}</button></span>`;
+  about.querySelector('button').onclick = () => { about.innerHTML = ''; document.getElementById('ask-input').focus(); };
+  document.getElementById('ask-input').focus();
+}
+function onKey(e) {
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return close(); }
+  if (e.key === 'Tab') return trapTab(e, dlg);
+  const inField = (e.target instanceof Element ? e.target : document.body).closest('input, textarea, video, [role="tab"], details');
+  if (!inField && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); step(e.key === 'ArrowLeft' ? -1 : 1); }
+}
+// Clicking the scrim (outside the dialog) closes, like Settings.
+layer.addEventListener('mousedown', e => { if (e.target === layer) close(); });
+
+SK.boot('modal', { open, close, isOpen: () => !!state, ownsSources: false });
+})();
+</script>
+</body>
+</html>

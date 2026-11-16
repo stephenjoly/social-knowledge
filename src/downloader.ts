@@ -123,6 +123,7 @@ export class MediaDownloader {
         ? this.connections?.cookiesFor(ownerUserId, platform)
         : null;
     try {
+      const cookieArgs: string[] = [];
       const configuredCookiesFile = this.cookiesFileFor(sourceUrl);
       if (uploadedCookies || configuredCookiesFile) {
         temporaryCookiesDir = await mkdtemp(
@@ -139,25 +140,57 @@ export class MediaDownloader {
           });
         else await copyFile(configuredCookiesFile!, writableCookiesFile);
         await chmod(writableCookiesFile, 0o600);
-        args.push("--cookies", writableCookiesFile);
+        cookieArgs.push("--cookies", writableCookiesFile);
       }
-      args.push("--", sourceUrl);
 
       try {
-        await execa("yt-dlp", args, { timeout: 15 * 60_000, reject: true });
+        await execa("yt-dlp", [...args, ...cookieArgs, "--", sourceUrl], {
+          timeout: 15 * 60_000,
+          reject: true,
+        });
         if (uploadedCookies && ownerUserId && platform)
           this.connections?.markSuccess(ownerUserId, platform);
       } catch (error) {
         const failure = this.classifyDownloadError(error);
         if (
-          uploadedCookies &&
-          ownerUserId &&
-          platform &&
+          platform === "instagram" &&
+          cookieArgs.length > 0 &&
           failure instanceof CaptureFailure &&
-          failure.code === "authentication_required"
-        )
-          this.connections?.markAuthenticationRequired(ownerUserId, platform);
-        throw failure;
+          failure.code === "platform_temporary" &&
+          /failed to parse json\b/i.test(failure.diagnostic)
+        ) {
+          // The authenticated API can return an empty response for a public
+          // post. Start clean and try the public route without validating the
+          // saved connection or inheriting cookies from yt-dlp configuration.
+          await rm(workDir, { recursive: true, force: true });
+          await mkdir(workDir, { recursive: true });
+          try {
+            await execa(
+              "yt-dlp",
+              [
+                ...args,
+                "--ignore-config",
+                "--no-cookies",
+                "--no-cookies-from-browser",
+                "--",
+                sourceUrl,
+              ],
+              { timeout: 15 * 60_000, reject: true },
+            );
+          } catch (anonymousError) {
+            throw this.classifyDownloadError(anonymousError);
+          }
+        } else {
+          if (
+            uploadedCookies &&
+            ownerUserId &&
+            platform &&
+            failure instanceof CaptureFailure &&
+            failure.code === "authentication_required"
+          )
+            this.connections?.markAuthenticationRequired(ownerUserId, platform);
+          throw failure;
+        }
       }
     } finally {
       if (temporaryCookiesDir)

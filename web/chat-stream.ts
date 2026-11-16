@@ -42,8 +42,16 @@ export class SseDecoder {
 
 export type StreamStatus = "pending" | "complete" | "failed" | "cancelled";
 
+/** The model the server resolved for this answer, sent before any text. */
+export type StreamSelection = {
+  provider: string;
+  model: string;
+  thinkingLevel: string | null;
+};
+
 export type StreamState<Source = unknown> = {
   assistantId: string | undefined;
+  selection: StreamSelection | null;
   text: string;
   sources: Source[];
   sufficient: boolean | null;
@@ -56,6 +64,7 @@ export type StreamState<Source = unknown> = {
 export function initialStreamState<Source = unknown>(): StreamState<Source> {
   return {
     assistantId: undefined,
+    selection: null,
     text: "",
     sources: [],
     sufficient: null,
@@ -79,6 +88,30 @@ export function applyStreamEvent<Source = unknown>(
         typeof data.assistantId === "string"
           ? data.assistantId
           : state.assistantId,
+    };
+  }
+  if (event.event === "model") {
+    const selection = data.selection as Record<string, unknown> | null;
+    const valid =
+      selection &&
+      typeof selection === "object" &&
+      typeof selection.provider === "string" &&
+      typeof selection.model === "string" &&
+      (selection.thinkingLevel === null ||
+        typeof selection.thinkingLevel === "string");
+    return {
+      ...state,
+      assistantId:
+        typeof data.assistantId === "string"
+          ? data.assistantId
+          : state.assistantId,
+      selection: valid
+        ? {
+            provider: selection.provider as string,
+            model: selection.model as string,
+            thinkingLevel: selection.thinkingLevel as string | null,
+          }
+        : state.selection,
     };
   }
   if (event.event === "delta") {
@@ -203,6 +236,9 @@ type MessageShape = {
   status: string;
   errorCode?: string | null;
   userMessageId?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  thinkingLevel?: string | null;
 };
 
 /**
@@ -242,6 +278,7 @@ export function mergeConversationSnapshot<
       (local.status !== "pending" ||
         Boolean(local.content) ||
         Boolean(local.sources?.length) ||
+        Boolean(local.model) ||
         (local.sufficient !== undefined && local.sufficient !== null) ||
         Boolean(local.errorCode));
     const merged = pendingWithLocalState
@@ -252,6 +289,11 @@ export function mergeConversationSnapshot<
           sufficient: message.sufficient ?? local.sufficient,
           status: local.status,
           errorCode: message.errorCode ?? local.errorCode,
+          provider: message.provider ?? local.provider,
+          model: message.model ?? local.model,
+          thinkingLevel: message.model
+            ? message.thinkingLevel
+            : local.thinkingLevel,
         }
       : message;
     if (

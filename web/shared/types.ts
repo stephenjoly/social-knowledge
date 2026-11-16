@@ -4,6 +4,10 @@ export type Asset = {
   mimeType: string;
   sizeBytes: number;
 };
+/** Snapshot of the visible collection that opened a note. No extra archive reads. */
+export type NoteOpeningContext = { captureIds: string[]; label: string };
+export type OpenCapture = (id: string, context?: NoteOpeningContext) => void;
+
 export type Capture = {
   id: string;
   jobId: string;
@@ -37,7 +41,7 @@ export type Capture = {
       location: string | null;
       description: string | null;
     }>;
-    evidence: Array<{ claim: string; source: string; quote: string | null }>;
+    evidence: Array<{ claim: string; source: string; quote: string | null; timestampSeconds?: number | null }>;
     claimsNeedingVerification: string[];
   };
   assets: Asset[];
@@ -177,9 +181,15 @@ export type ChatMessage = {
   errorCode: string | null;
   retryOf: string | null;
   userMessageId: string | null;
+  provider: AskSelection["provider"] | null;
+  model: string | null;
+  thinkingLevel: AiThinkingLevel | null;
   createdAt: string;
 };
 export type Conversation = {
+  pinnedAt: string | null;
+  selection: AskSelection | null;
+  lastStatus?: ChatMessage["status"] | null;
   id: string;
   title: string;
   createdAt: string;
@@ -221,11 +231,17 @@ export type AiSelection = {
   model: string;
 };
 export type AiAnalysisSelection = AiSelection & { thinkingLevel: AiThinkingLevel | null };
+export type AskSelection = AiAnalysisSelection;
+export type AskPreferences = {
+  askSourcesPanel: boolean;
+  sendWith: "enter" | "mod-enter";
+};
 export type AiProviderState = {
   providers: AiProvider[];
   selections: {
     transcription: AiSelection | null;
     analysis: AiAnalysisSelection | null;
+    ask: AskSelection | null;
   };
   readiness: { capture: boolean; ask: boolean };
 };

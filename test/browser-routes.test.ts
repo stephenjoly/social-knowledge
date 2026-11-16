@@ -69,6 +69,7 @@ describe("public landing and private browser routes", () => {
     root = await mkdtemp(path.join(os.tmpdir(), "social-knowledge-routing-"));
     await mkdir(path.join(root, "data"));
     const config = testConfig(root);
+    config.appUrl = "https://share.example.test";
     store = new JobStore(config.databasePath);
     app = buildApp(config, store, new EventHub());
   });
@@ -90,6 +91,20 @@ describe("public landing and private browser routes", () => {
     expect(landing.statusCode).toBe(200);
     expect(landing.headers["cache-control"]).toBe("no-store");
     expect(landing.body).toContain("You saved it");
+    expect(landing.body).toContain('content="https://share.example.test/brand/social-preview.png"');
+    expect(landing.body).not.toContain("__PUBLIC_ORIGIN__");
+    expect(landing.body).not.toContain("stephenjoly.github.io");
+    const preview = await app.inject("/brand/social-preview.png");
+    expect(preview.statusCode).toBe(200);
+    expect(preview.headers["content-type"]).toContain("image/png");
+    expect(preview.rawPayload.readUInt32BE(16)).toBe(1200);
+    expect(preview.rawPayload.readUInt32BE(20)).toBe(630);
+    const touch = await app.inject("/brand/apple-touch-icon.png");
+    expect(touch.rawPayload.readUInt32BE(16)).toBe(180);
+    expect(touch.rawPayload.readUInt32BE(20)).toBe(180);
+    expect((await app.inject("/brand/favicon.svg")).headers["content-type"]).toContain("image/svg+xml");
+    expect((await app.inject("/brand/favicon.ico")).rawPayload.readUInt16LE(2)).toBe(1);
+
     expect(landing.body).toContain('href="/login" data-session-link');
     expect(landing.body).toContain('/landing/session.js');
     const footer = landing.body.slice(landing.body.indexOf("<footer"));
@@ -118,6 +133,9 @@ describe("public landing and private browser routes", () => {
     expect(login.statusCode).toBe(200);
     expect(login.headers["cache-control"]).toBe("no-store");
     expect(login.body).toContain('id="root"');
+    expect(login.body).toContain('href="/brand/favicon.svg"');
+    expect(login.body).toContain('content="https://share.example.test/brand/social-preview.png"');
+    expect(login.body).not.toContain("__PUBLIC_ORIGIN__");
     const setup = await app.inject("/api/auth/me");
     expect(setup.json().setupRequired).toBe(true);
   });
@@ -127,6 +145,7 @@ describe("public landing and private browser routes", () => {
     expect((await request("/api/auth/session")).json()).toEqual({ authenticated: true });
     expect((await request("/")).body).toContain("You saved it");
     expect((await request("/app")).body).toContain('id="root"');
+    expect((await request("/app")).body).toContain('content="https://share.example.test/brand/social-preview.png"');
     expect((await request("/app")).headers["cache-control"]).toBe("no-store");
     expect((await request("/login")).headers.location).toBe("/app");
     const destination = "/app?tab=settings";

@@ -1,44 +1,46 @@
 import {
+  createContext,
   forwardRef,
+  useContext,
   useEffect,
   useId,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronDown,
-  CircleDot,
   X,
   type LucideIcon,
   type LucideProps,
 } from "lucide-react";
 import { Card, IconBox, SectionHeading, cx } from "./components/ui/primitives";
 
+/**
+ * Topic introduction inside the Settings modal. The modal header names the
+ * topic, so the page shows only its lede and an optional action.
+ */
 export function SettingsPageHeader({
-  crumb,
-  title,
   description,
   action,
 }: {
-  crumb: string;
-  title: string;
+  /** Kept for callers; the modal header shows the topic name. */
+  crumb?: string;
+  title?: string;
   description: string;
   action?: ReactNode;
 }) {
   return (
     <div className="st-page-header">
-      <div className="st-page-header-text">
-        <p className="st-kicker">{crumb}</p>
-        <h1 className="st-title settings-topic-heading" tabIndex={-1}>
-          {title}
-        </h1>
-        <p className="st-description">{description}</p>
-      </div>
+      <p className="st-description st-lede">{description}</p>
       {action ? <div className="st-page-header-action">{action}</div> : null}
     </div>
   );
 }
+
+/** Where the Settings modal pins its unsaved-changes bar, below the scrolling pane. */
+export const SaveBarSlot = createContext<HTMLElement | null>(null);
 
 export function SettingsSection({
   title,
@@ -126,10 +128,10 @@ export function SaveBar({
   onSave: () => void;
   saveDisabled?: boolean;
 }) {
-  return (
+  const slot = useContext(SaveBarSlot);
+  const bar = (
     <div className="st-savebar" role="region" aria-label="Unsaved changes">
-      <CircleDot className="st-savebar-icon" size={15} aria-hidden="true" />
-      <p className="st-savebar-message">{message}</p>
+      <p className="st-savebar-message" role="status">{message}</p>
       <button
         type="button"
         className="st-savebar-discard"
@@ -148,6 +150,7 @@ export function SaveBar({
       </button>
     </div>
   );
+  return slot ? createPortal(bar, slot) : bar;
 }
 
 export function Feedback({

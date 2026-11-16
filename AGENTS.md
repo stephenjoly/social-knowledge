@@ -25,7 +25,7 @@ This file is a map, not the complete project manual. Follow the linked source of
 6. Make the smallest coherent change, add tests at the same boundary, and preserve unrelated changes.
 7. Run `npm run check` before declaring code complete. Run Playwright or live smoke tests for deployed user journeys.
 8. Update durable documentation with behavior, architecture, operations, or decisions; move finished execution plans to `completed/`.
-9. Commit and push meaningful task-scoped checkpoints. Open a draft PR targeting `staging` early.
+9. Commit and push meaningful task-scoped checkpoints following the shared [agent-os CI efficiency skill](https://github.com/stephenjoly/agent-os/blob/main/skills/ci-efficiency/SKILL.md). Open a draft PR targeting `staging` after a coherent local checkpoint, or earlier when preview/review is needed; draft status still triggers CI and preview builds.
 
 ## Non-negotiable invariants
 
@@ -55,5 +55,5 @@ If a recurring review correction is objective and mechanically checkable, encode
 - Feature PRs target `staging`; release PRs promote the complete accepted `staging` state to `main`.
 - Dokploy is the only deployment owner. GitHub validates changes, enforces promotion provenance, and publishes release metadata; it does not deploy.
 - Only the staging Dokploy Application creates collaborator-authorized, disposable PR previews.
-- Staging and preview use synthetic, isolated data and credentials. They never mount production storage or credentials.
+- Staging and previews intentionally share synthetic non-production storage. They never mount production storage or credentials; preserve other tasks' shared fixtures.
 - Passing CI or publishing a GitHub Release is not evidence that a deployment is healthy. Verify the live release identity and user journeys.

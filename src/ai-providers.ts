@@ -1,3 +1,4 @@
+import type { AskSelection } from "./db.js";
 import {
   createCipheriv,
   createDecipheriv,
@@ -8,6 +9,9 @@ import OpenAI from "openai";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { AppConfig } from "./config.js";
 import type { JobStore } from "./db.js";
+
+const retiredOpenAiModel = (model: string) => /^gpt-5(?:$|[.-])/.test(model);
+const replacementModel = "gpt-6-luna";
 
 export const aiProviderIds = ["openai", "cerebras"] as const;
 export type AiProviderId = (typeof aiProviderIds)[number];
@@ -126,6 +130,7 @@ export class AiProviderService {
   }
 
   list(userId: string) {
+    this.store.retireGpt5Selections(userId);
     const connections = this.store.aiProviderConnections(userId);
     return aiProviderIds.map((id) => ({
       ...definitions[id],
@@ -144,11 +149,16 @@ export class AiProviderService {
       configuration: this.store.aiProviderConfiguration(userId, id) ?? null,
       connected: connections.some(
         (connection) =>
-          connection.provider === id && connection.status === "verified",
+          connection.provider === id &&
+          connection.status === "verified" &&
+          this.credentialKeyAvailable(userId, id),
       ),
       status:
-        connections.find((connection) => connection.provider === id)?.status ??
-        "not_connected",
+        connections.find((connection) => connection.provider === id)?.status ===
+          "verified" && !this.credentialKeyAvailable(userId, id)
+          ? "needs_attention"
+          : (connections.find((connection) => connection.provider === id)
+              ?.status ?? "not_connected"),
       keyHint:
         connections.find((connection) => connection.provider === id)?.keyHint ??
         null,
@@ -199,12 +209,105 @@ export class AiProviderService {
         : null;
     return {
       providers: this.list(userId),
-      selections: { transcription, analysis },
+      selections: {
+        transcription,
+        analysis,
+        ask: this.validAskSelection(
+          userId,
+          selected.askProvider && selected.askModel
+            ? {
+                provider: selected.askProvider,
+                model: selected.askModel,
+                thinkingLevel: selected.askThinkingLevel,
+              }
+            : null,
+        ),
+      },
       readiness: {
-        capture: Boolean(transcription && analysis),
-        ask: Boolean(analysis),
+        capture: Boolean(
+          transcription &&
+          analysis &&
+          this.credentialKeyAvailable(userId, transcription.provider) &&
+          this.credentialKeyAvailable(userId, analysis.provider),
+        ),
+        ask: Boolean(
+          (analysis &&
+            this.credentialKeyAvailable(userId, analysis.provider)) ||
+          (selected.askProvider &&
+            this.credentialKeyAvailable(userId, selected.askProvider) &&
+            this.validAskSelection(
+              userId,
+              selected.askProvider && selected.askModel
+                ? {
+                    provider: selected.askProvider,
+                    model: selected.askModel,
+                    thinkingLevel: selected.askThinkingLevel,
+                  }
+                : null,
+            )),
+        ),
       },
     };
+  }
+
+  validAskSelection(
+    userId: string,
+    selection: AskSelection | null,
+  ): AskSelection | null {
+    if (!selection) return null;
+    return this.store.aiProviderConnection(userId, selection.provider)
+      ?.status === "verified" &&
+      this.isAnalysisModel(selection.provider, selection.model) &&
+      this.supportsThinkingLevel(
+        selection.provider,
+        selection.model,
+        selection.thinkingLevel,
+      )
+      ? selection
+      : null;
+  }
+
+  assertAskSelection(userId: string, selection: AskSelection): void {
+    if (!this.validAskSelection(userId, selection))
+      throw new Error("invalid_selection");
+  }
+
+  resolveAskSelection(
+    userId: string,
+    conversationSelection: AskSelection | null = null,
+  ): AskSelection | null {
+    const settings = this.settings(userId).selections;
+    // A caller may have loaded the chat just before settings migrated it.
+    if (
+      conversationSelection?.provider === "openai" &&
+      retiredOpenAiModel(conversationSelection.model)
+    ) {
+      conversationSelection = {
+        ...conversationSelection,
+        model: replacementModel,
+        thinkingLevel: conversationSelection.thinkingLevel === "minimal"
+          ? "low" : conversationSelection.thinkingLevel,
+      };
+    }
+    return (
+      [
+        this.validAskSelection(userId, conversationSelection),
+        settings.ask,
+        settings.analysis,
+      ].find(
+        (selection) =>
+          selection && this.credentialKeyAvailable(userId, selection.provider),
+      ) ?? null
+    );
+  }
+
+  /** Versioned credentials remain shared; key-ring availability is runtime-local. */
+  private credentialKeyAvailable(userId: string, provider: AiProviderId) {
+    const connection = this.store.aiProviderConnectionSecret(userId, provider);
+    if (!connection) return false;
+    const [version, keyId] = connection.encryptedPayload.split(".", 2);
+    // Legacy records have no key identifier and retain their existing behavior.
+    return version !== "v1" || Boolean(keyId && this.decryptionKeys.has(keyId));
   }
 
   configured(userId: string) {
@@ -292,6 +395,7 @@ export class AiProviderService {
               };
               if (
                 !context.thinkingLevel &&
+                !retiredOpenAiModel(route.model) &&
                 !service.supportsAnyThinkingLevel(route.provider, route.model)
               )
                 delete routedRequest.reasoning;
@@ -299,11 +403,12 @@ export class AiProviderService {
                 {
                   ...routedRequest,
                   ...(context.thinkingLevel &&
-                  service.supportsThinkingLevel(
-                    route.provider,
-                    route.model,
-                    context.thinkingLevel,
-                  )
+                  (retiredOpenAiModel(route.model) ||
+                    service.supportsThinkingLevel(
+                      route.provider,
+                      route.model,
+                      context.thinkingLevel,
+                    ))
                     ? {
                         reasoning: {
                           ...(request.reasoning ?? {}),
@@ -526,6 +631,7 @@ export class AiProviderService {
   saveSelections(
     userId: string,
     selections: {
+      ask?: AskSelection | null | undefined;
       transcription?:
         { provider: "openai"; model?: string | undefined } | null | undefined;
       analysis?:
@@ -592,6 +698,12 @@ export class AiProviderService {
         next.analysisModel = model;
         next.analysisThinkingLevel = thinkingLevel;
       }
+    }
+    if (selections.ask !== undefined) {
+      if (selections.ask) this.assertAskSelection(userId, selections.ask);
+      next.askProvider = selections.ask?.provider ?? null;
+      next.askModel = selections.ask?.model ?? null;
+      next.askThinkingLevel = selections.ask?.thinkingLevel ?? null;
     }
     this.store.saveAiTaskSelections(userId, next);
     return this.settings(userId);
@@ -816,9 +928,10 @@ export class AiProviderService {
     }
     if (!apiKey) throw new Error("ai_credentials_unreadable");
     const provider = connection.provider as AiProviderId;
-    const model = expectedModel ?? this.analysisOptions(provider)[0]!.model;
+    const model = expectedModel ?? this.defaultAnalysisModel(provider);
     if (
       !this.isAnalysisModel(provider, model) &&
+      !(provider === "openai" && retiredOpenAiModel(model)) &&
       !this.isTranscriptionModel(provider, model)
     )
       throw new Error("model_unavailable");
@@ -847,21 +960,27 @@ export class AiProviderService {
 
   private analysisOptions(provider: AiProviderId) {
     if (provider === "cerebras")
-      return [
-        {
-          model: this.config.cerebrasAnalysisModel,
-          thinkingLevels: [] as ThinkingLevel[],
-        },
-      ];
-    return [...new Set([this.config.analysisModel, "gpt-5-mini", "gpt-5"])].map(
-      (model) => ({
+      return [{
+        model: this.config.cerebrasAnalysisModel,
+        thinkingLevels: this.config.cerebrasAnalysisModel === "qwen-3.8-27b"
+          ? (["low", "medium", "high"] as ThinkingLevel[])
+          : [],
+      }];
+    const currentModels = [replacementModel, "gpt-6.1-sol", "gpt-6-astra"];
+    return [...new Set([...currentModels, this.defaultAnalysisModel(provider)])]
+      .map((model) => ({
         model,
-        thinkingLevels:
-          model === "gpt-5-mini" || model === "gpt-5"
-            ? [...thinkingLevels]
-            : [],
-      }),
-    );
+        thinkingLevels: currentModels.includes(model)
+          ? (["low", "medium", "high"] as ThinkingLevel[])
+          : [],
+      }));
+  }
+
+  private defaultAnalysisModel(provider: AiProviderId) {
+    return provider === "openai"
+      ? (retiredOpenAiModel(this.config.analysisModel)
+        ? replacementModel : this.config.analysisModel)
+      : this.config.cerebrasAnalysisModel;
   }
 
   private isTranscriptionModel(provider: AiProviderId, model: string) {
@@ -906,6 +1025,7 @@ export class AiProviderService {
   }
 
   private upgradeLegacySelections(userId: string) {
+    this.store.retireGpt5Selections(userId);
     const selected = this.store.aiTaskSelections(userId);
     const next = { ...selected };
     let changed = false;
@@ -931,7 +1051,7 @@ export class AiProviderService {
       const provider = selected.analysisProvider;
       const configuration = this.legacyConfiguration(userId, provider);
       const model =
-        configuration?.analysisModel ?? this.analysisOptions(provider)[0]!.model;
+        configuration?.analysisModel ?? this.defaultAnalysisModel(provider);
       if (this.isAnalysisModel(provider, model)) {
         next.analysisModel = model;
         next.analysisThinkingLevel = this.supportsThinkingLevel(
@@ -956,7 +1076,9 @@ export class AiProviderService {
       return settings.transcription
         ? { ...settings.transcription, thinkingLevel: null }
         : null;
-    return settings.analysis ? { ...settings.analysis } : null;
+    const selected =
+      task === "ask" ? (settings.ask ?? settings.analysis) : settings.analysis;
+    return selected ? { ...selected } : null;
   }
 
   private startDiagnostic(userId: string): "ok" | "rate_limited" | "busy" {
@@ -1048,6 +1170,8 @@ export class AiProviderService {
     error: unknown,
   ): Exclude<AiDiagnosticResult["code"], "ok" | "busy"> {
     if (error instanceof DiagnosticFailure) return error.code;
+    if (error instanceof Error && error.message === "ai_credentials_unreadable")
+      return "credential_error";
     const details = error as {
       status?: unknown;
       statusCode?: unknown;
