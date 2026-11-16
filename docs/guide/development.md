@@ -31,7 +31,7 @@ This validates documentation, landing assets, TypeScript, the production build, 
 
 Staging and pull-request previews can show one-click synthetic member and administrator accounts on the login page. Set `DEMO_ACCOUNTS_ENABLED=true` only on the non-production Dokploy Application. The default public credentials are `demo-member` / `DemoMember123!` and `demo-admin` / `DemoAdmin123!`; they can be changed with the corresponding `DEMO_MEMBER_*` and `DEMO_ADMIN_*` variables.
 
-The application creates missing demo users and reconciles their passwords and roles at every startup. Staging keeps these users in its dedicated volume. Each preview has a separate disposable database, so previews do not share users or data; they merely recreate the same credentials from inherited environment settings. Never enable demo accounts or store real information in them in production.
+The application creates missing demo users and reconciles their passwords and roles at every startup. Staging and pull-request previews intentionally share the synthetic SQLite database, vault and media volumes, including demo users. Preview containers are disposable; their shared data is not isolated or removed with the container. Use task-specific synthetic fixtures, preserve other tasks' data, and coordinate resets. These environments never mount production storage or credentials. Never enable demo accounts or store real information in them in production.
 
 ## Agent browser QA
 
@@ -52,6 +52,12 @@ provider credentials and refuses an external `E2E_BASE_URL`. Chromium must be
 installed; on the development VM, source `~/.cache/sk-browser/env.sh` first.
 
 Agents may run these commands autonomously for authorized local QA. Keep test data synthetic and do not submit real messages, calls, or production writes. Retain failure traces/screenshots outside Git; report failed and skipped tests explicitly. Browser caches are shared per host, while dependencies are installed per worktree.
+
+## Maintain the documentation
+
+Edit the public Markdown in `docs/guide/`. `docs-site/manifest.json` explicitly selects the pages and assets that ship at `/docs/`; internal plans and other repository documents are excluded. Each guide needs one H1 matching its manifest title. Use relative Markdown links with heading anchors; the builder checks that local destinations are published.
+
+`npm run build` renders the reader and a local search index into `dist-ui/docs/`. `docs-site/template.mjs` and `docs-site/assets/` own its shell, styles, and browser behavior. Run `npx playwright test e2e/docs.spec.ts` for the homepage-to-docs, search, theme, and phone navigation checks against a disposable local server.
 
 ## Contribution workflow
 
