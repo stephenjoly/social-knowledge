@@ -228,6 +228,45 @@ describe("public documentation publication boundary", () => {
     }
   });
 
+  it("keeps the previous publication when the template fails before output replacement", async () => {
+    await mkdir(output);
+    await writeFile(
+      path.join(output, "previous.txt"),
+      "previous successful publication",
+    );
+    await expect(
+      buildDocs({
+        rootDir: root,
+        outputDir: output,
+        manifest,
+        renderPage: () => {
+          throw new Error("synthetic template failure");
+        },
+      }),
+    ).rejects.toThrow("synthetic template failure");
+    expect(await readFile(path.join(output, "previous.txt"), "utf8")).toBe(
+      "previous successful publication",
+    );
+    expect(await readdir(output)).toEqual(["previous.txt"]);
+  });
+
+  it("rejects allowlisted assets that resolve outside the repository", async () => {
+    const outside = await mkdtemp(
+      path.join(os.tmpdir(), "docs-asset-outside-"),
+    );
+    try {
+      await writeFile(path.join(outside, "private.svg"), "PRIVATE ASSET");
+      await rm(path.join(root, "images/demo.svg"));
+      await symlink(
+        path.join(outside, "private.svg"),
+        path.join(root, "images/demo.svg"),
+      );
+      await expect(build()).rejects.toThrow("within the repository");
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
   it("requires a single H1 matching manifest metadata", async () => {
     await write("guide/index.md", "# Wrong title\n");
     await expect(build()).rejects.toThrow("single Markdown H1");

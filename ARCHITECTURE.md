@@ -12,6 +12,12 @@ The documentation build publishes only the pages and assets explicitly listed in
 are excluded from the public bundle. The documentation pages and local search
 index contain static project guidance, never account or archive data. `/docs/`
 is anonymous, while the existing `/app` authentication boundary is unchanged.
+`scripts/build-docs.mjs` renders the allowlisted Markdown through ReactMarkdown
+and `docs-site/template.mjs`; it validates local publication links and heading
+anchors before replacing the prior output. The reader's styles and local search,
+theme, and navigation behavior live in `docs-site/assets/`. The public landing's
+Docs link points to `/docs/` in an application build and to the application docs
+URL from the standalone GitHub Pages bundle.
 
 ## System map
 

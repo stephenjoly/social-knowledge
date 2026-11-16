@@ -1,5 +1,60 @@
 # Short README and public documentation site
-Status: paused at Stephen's explicit request on 2026-10-21; scope previously approved.
+
+Status: implementation complete, delivered for review on 2026-11-15.
+Branch: codex/docs-reader. Draft PR: https://github.com/stephenjoly/social-knowledge/pull/63.
+
+## Delivered November 15
+
+Stephen resumed the work and approved a Vowen-inspired reader plus a homepage
+navbar Docs link only. Current staging (2ab9a1b) was merged without overwriting
+newer Ask, settings, branding, or analytics behavior. The partial template found
+on resume was preserved before completing its implementation.
+
+The finished `/docs/` reader provides nine guides, local ranked search with
+keyboard controls and empty/error feedback, grouped navigation, an active page
+outline, adjacent guides, responsive navigation, and light/dark themes. Homepage
+navbar/footer links use same-instance `/docs/` in application builds and the
+intended application URL from the static Pages bundle. App navigation is unchanged.
+
+The Markdown/asset allowlist publishes exactly 19 files: nine HTML guides, nine
+assets, and one search index. Internal plans and design metadata are excluded.
+Guides were corrected against current source for Ask models, settings, and shared
+synthetic preview storage. October app screenshots remain unchanged and are
+explicitly labelled older synthetic examples.
+
+Verification:
+- Node 22 `npm run check`: docs/site checks, type checking, production build,
+  and 462 tests across 46 files passed.
+- Focused documentation tests: 29 passed.
+- Five docs Playwright journeys passed, including 320px and 390px layouts,
+  keyboard search, failure states, themes, and homepage entry.
+- Ten final desktop/mobile/light/dark captures showed zero browser exceptions,
+  broken images or horizontal overflow. Initial animated homepage captures were
+  replaced with settled captures. Independent finish-review disposition: ship.
+- Impeccable detector ran once. Docs findings were the retained incumbent Inter
+  face; other findings concerned pre-existing landing styling outside the nav.
+- Existing screenshot provenance remains in docs/screenshots/README.md; no new
+  raster assets were added to the shipping bundle.
+
+Preview: http://website-preview--codex-docs-reader--social-knowledge-26c87bdf.localhost:6767/docs/
+Local preview uses disposable synthetic storage; the managed terminal was started
+with Node 22 to match the installed SQLite native addon. Stop Website preview
+when review ends so its temporary storage is removed. A second local acceptance
+server is stopped at handoff.
+
+Review script: homepage -> Docs -> Getting started -> Ctrl/Command+K, search MCP
+-> API and MCP -> heading outline; on a phone open Menu, select a guide, and
+toggle the theme. Source and visual contract: `.impeccable/surfaces/docs-site-template-mjs.md`
+and `DESIGN.md`. No merge, production deployment, infrastructure, or dependency
+change is part of this delivery.
+
+## Historical record — October 21
+
+Everything below records the earlier paused state and original frozen interface.
+Its missing-input and provider-limit notes are historical, superseded by the
+delivered implementation above and current AGENTS.md provider routing.
+
+Original status: paused at Stephen's explicit request on 2026-10-21; scope previously approved.
 Owner: Codex foreman
 Date: 2026-10-21
 Workspace: wks_9f559aba7544e83d

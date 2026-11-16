@@ -11,6 +11,9 @@ describe("public built documentation routes", () => {
   let root: string;
   let app: ReturnType<typeof buildApp>;
   let store: JobStore;
+  const publicOrigin = "https://docs-preview.example";
+  const shell = (title: string, body: string) =>
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title><meta property="og:url" content="__PUBLIC_ORIGIN__/"><meta property="og:image" content="__PUBLIC_ORIGIN__/brand/social-preview.png"></head><body>${body}</body></html>`;
   beforeEach(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), "docs-routing-"));
     await mkdir(path.join(root, "data"));
@@ -18,11 +21,15 @@ describe("public built documentation routes", () => {
     for (const dir of ["docs/start", "docs/assets", "landing"])
       await mkdir(path.join(ui, dir), { recursive: true });
     for (const [name, text] of Object.entries({
-      "index.html":
-        '<html><div id="root">Private application shell</div></html>',
-      "landing/index.html": "Public landing fixture",
-      "docs/index.html": "<h1>Public docs fixture</h1>",
-      "docs/start/index.html": "<h1>Getting started fixture</h1>",
+      "index.html": shell(
+        "Social Knowledge",
+        '<div id="root">Private application shell</div>',
+      ),
+      "landing/index.html": shell("Social Knowledge", "Public landing fixture"),
+      "docs/index.html":
+        '<!doctype html><html lang="en"><head><title>Overview</title></head><body><h1>Public docs fixture</h1></body></html>',
+      "docs/start/index.html":
+        '<!doctype html><html lang="en"><head><title>Getting started</title></head><body><h1>Getting started fixture</h1></body></html>',
       "docs/assets/docs.css": "body { color: black }",
       "docs/assets/docs.js": "console.log('fixture')",
       "docs/assets/logo.svg": '<svg xmlns="http://www.w3.org/2000/svg"/>',
@@ -30,7 +37,12 @@ describe("public built documentation routes", () => {
         '[{"title":"Overview","href":"/docs/","description":"Guide","text":"MCP"}]',
     }))
       await writeFile(path.join(ui, name), text);
-    const config = { ...testConfig(root), uiDir: ui };
+    const config = {
+      ...testConfig(root),
+      uiDir: ui,
+      appUrl: `${publicOrigin}/deployment-path`,
+      posthogKey: "synthetic-public-project-key",
+    };
     store = new JobStore(config.databasePath);
     app = buildApp(config, store, new EventHub());
   });
@@ -90,8 +102,46 @@ describe("public built documentation routes", () => {
     }
   });
 
+  it("renders configured public metadata and analytics without trusting the request host", async () => {
+    for (const url of ["/", "/login"]) {
+      const response = await app.inject({
+        url,
+        headers: {
+          host: "untrusted.example",
+          "x-forwarded-host": "untrusted.example",
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["cache-control"]).toBe("no-store");
+      expect(response.body).toContain(`content="${publicOrigin}/"`);
+      expect(response.body).toContain(
+        `content="${publicOrigin}/brand/social-preview.png"`,
+      );
+      expect(response.body).not.toMatch(
+        /__PUBLIC_ORIGIN__|untrusted\.example|deployment-path/,
+      );
+      expect(response.body.match(/src="\/analytics\.js"/g)).toHaveLength(1);
+      expect(response.body).toContain(
+        '<script type="module" src="/analytics.js"></script></head>',
+      );
+    }
+    const analytics = await app.inject("/analytics/config.json");
+    expect(analytics.statusCode).toBe(200);
+    expect(analytics.headers["cache-control"]).toBe("no-store");
+    expect(analytics.json()).toEqual({ key: "synthetic-public-project-key" });
+    const discovery = await app.inject("/.well-known/oauth-protected-resource");
+    expect(discovery.statusCode).toBe(200);
+    expect(discovery.json().resource).toBe(
+      `${publicOrigin}/deployment-path/mcp`,
+    );
+    expect(
+      (await app.inject({ method: "POST", url: "/mcp", payload: {} }))
+        .statusCode,
+    ).toBe(401);
+  });
+
   it("preserves anonymous app/login/API protections and authenticated sessions", async () => {
-    expect((await app.inject("/")).body).toBe("Public landing fixture");
+    expect((await app.inject("/")).body).toContain("Public landing fixture");
     const privatePage = await app.inject("/app/detail?job=example");
     expect(privatePage.statusCode).toBe(302);
     const target = new URL(
@@ -119,7 +169,11 @@ describe("public built documentation routes", () => {
     expect(setup.statusCode).toBe(201);
     const cookie = String(setup.headers["set-cookie"]).split(";")[0]!;
     const request = (url: string) => app.inject({ url, headers: { cookie } });
-    expect((await request("/app")).body).toContain("Private application shell");
+    const authenticatedApp = await request("/app");
+    expect(authenticatedApp.body).toContain("Private application shell");
+    expect(authenticatedApp.body).toContain(`content="${publicOrigin}/"`);
+    expect(authenticatedApp.body).toContain('src="/analytics.js"');
+    expect(authenticatedApp.headers["cache-control"]).toBe("no-store");
     expect((await request("/login")).headers.location).toBe("/app");
     expect((await request("/docs/start/")).body).toContain(
       "Getting started fixture",

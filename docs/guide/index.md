@@ -1,8 +1,8 @@
 # Overview
 
-## How it works
+Save a useful video, keep the original source, and find the idea again. Social Knowledge turns the Facebook and Instagram videos you deliberately share into a private library of media, transcripts, takeaways, and cited answers.
 
-Social Knowledge turns supported Facebook and Instagram video links into a private, searchable media and knowledge archive. It is a single TypeScript service: the React dashboard, HTTP API, SQLite catalog, job queue, media pipeline, AI extraction, archive, and Obsidian exporter all run in one process and one container.
+If you are setting up your own instance, start with [Getting started](./getting-started.md). Already have access? Learn how to [save a link](./capture.md) or [browse and ask your archive](./library-and-ask.md).
 
 ## Choose a guide
 
@@ -17,4 +17,8 @@ Social Knowledge turns supported Facebook and Instagram video links into a priva
 
 Full media capture supports Facebook and Instagram. Other valid HTTPS submissions are retained as unsupported bookmarks in Activity; they do not become completed captures. Metadata and comments depend on what the source makes available. The service does not bypass platform access controls.
 
-The documentation site is intended for `/docs/` on the application origin after deployment. These Markdown guides are also readable in the repository. No one-line installer is currently provided.
+## How it works
+
+A single service handles the dashboard, capture queue, media processing, AI extraction, and storage. Captures keep their source attribution alongside the saved media. Search and Ask use the archive you build; Markdown exports let you take your notes to Obsidian.
+
+Social Knowledge runs on your server with your own AI provider keys. For installation, storage, and recovery details, see [Self-hosting and backups](./self-hosting.md). No one-line installer is currently provided.

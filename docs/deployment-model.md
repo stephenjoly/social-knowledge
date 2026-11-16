@@ -47,6 +47,12 @@ build generates `dist-ui/docs/`. Docker includes those source/build inputs and
 ships only the generated output. Adding an internal plan or another repository
 Markdown file does not publish it automatically.
 
+The homepage navbar and footer expose a Docs link. In the integrated application
+it opens the same instance's `/docs/`; the standalone GitHub Pages bundle links
+to `https://social-knowledge.stephenjoly.net/docs/`. The link remains visible on
+phones. Search runs locally from the generated index, without a hosted search
+service. The light/dark preference is stored in the reader's browser only.
+
 Documentation requires no account and shares the instance's network reachability.
 It does not require a new hostname, DNS change, service, database or external
 search provider. Existing `/app`, API, OAuth and MCP access rules remain in force.

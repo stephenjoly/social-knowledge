@@ -21,7 +21,7 @@ The safest first run uses disposable project-local storage rather than your real
 4. Create the local `data`, `vault`, and `media` directories.
 5. Run `docker compose up --build -d`.
 6. Keep the fresh application private until this step: open `http://localhost:8787/login` and create the first administrator with a strong password, confirmation, and acknowledgement of administrator authority. The first successful registration is signed in immediately; an unclaimed, publicly reachable deployment can be claimed by its first visitor.
-7. In onboarding or Settings → AI & models, connect provider keys, assign the Transcription and Analysis tasks, and save the selections. Capture requires an OpenAI connection for transcription and either OpenAI or Cerebras for analysis; Ask requires only an analysis selection. The app tests each key before encrypting and storing it.
+7. In onboarding or Settings → AI & models, connect provider keys, assign the Transcription and Analysis tasks, and save the selections. Capture requires an OpenAI connection for transcription and either OpenAI or Cerebras for analysis. Ask needs an available analysis-capable model and connected provider; it uses a per-chat choice, then the Ask AI default, then Analysis. The app tests each key before encrypting and storing it.
 8. Submit one public Reel, watch Activity, then open the completed card in Inbox.
 
 The shell steps are:

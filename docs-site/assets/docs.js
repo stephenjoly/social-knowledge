@@ -6,6 +6,9 @@
   const results = document.querySelector("[data-docs-results]");
   const status = document.querySelector("[data-docs-search-status]");
   const theme = document.querySelector("[data-docs-theme]");
+  const searchKey = document.querySelector(".docs-search-key");
+  if (searchKey && /Mac|iPhone|iPad/.test(navigator.platform))
+    searchKey.textContent = "⌘ K";
   let generation = 0;
   let timer;
   const setMenu = (open) => {
@@ -20,6 +23,12 @@
       setMenu(false);
   });
   document.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      input?.focus();
+      input?.select();
+      return;
+    }
     if (event.key !== "Escape") return;
     ++generation;
     clearTimeout(timer);
@@ -30,6 +39,46 @@
     if (results) results.hidden = true;
     if (status) status.textContent = "";
   });
+
+  const outlineLinks = [...document.querySelectorAll(".docs-outline-link")];
+  const outlineHeadings = outlineLinks
+    .map((link) =>
+      document.getElementById(decodeURIComponent(link.hash.slice(1))),
+    )
+    .filter(Boolean);
+  let outlinePending = false;
+  const updateOutline = () => {
+    outlinePending = false;
+    const offset =
+      Number.parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue("--top-h"),
+      ) + 80;
+    let active = outlineHeadings[0];
+    for (const heading of outlineHeadings) {
+      if (heading.getBoundingClientRect().top > offset) break;
+      active = heading;
+    }
+    for (const link of outlineLinks) {
+      if (active && link.hash.slice(1) === active.id)
+        link.setAttribute("aria-current", "true");
+      else link.removeAttribute("aria-current");
+    }
+  };
+  addEventListener(
+    "scroll",
+    () => {
+      if (!outlinePending) {
+        outlinePending = true;
+        requestAnimationFrame(updateOutline);
+      }
+    },
+    { passive: true },
+  );
+  updateOutline();
+  for (const code of document.querySelectorAll(".docs-content pre")) {
+    code.tabIndex = 0;
+    code.setAttribute("aria-label", "Code example");
+  }
 
   const system = window.matchMedia("(prefers-color-scheme: dark)");
   let preference;
@@ -86,6 +135,7 @@
             title: item.title.slice(0, 200),
             href: item.href,
             description: item.description.slice(0, 500),
+            titleMatch: item.title.toLocaleLowerCase(),
             searchable:
               `${item.title} ${item.description} ${item.text.slice(0, 100_000)}`.toLocaleLowerCase(),
           }));
@@ -108,6 +158,11 @@
       const terms = query.split(/\s+/).slice(0, 8);
       const matches = index
         .filter((item) => terms.every((term) => item.searchable.includes(term)))
+        .sort(
+          (a, b) =>
+            Number(terms.every((term) => b.titleMatch.includes(term))) -
+            Number(terms.every((term) => a.titleMatch.includes(term))),
+        )
         .slice(0, 8);
       for (const item of matches) {
         const link = document.createElement("a");
@@ -147,6 +202,24 @@
     if (event.key === "Escape") {
       ++generation;
       clearTimeout(timer);
+    }
+  });
+  results.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") input.focus();
+    if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+    const links = [...results.querySelectorAll("a")];
+    const index = links.indexOf(document.activeElement);
+    const next = event.key === "ArrowDown" ? index + 1 : index - 1;
+    event.preventDefault();
+    if (next < 0) input.focus();
+    else links[Math.min(next, links.length - 1)]?.focus();
+  });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".docs-search")) {
+      ++generation;
+      clearTimeout(timer);
+      results.hidden = true;
+      status.textContent = "";
     }
   });
 })();
