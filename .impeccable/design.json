@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-16T00:16:57.722899+00:00",
+  "title": "Design System: Social Knowledge",
+  "extensions": {
+    "shadows": [
+      {
+        "name": "docs-elevation",
+        "value": "0 12px 32px -8px rgb(38 30 18 / 18%)",
+        "purpose": "Existing docs shadow; see source stylesheet."
+      },
+      {
+        "name": "dashboard-shadow-primary-button",
+        "value": "0 1px 2px #18231d33",
+        "purpose": "Existing dashboard shadow; see source stylesheet."
+      },
+      {
+        "name": "dashboard-shadow-floating",
+        "value": "0 8px 24px #18181b0d",
+        "purpose": "Existing dashboard shadow; see source stylesheet."
+      },
+      {
+        "name": "dashboard-shadow-dialog",
+        "value": "0 24px 60px #18181b40",
+        "purpose": "Existing dashboard shadow; see source stylesheet."
+      },
+      {
+        "name": "dashboard-shadow-toggle-knob",
+        "value": "0 1px 2px #0000002e",
+        "purpose": "Existing dashboard shadow; see source stylesheet."
+      },
+      {
+        "name": "landing-shadow-1",
+        "value": "0 1px 2px rgba(38, 30, 18, .06), 0 2px 6px rgba(38, 30, 18, .05)",
+        "purpose": "Existing landing shadow; see source stylesheet."
+      },
+      {
+        "name": "landing-shadow-2",
+        "value": "0 2px 4px rgba(38, 30, 18, .05), 0 12px 32px -8px rgba(38, 30, 18, .16), 0 32px 64px -24px rgba(38, 30, 18, .18)",
+        "purpose": "Existing landing shadow; see source stylesheet."
+      }
+    ],
+    "motion": [
+      {
+        "name": "docs-state-transition",
+        "value": "background-color 140ms ease-out, color 140ms ease-out",
+        "purpose": "Docs navigation, icon controls, and search results; only without reduced motion."
+      },
+      {
+        "name": "landing-ease-out",
+        "value": "cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "Existing landing-only easing."
+      },
+      {
+        "name": "landing-ease-io",
+        "value": "cubic-bezier(.65, 0, .35, 1)",
+        "purpose": "Existing landing-only easing."
+      },
+      {
+        "name": "landing-spring",
+        "value": "cubic-bezier(.34, 1.45, .64, 1)",
+        "purpose": "Existing landing-only easing."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "docs-1199",
+        "value": "1199px"
+      },
+      {
+        "name": "docs-900",
+        "value": "900px"
+      },
+      {
+        "name": "docs-480",
+        "value": "480px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Docs primary action",
+      "kind": "button",
+      "refersTo": "docs-primary",
+      "description": "Documentation action; scope: docs-site/assets/docs.css.",
+      "html": "<div class=\"ds-root\"><a class=\"ds-primary\" href=\"#\">Getting started</a></div>",
+      "css": ".ds-root {\n  color-scheme: light;\n  --bg: #f7f4ee;\n  --raised: #fffdf9;\n  --sunken: #efeae0;\n  --line: #e3ddd1;\n  --ink: #18181b;\n  --ink-2: #3f3f46;\n  --muted: #64645e;\n  --forest: #26322b;\n  --accent-ink: #2f5d40;\n  --active-bg: #e8f0ea;\n  --mari: #f2b33d;\n  --focus: #2f5d40;\n  --code-bg: #1b221e;\n  --code-ink: #e7ece8;\n  --button-bg: #26322b;\n  --button-ink: #fffdf9;\n  --top-h: 76px;\n  --elevation: 0 12px 32px -8px rgb(38 30 18 / 18%);\n  font-family: Inter, ui-sans-serif, system-ui, sans-serif;\n  font-feature-settings: \"cv11\", \"ss01\";\n  font-synthesis: none;}\n.ds-root {\n  margin: 0;\n  background: var(--bg);\n  color: var(--ink);\n  -webkit-font-smoothing: antialiased;}\n:focus-visible {\n  outline: 2px solid var(--focus);\n  outline-offset: 4px;\n}\n.ds-primary {\n  display: inline-flex;\n  align-items: center;\n  gap: 14px;\n  padding: 11px 16px;\n  border-radius: 8px;\n  color: var(--button-ink);\n  background: var(--button-bg);\n  font-size: 14px;\n  font-weight: 600;\n  text-decoration: none;\n}\n.ds-app-link:hover,\n.ds-primary:hover {\n  opacity: 0.88;\n}"
+    },
+    {
+      "name": "Docs icon control",
+      "kind": "button",
+      "description": "Documentation header control; scope: docs-site/assets/docs.css and template.mjs.",
+      "html": "<div class=\"ds-root\"><button class=\"ds-icon-button\" aria-label=\"Menu\"><svg width=\"19\" height=\"19\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\"><path d=\"M4 6h16M4 12h16M4 18h16\"/></svg></button></div>",
+      "css": ".ds-root {\n  color-scheme: light;\n  --bg: #f7f4ee;\n  --raised: #fffdf9;\n  --sunken: #efeae0;\n  --line: #e3ddd1;\n  --ink: #18181b;\n  --ink-2: #3f3f46;\n  --muted: #64645e;\n  --forest: #26322b;\n  --accent-ink: #2f5d40;\n  --active-bg: #e8f0ea;\n  --mari: #f2b33d;\n  --focus: #2f5d40;\n  --code-bg: #1b221e;\n  --code-ink: #e7ece8;\n  --button-bg: #26322b;\n  --button-ink: #fffdf9;\n  --top-h: 76px;\n  --elevation: 0 12px 32px -8px rgb(38 30 18 / 18%);\n  font-family: Inter, ui-sans-serif, system-ui, sans-serif;\n  font-feature-settings: \"cv11\", \"ss01\";\n  font-synthesis: none;}\n.ds-root {\n  margin: 0;\n  background: var(--bg);\n  color: var(--ink);\n  -webkit-font-smoothing: antialiased;}\n:focus-visible {\n  outline: 2px solid var(--focus);\n  outline-offset: 4px;\n}\n.ds-icon-button {\n  width: 40px;\n  height: 40px;\n  display: inline-grid;\n  place-items: center;\n  border: 0;\n  border-radius: 8px;\n  color: var(--muted);\n  background: transparent;\n}\n.ds-icon-button:hover {\n  color: var(--ink);\n  background: var(--sunken);\n}\n.ds-icon-button {cursor: pointer;}\n@media (prefers-reduced-motion: no-preference) {.ds-icon-button {transition: background-color 140ms ease-out, color 140ms ease-out;}}"
+    },
+    {
+      "name": "Docs search field",
+      "kind": "input",
+      "refersTo": "docs-search",
+      "description": "Documentation search field; icon/hint positioning belongs to its full template.",
+      "html": "<div class=\"ds-root\"><label class=\"ds-visually-hidden\" for=\"ds-search\">Search documentation</label><input id=\"ds-search\" class=\"ds-search-input\" type=\"search\" placeholder=\"Search documentation\"></div>",
+      "css": ".ds-root {\n  color-scheme: light;\n  --bg: #f7f4ee;\n  --raised: #fffdf9;\n  --sunken: #efeae0;\n  --line: #e3ddd1;\n  --ink: #18181b;\n  --ink-2: #3f3f46;\n  --muted: #64645e;\n  --forest: #26322b;\n  --accent-ink: #2f5d40;\n  --active-bg: #e8f0ea;\n  --mari: #f2b33d;\n  --focus: #2f5d40;\n  --code-bg: #1b221e;\n  --code-ink: #e7ece8;\n  --button-bg: #26322b;\n  --button-ink: #fffdf9;\n  --top-h: 76px;\n  --elevation: 0 12px 32px -8px rgb(38 30 18 / 18%);\n  font-family: Inter, ui-sans-serif, system-ui, sans-serif;\n  font-feature-settings: \"cv11\", \"ss01\";\n  font-synthesis: none;}\n.ds-root {\n  margin: 0;\n  background: var(--bg);\n  color: var(--ink);\n  -webkit-font-smoothing: antialiased;}\n:focus-visible {\n  outline: 2px solid var(--focus);\n  outline-offset: 4px;\n}\n.ds-search-input {\n  width: 100%;\n  height: 42px;\n  padding: 0 64px 0 40px;\n  background: var(--raised);\n  border: 1px solid var(--line);\n  border-radius: 9px;\n  color: var(--ink);\n  font-size: 13px;\n  caret-color: var(--accent-ink);\n}\n.ds-search-input::placeholder {\n  color: var(--muted);\n  opacity: 1;\n}\n.ds-search-input:focus {\n  border-color: var(--focus);\n}\n.ds-search-input {font: inherit; font-size: 13px;}\n.ds-visually-hidden {\n  position: absolute;\n  width: 1px;\n  height: 1px;\n  padding: 0;\n  margin: -1px;\n  overflow: hidden;\n  clip-path: inset(50%);\n  white-space: nowrap;\n  border: 0;\n}"
+    },
+    {
+      "name": "Docs active navigation",
+      "kind": "nav",
+      "description": "Documentation sidebar resting, hover, and current-page states.",
+      "html": "<div class=\"ds-root\"><nav aria-label=\"Documentation\"><a class=\"ds-nav-link\" href=\"#\">Overview</a><a class=\"ds-nav-link\" href=\"#\" aria-current=\"page\">Getting started</a></nav></div>",
+      "css": ".ds-root {\n  color-scheme: light;\n  --bg: #f7f4ee;\n  --raised: #fffdf9;\n  --sunken: #efeae0;\n  --line: #e3ddd1;\n  --ink: #18181b;\n  --ink-2: #3f3f46;\n  --muted: #64645e;\n  --forest: #26322b;\n  --accent-ink: #2f5d40;\n  --active-bg: #e8f0ea;\n  --mari: #f2b33d;\n  --focus: #2f5d40;\n  --code-bg: #1b221e;\n  --code-ink: #e7ece8;\n  --button-bg: #26322b;\n  --button-ink: #fffdf9;\n  --top-h: 76px;\n  --elevation: 0 12px 32px -8px rgb(38 30 18 / 18%);\n  font-family: Inter, ui-sans-serif, system-ui, sans-serif;\n  font-feature-settings: \"cv11\", \"ss01\";\n  font-synthesis: none;}\n.ds-root {\n  margin: 0;\n  background: var(--bg);\n  color: var(--ink);\n  -webkit-font-smoothing: antialiased;}\n:focus-visible {\n  outline: 2px solid var(--focus);\n  outline-offset: 4px;\n}\n.ds-nav-link {\n  display: block;\n  padding: 9px 12px;\n  border-radius: 8px;\n  color: var(--ink-2);\n  text-decoration: none;\n  font-size: 13px;\n  line-height: 1.45;\n}\n.ds-nav-link:hover {\n  background: var(--sunken);\n  color: var(--ink);\n}\n.ds-nav-link[aria-current=\"page\"] {\n  background: var(--active-bg);\n  color: var(--accent-ink);\n  font-weight: 600;\n}\n@media (prefers-reduced-motion: no-preference) {.ds-nav-link {transition: background-color 140ms ease-out, color 140ms ease-out;}}"
+    },
+    {
+      "name": "Docs blockquote",
+      "kind": "card",
+      "description": "Documentation bordered quotation container; not an application card.",
+      "html": "<div class=\"ds-root\"><div class=\"ds-content\"><blockquote>Keep original source attribution.</blockquote></div></div>",
+      "css": ".ds-root {\n  color-scheme: light;\n  --bg: #f7f4ee;\n  --raised: #fffdf9;\n  --sunken: #efeae0;\n  --line: #e3ddd1;\n  --ink: #18181b;\n  --ink-2: #3f3f46;\n  --muted: #64645e;\n  --forest: #26322b;\n  --accent-ink: #2f5d40;\n  --active-bg: #e8f0ea;\n  --mari: #f2b33d;\n  --focus: #2f5d40;\n  --code-bg: #1b221e;\n  --code-ink: #e7ece8;\n  --button-bg: #26322b;\n  --button-ink: #fffdf9;\n  --top-h: 76px;\n  --elevation: 0 12px 32px -8px rgb(38 30 18 / 18%);\n  font-family: Inter, ui-sans-serif, system-ui, sans-serif;\n  font-feature-settings: \"cv11\", \"ss01\";\n  font-synthesis: none;}\n.ds-root {\n  margin: 0;\n  background: var(--bg);\n  color: var(--ink);\n  -webkit-font-smoothing: antialiased;}\n:focus-visible {\n  outline: 2px solid var(--focus);\n  outline-offset: 4px;\n}\n.ds-content {\n  color: var(--ink-2);\n  font-size: 15px;\n  line-height: 1.8;\n  overflow-wrap: anywhere;\n}\n.ds-content blockquote {\n  margin: 24px 0;\n  padding: 16px 20px;\n  border: 1px solid var(--line);\n  border-radius: 12px;\n}"
+    }
+  ],
+  "narrative": {
+    "overview": "This records the implemented system, not a redesign. Inter, forest primary actions,\ndark ink, and the existing book mark connect the surfaces. The dashboard uses cool\nneutral working surfaces; landing and documentation use warm paper. The documentation\nreader adds a **docs-only dark theme**.",
+    "dos": [
+      "use the stylesheet and token source for the surface being changed.",
+      "preserve the existing book mark, self-hosted Inter, and source attribution.",
+      "keep screenshot provenance in [docs/screenshots/README.md](docs/screenshots/README.md);\n  the reader reuses those synthetic captures unchanged."
+    ],
+    "donts": [
+      "apply the docs-only dark palette or reader typography to dashboard or landing.",
+      "treat surface-specific dimensions, radii, or motion as universal tokens.\n"
+    ]
+  }
+}

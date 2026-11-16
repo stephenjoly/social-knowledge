@@ -581,7 +581,9 @@ button.link-arrow { background: none; border: 0; border-bottom: 2px solid transp
 @media (max-width: 700px) {
   :root { --nav-h: 58px; }
   body { font-size: 17px; }
-  .nav__links { display: none; }
+  .nav__links { display: flex; }
+  .nav__links a:not([data-docs-link]) { display: none; }
+  .nav__inner > .btn { display: none; }
   .nav__inner { justify-content: space-between; }
   .hero { padding-top: calc(var(--nav-h) + 32px); gap: 36px; }
   .hero__stage-wrap { width: 100%; }

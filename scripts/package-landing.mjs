@@ -5,6 +5,7 @@ import { cp, readFile, writeFile } from "node:fs/promises";
 await cp("site", "dist-ui/landing", { recursive: true });
 let html = await readFile("dist-ui/landing/index.html", "utf8");
 html = html.replaceAll("https://stephenjoly.github.io/social-knowledge", "__PUBLIC_ORIGIN__")
+  .replaceAll('href="https://social-knowledge.stephenjoly.net/docs/"', 'href="/docs/"')
   .replaceAll('href="brand/', 'href="/brand/')
   .replaceAll('href="landing.css"', 'href="/landing/landing.css"')
   .replaceAll('src="data.js"', 'src="/landing/data.js"')
